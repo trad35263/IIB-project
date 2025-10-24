@@ -5,6 +5,7 @@ import numpy as np
 
 from engine import Engine
 from flow_state import Flow_state
+from flight_scenario import Flight_scenario
 import utils
 
 # main function
@@ -32,6 +33,36 @@ def main():
     # user feedback
     print(f"{utils.Colours.GREEN}{no_of_stages} stages selected!{utils.Colours.END}")
     print(f"{utils.Colours.CYAN}Constructing engines for analysis...{utils.Colours.END}")
+
+    # store list of conditions to design candidate engines for
+    flight_scenarios = [
+        Flight_scenario(
+            altitude = 0,
+            velocity = 0,
+            diameter = utils.Defaults.engine_diameter,
+            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
+            thrust = 50
+        ),
+        Flight_scenario(
+            altitude = 0,
+            velocity = 20,
+            diameter = utils.Defaults.engine_diameter,
+            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
+            thrust = 30
+        ),
+        Flight_scenario(
+            altitude = 3000,
+            velocity = 40,
+            diameter = utils.Defaults.engine_diameter,
+            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
+            thrust = 20
+        ),
+    ]
+
+    # iterate over every flight scenario
+    for scenario in flight_scenarios:
+
+        pass
 
     # store candidate engines in a list
     candidate_engines = []

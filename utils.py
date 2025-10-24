@@ -28,6 +28,10 @@ class Defaults:
     M_max = 0.2
     N = 100
 
+    # default dimensional values
+    engine_diameter = 0.65
+    hub_tip_ratio = 0.2
+
     # blade angle values
     inlet_guide_vanes_blade_angle = 10 * np.pi / 180        # rad
     rotor_blade_angle = -20 * np.pi / 180                   # rad
