@@ -23,13 +23,13 @@ class Engine:
     no_of_stages : int
         Number of rotor-stator compressor stages to add to the engine.
     """
-    def __init__(self, no_of_stages, M_design):
+    def __init__(self, no_of_stages, M_1, scenario):
         """Create instance of the Engine class."""
         # design engine for given default values of thrust etc.
         self.no_of_stages = no_of_stages
-        self.M_design = M_design
-        self.M_flight = utils.Defaults.flight_Mach_number
-        self.C_T_design = utils.Defaults.thrust_coefficient
+        self.M_1 = M_1
+        self.M_flight = scenario.M
+        self.C_th_design = scenario.C_th
         self.design()
 
         return
@@ -122,7 +122,7 @@ Blade row configuration:
 
                 # set first stage to default inlet conditions
                 stage.blade_rows[0].inlet = (
-                    Flow_state(self.M_design, utils.Defaults.inlet_swirl, 1, 1)
+                    Flow_state(self.M_1, utils.Defaults.inlet_swirl, 1, 1)
                 )
 
             else:
@@ -154,10 +154,10 @@ Blade row configuration:
 
             # find the corresponding nozzle area ratio
             area_ratio = (
-                utils.stagnation_density_ratio(self.M_design)
+                utils.stagnation_density_ratio(self.M_1)
                 / utils.stagnation_density_ratio(M_guess)
-                * self.M_design / M_guess * np.sqrt(
-                    utils.stagnation_temperature_ratio(self.M_design)
+                * self.M_1 / M_guess * np.sqrt(
+                    utils.stagnation_temperature_ratio(self.M_1)
                     / utils.stagnation_temperature_ratio(M_guess)
                     * self.nozzle.inlet.T_0
                 )
@@ -167,7 +167,7 @@ Blade row configuration:
             #print(f"area_ratio: {area_ratio}")
 
             # find the corresponding thrust coefficient
-            C_T_guess = (
+            C_th_guess = (
                 area_ratio * self.nozzle.inlet.p_0 * (
                     utils.impulse_function(M_guess)
                     - utils.stagnation_pressure_ratio(self.M_flight)
@@ -175,19 +175,19 @@ Blade row configuration:
                     + 2 * utils.dynamic_pressure_function(M_guess) * jet_velocity_ratio
                 )
             )
-            #print(f"C_T_guess: {C_T_guess}")
-            """C_T_guess = (
+            #print(f"C_th_guess: {C_th_guess}")
+            """C_th_guess = (
                 utils.impulse_function(M_guess)
                 - utils.stagnation_pressure_ratio(self.M_flight) / self.blade_rows[-1].exit.p_0
                 - 2 * utils.dynamic_pressure_function(M_guess) * jet_velocity_ratio
             )"""
 
             # return difference to design thrust coefficient
-            return C_T_guess - self.C_T_design
+            return C_th_guess - self.C_th_design
 
         # uncomment for debugging
         """xx = np.linspace(self.M_flight, 1 - 1e-3, 20)
-        yy = [residual(x) + self.C_T_design for x in xx]
+        yy = [residual(x) + self.C_th_design for x in xx]
         zz = [utils.stagnation_pressure_ratio(x) * self.nozzle.inlet.p_0 for x in xx]
         pp = [utils.stagnation_pressure_ratio(self.nozzle.inlet.M) * self.nozzle.inlet.p_0 for x in xx]
         pp_0 = [utils.stagnation_pressure_ratio(self.M_flight) for x in xx]
@@ -365,9 +365,10 @@ Blade row configuration:
 
         # set title and subtitle
         ax_upper.title.set_text(
-            f"Flight Mach number: {utils.Defaults.flight_Mach_number:.3g}\n"
-            f"Thrust coefficient: {self.C_T:.3g}\n"
+            f"Flight Mach number: {self.M_flight:.3g}\n"
+            f"Thrust coefficient: {self.C_th:.3g}\n"
             f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}"
+            f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
         )
         ax_upper.title.set_fontsize(12)
         ax_lower.title.set_text(
@@ -655,7 +656,7 @@ Blade row configuration:
         )
 
         # find the thrust coefficient
-        self.C_T = (
+        self.C_th = (
             self.nozzle.area_ratio * self.nozzle.inlet.p_0 * (
                 utils.impulse_function(self.nozzle.exit.M)
                 - utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0

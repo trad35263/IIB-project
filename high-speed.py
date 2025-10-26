@@ -1,6 +1,7 @@
 # import modules
 
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 import numpy as np
 
 from engine import Engine
@@ -37,6 +38,7 @@ def main():
     # store list of conditions to design candidate engines for
     flight_scenarios = [
         Flight_scenario(
+            label = "Static",
             altitude = 0,
             velocity = 0,
             diameter = utils.Defaults.engine_diameter,
@@ -44,6 +46,7 @@ def main():
             thrust = 50
         ),
         Flight_scenario(
+            label = "Take-off",
             altitude = 0,
             velocity = 20,
             diameter = utils.Defaults.engine_diameter,
@@ -51,6 +54,7 @@ def main():
             thrust = 30
         ),
         Flight_scenario(
+            label = "Cruise",
             altitude = 3000,
             velocity = 40,
             diameter = utils.Defaults.engine_diameter,
@@ -62,33 +66,79 @@ def main():
     # iterate over every flight scenario
     for scenario in flight_scenarios:
 
-        pass
+        for M in np.linspace(utils.Defaults.M_min, utils.Defaults.M_max, utils.Defaults.N):
 
-    # store candidate engines in a list
-    candidate_engines = []
-    for M in np.linspace(utils.Defaults.M_min, utils.Defaults.M_max, utils.Defaults.N):
+            try:
 
-        candidate_engines.append(Engine(no_of_stages, M))
+                scenario.engines.append(Engine(no_of_stages, M, scenario))
 
-    # from list of candidate engines, store key parameters
-    jet_velocity_ratios = [engine.jet_velocity_ratio for engine in candidate_engines]
-    inlet_Mach_numbers = [engine.M_design for engine in candidate_engines]
-    thrust_coefficients = [engine.C_T for engine in candidate_engines]
-    efficiencies = [engine.eta_p for engine in candidate_engines]
-    nozzle_pressure_ratios = [engine.nozzle_p_r for engine in candidate_engines]
+            except Exception as error:
+
+                print(
+                    f"{utils.Colours.RED}Engine construction failed at M = {M}: {error}"
+                    f"{utils.Colours.END}"
+                )
 
     # plot key parameters of the candidate engines
     fig, ax = plt.subplots()
-    ax.plot(jet_velocity_ratios, thrust_coefficients, label = "Thrust coefficient")
-    ax.plot(jet_velocity_ratios, efficiencies, label = "Polytropic efficiency")
-    ax.plot(jet_velocity_ratios, nozzle_pressure_ratios, label = "Nozzle pressure ratio")
-    ax.plot(jet_velocity_ratios, inlet_Mach_numbers, label = "Inlet Mach number")
+    for scenario in flight_scenarios:
+        
+        areas = [engine.nozzle.area_ratio for engine in scenario.engines]
+        ax.plot(
+            areas, [engine.jet_velocity_ratio for engine in scenario.engines],
+            color = scenario.colour, linestyle = '', marker = '.'
+        )
+        ax.plot(
+            areas, [engine.C_th for engine in scenario.engines],
+            color = scenario.colour, linestyle = '', marker = 'x'
+        )
+        ax.plot(
+            areas, [engine.eta_p for engine in scenario.engines],
+            color = scenario.colour, linestyle = '', marker = 'v'
+        )
+
+        ax.plot([],[], color = scenario.colour, label = scenario.label)
+
+    ax.plot([], [], linestyle = '', marker = '.', color  = 'k', label = "Jet velocity ratio")
+    ax.plot([], [], linestyle = '', marker = 'x', color  = 'k', label = "Thrust coefficient")
+    ax.plot([], [], linestyle = '', marker = 'v', color  = 'k', label = "Polytropic efficiency")
+    ax.set_xlabel("Area ratio")
     ax.grid()
     ax.legend()
+
+    # incorporate slider to select desired nozzle area ratio
+    plt.subplots_adjust(bottom=0.25)
+
+    axpos = ax.get_position()
+
+    # --- Place the slider directly below the plot, using same width and left alignment ---
+    slider_height = 0.03  # adjust as desired
+    slider_bottom = axpos.y0 - 0.2  # small gap below the x-axis
+
+    slider_ax = fig.add_axes([
+        axpos.x0,              # align left edge
+        slider_bottom,         # vertical placement
+        axpos.width,           # same width as main axes
+        slider_height          # slider thickness
+    ])
+
+    # Match the slider range to the x-axis limits
+    x_min, x_max = ax.get_xlim()
+    slider = Slider(slider_ax, "X", x_min, x_max, valinit=x_min)
+
+    # --- Update function for slider ---
+    def update(val):
+
+        fig.canvas.draw_idle()
+
+    slider.on_changed(update)
     plt.show()
 
+    # store the user input jet velocity ratio from slider
+    jet_velocity_ratio = slider.val
+
     # determine from user which of the candidate engines to analyse further
-    print(f"{utils.Colours.RED}Please state the desired jet velocity ratio:{utils.Colours.END}")
+    """print(f"{utils.Colours.RED}Please state the desired jet velocity ratio:{utils.Colours.END}")
     while True:
 
         user_input = input()
@@ -99,12 +149,13 @@ def main():
 
         except ValueError:
 
-            print(f"{utils.Colours.RED}Error: Please provide a valid jet velocity ratio.{utils.Colours.END}")
+            print(f"{utils.Colours.RED}Error: Please provide a valid jet velocity ratio.{utils.Colours.END}")"""
 
     # single out specified engine from list of candidate engines
-    print(f"{utils.Colours.GREEN}Jet velocity ratio of {design_epsilon} selected!{utils.Colours.END}")
-    design_index = min(enumerate(jet_velocity_ratios), key=lambda x: abs(x[1] - design_epsilon))[0]
-    engine = candidate_engines[design_index]
+    print(f"{utils.Colours.GREEN}Jet velocity ratio of {jet_velocity_ratio} selected!{utils.Colours.END}")
+    jet_velocity_ratios = [engine.jet_velocity_ratio for engine in flight_scenarios[-1].engines]
+    design_index = min(enumerate(jet_velocity_ratios), key=lambda x: abs(x[1] - jet_velocity_ratio))[0]
+    engine = flight_scenarios[-1].engines[design_index]
 
     # display default engine information to user
     print(engine)

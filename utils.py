@@ -14,19 +14,19 @@ gamma = 1.4
 class Defaults:
     """Container for default values relating to the engine system."""
     # define non-dimensional flight scenario
-    flight_Mach_number = 0.4
+    flight_Mach_number = 0.1
     thrust_coefficient = 0.5
 
     # define non-dimensional stage parameters
     flow_coefficient = 0.5
     stage_loading_coefficient = 0.1
     reaction = 0.8
-    stagnation_pressure_loss_coefficient = 0.0
+    stagnation_pressure_loss_coefficient = 0.02
 
     # code iteration parameters
-    M_min = 0.05
+    M_min = 0.01
     M_max = 0.2
-    N = 100
+    N = 10
 
     # default dimensional values
     engine_diameter = 0.65

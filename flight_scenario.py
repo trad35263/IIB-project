@@ -4,6 +4,8 @@ import numpy as np
 import utils
 import ambiance
 
+import matplotlib.pyplot as plt
+
 # create Flight_scenario class
 
 class Flight_scenario:
@@ -26,9 +28,12 @@ class Flight_scenario:
     thrust : float
         Target engine thrust in Newtons.
     """
-    def __init__(self, altitude, velocity, diameter, hub_tip_ratio, thrust):
+    _color_cycle = iter(plt.cm.tab10.colors)
+
+    def __init__(self, label, altitude, velocity, diameter, hub_tip_ratio, thrust):
         """Create instance of the Flight_scenario class."""
         # save input parameters
+        self.label = label
         self.altitude = altitude
         self.velocity = velocity
         self.diameter = diameter
@@ -37,16 +42,22 @@ class Flight_scenario:
 
         # determine atmospheric properties at specified altitude
         self.atmosphere = ambiance.Atmosphere(self.altitude)
-        self.T = self.atmosphere.temperature
-        self.p = self.atmosphere.pressure
-        self.rho = self.atmosphere.density
-        self.a = self.atmosphere.speed_of_sound
+        self.T = self.atmosphere.temperature[0]
+        self.p = self.atmosphere.pressure[0]
+        self.rho = self.atmosphere.density[0]
+        self.a = self.atmosphere.speed_of_sound[0]
 
         # calculate derived non-dimensional quantities
         self.M = self.velocity / self.a
         self.A = (np.pi / 4) * self.diameter**2
         self.p_0 = self.p / utils.stagnation_pressure_ratio(self.M)
         self.C_th = self.thrust / (self.A * self.p_0)
+
+        # create list to store engines designed for this flight scenario
+        self.engines = []
+
+        # assign a unique colour for plotting
+        self.colour = next(self._color_cycle)
 
     def __str__(self):
         """Prints a string representation of the flight scenario."""
