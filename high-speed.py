@@ -135,7 +135,7 @@ def main():
     plt.show()
 
     # store the user input jet velocity ratio from slider
-    jet_velocity_ratio = slider.val
+    area_ratio = slider.val
 
     # determine from user which of the candidate engines to analyse further
     """print(f"{utils.Colours.RED}Please state the desired jet velocity ratio:{utils.Colours.END}")
@@ -152,9 +152,11 @@ def main():
             print(f"{utils.Colours.RED}Error: Please provide a valid jet velocity ratio.{utils.Colours.END}")"""
 
     # single out specified engine from list of candidate engines
-    print(f"{utils.Colours.GREEN}Jet velocity ratio of {jet_velocity_ratio} selected!{utils.Colours.END}")
-    jet_velocity_ratios = [engine.jet_velocity_ratio for engine in flight_scenarios[-1].engines]
-    design_index = min(enumerate(jet_velocity_ratios), key=lambda x: abs(x[1] - jet_velocity_ratio))[0]
+    print(
+        f"{utils.Colours.GREEN}Nozzle area ratio of {area_ratio:.4g} selected!{utils.Colours.END}"
+    )
+    jet_velocity_ratios = [engine.nozzle.area_ratio for engine in flight_scenarios[-1].engines]
+    design_index = min(enumerate(jet_velocity_ratios), key=lambda x: abs(x[1] - area_ratio))[0]
     engine = flight_scenarios[-1].engines[design_index]
 
     # display default engine information to user
@@ -252,7 +254,17 @@ def main():
             M,
             utils.Defaults.inlet_swirl, 1, 1
         )
-        engine.analyse()
+        try:
+
+            engine.analyse()
+
+        except Exception as error:
+
+            print(
+                f"{utils.Colours.RED}Engine analysis failed at M = {M}: {error}"
+                f"{utils.Colours.END}"
+            )
+            continue
 
         for j, stage in enumerate(engine.stages):
 
@@ -310,7 +322,7 @@ def main():
     ax_right.set_xlabel("Flow coefficient (ϕ)")
     ax_right.set_ylabel("Reaction (Δ)")
     ax_right.grid()
-    ax_right.legend()
+    #ax_right.legend()
 
     plt.show()
 

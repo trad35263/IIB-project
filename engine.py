@@ -367,7 +367,7 @@ Blade row configuration:
         ax_upper.title.set_text(
             f"Flight Mach number: {self.M_flight:.3g}\n"
             f"Thrust coefficient: {self.C_th:.3g}\n"
-            f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}"
+            f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}\n"
             f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
         )
         ax_upper.title.set_fontsize(12)

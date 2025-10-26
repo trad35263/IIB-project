@@ -118,8 +118,6 @@ class Nozzle:
                 1, 1
             )
 
-        print(self.inlet)
-
         # calculate inlet mass flow function
         inlet_mass_flow_function = utils.mass_flow_function(self.inlet.M)
 

@@ -191,6 +191,7 @@ class Stage:
         rotor.blade_Mach_number = rotor.exit.M * np.sin(rotor.exit.alpha) - rotor.exit.M_rel * np.sin(rotor.exit.beta)
 
         # set stator inlet equal to rotor exit
+        # come back to this - set area ratio
         stator = self.blade_rows[-1]
         stator.inlet = rotor.exit
 
@@ -217,20 +218,23 @@ class Stage:
         else:
 
             # find Mach number at stator exit from fixed reaction
-            M_exit = (
-                utils.invert(
-                    utils.stagnation_temperature_ratio,
-                    (
-                        (
-                            utils.stagnation_temperature_ratio(rotor.exit.M)
-                            / utils.stagnation_temperature_ratio(rotor.inlet.M)
-                            * rotor.exit.T_0 / rotor.inlet.T_0 - 1
-                        ) / self.reaction + 1
-                    )
-                    * utils.stagnation_temperature_ratio(rotor.inlet.M)
-                    * rotor.inlet.T_0 / rotor.exit.T_0
-                )
+            T_1 = utils.stagnation_temperature_ratio(rotor.inlet.M) * rotor.inlet.T_0
+            T_2 = utils.stagnation_temperature_ratio(rotor.exit.M) * rotor.exit.T_0
+            T_3 = T_1 + (T_2 - T_1) / self.reaction
+            print(f"\nself.reaction: {self.reaction}")
+            print(f"T_1 = {T_1}")
+            print(f"T_2 = {T_2}")
+            print(f"T_3 = {T_3}")
+            print(f"T_3 / T_03 = {T_3 / stator.inlet.T_0}")
+            M_exit = utils.invert(
+                utils.stagnation_temperature_ratio,
+                T_3 / stator.inlet.T_0
             )
+            print(f"M_2: {stator.inlet.M}")
+            print(f"f(M_2): {utils.mass_flow_function(stator.inlet.M)}")
+            print(f"cos_alpha2: {np.cos(stator.inlet.alpha)}")
+            print(f"M_3: {M_exit}")
+            print(f"f(M_3): {utils.mass_flow_function(M_exit)}")
 
             # reaction cannot be achieved
             if M_exit == None:
@@ -244,6 +248,11 @@ class Stage:
             else:
 
                 # solve for exit angle
+                cos_alpha = (
+                    utils.mass_flow_function(stator.inlet.M) / utils.mass_flow_function(M_exit)
+                    * np.cos(stator.inlet.alpha) / stagnation_pressure_ratio
+                )
+                print(f"cos_alpha3: {cos_alpha}")
                 alpha_exit = (
                     np.arccos(
                         utils.mass_flow_function(stator.inlet.M) / utils.mass_flow_function(M_exit)

@@ -13,43 +13,25 @@ gamma = 1.4
 
 class Defaults:
     """Container for default values relating to the engine system."""
-    # define non-dimensional flight scenario
-    flight_Mach_number = 0.1
-    thrust_coefficient = 0.5
-
     # define non-dimensional stage parameters
     flow_coefficient = 0.5
-    stage_loading_coefficient = 0.1
+    stage_loading_coefficient = 0.2
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.02
 
     # code iteration parameters
     M_min = 0.01
-    M_max = 0.2
-    N = 10
+    M_max = 0.5
+    N = 50
 
     # default dimensional values
     engine_diameter = 0.65
     hub_tip_ratio = 0.2
 
-    # blade angle values
-    inlet_guide_vanes_blade_angle = 10 * np.pi / 180        # rad
-    rotor_blade_angle = -20 * np.pi / 180                   # rad
-    stator_blade_angle = 10 * np.pi / 180                   # rad
-    outlet_guide_vanes_blade_angle = 0
-
     # area change ratios
-    intake_area_ratio = 0.8
-    blade_row_area_ratio = 1
-    nozzle_area_ratio = 0.5
-
-    # turbomachine parameters
-    rotor_blade_speed_ratio = 1
-    hub_tip_ratio = 0.2
+    blade_row_area_ratio = 0.96
 
     # values used for determining engine inlet conditions
-    inlet_Mach_number = 0.3
-    inlet_flow_coefficient = 0.5
     inlet_swirl = 0
 
 # 0.3 compressible flow perfect gas relations
