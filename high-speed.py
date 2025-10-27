@@ -60,24 +60,28 @@ def main():
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
             thrust = 20
-        ),
+        )
     ]
 
     # iterate over every flight scenario
     for scenario in flight_scenarios:
 
+        # choose array of candidate inlet Mach numbers to consider
         for M in np.linspace(utils.Defaults.M_min, utils.Defaults.M_max, utils.Defaults.N):
 
             try:
 
+                # create an engine corresponding to the given scenario and inlet Mach number
                 scenario.engines.append(Engine(no_of_stages, M, scenario))
 
             except Exception as error:
 
-                print(
-                    f"{utils.Colours.RED}Engine construction failed at M = {M}: {error}"
-                    f"{utils.Colours.END}"
-                )
+                # if an error occurs during construction, print to terminal and continue
+                #print(
+                #    f"{utils.Colours.RED}Engine construction failed at M = {M:.3g}: {error}"
+                #    f"{utils.Colours.END}"
+                #)
+                continue
 
     # plot key parameters of the candidate engines
     fig, ax = plt.subplots()
@@ -92,41 +96,47 @@ def main():
             areas, [engine.C_th for engine in scenario.engines],
             color = scenario.colour, linestyle = '', marker = 'x'
         )
+        #ax.plot(
+        #    areas, [engine.eta_p for engine in scenario.engines],
+        #    color = scenario.colour, linestyle = '', marker = 'v'
+        #)
         ax.plot(
-            areas, [engine.eta_p for engine in scenario.engines],
+            areas, [engine.nozzle.exit.M for engine in scenario.engines],
             color = scenario.colour, linestyle = '', marker = 'v'
         )
-
         ax.plot([],[], color = scenario.colour, label = scenario.label)
 
+    # add legend labels manually
     ax.plot([], [], linestyle = '', marker = '.', color  = 'k', label = "Jet velocity ratio")
     ax.plot([], [], linestyle = '', marker = 'x', color  = 'k', label = "Thrust coefficient")
-    ax.plot([], [], linestyle = '', marker = 'v', color  = 'k', label = "Polytropic efficiency")
+    ax.plot([], [], linestyle = '', marker = 'v', color  = 'k', label = "Inlet Mach number")
+
+    # plot configuration
     ax.set_xlabel("Area ratio")
     ax.grid()
     ax.legend()
 
-    # incorporate slider to select desired nozzle area ratio
+    # leave room at bottom of plot for slider
     plt.subplots_adjust(bottom=0.25)
 
+    # place slider below the plot and aligned with the x-axis
     axpos = ax.get_position()
+    slider_height = 0.03
+    slider_bottom = axpos.y0 - 0.2
 
-    # --- Place the slider directly below the plot, using same width and left alignment ---
-    slider_height = 0.03  # adjust as desired
-    slider_bottom = axpos.y0 - 0.2  # small gap below the x-axis
-
+    # add slider to plot
     slider_ax = fig.add_axes([
-        axpos.x0,              # align left edge
-        slider_bottom,         # vertical placement
-        axpos.width,           # same width as main axes
-        slider_height          # slider thickness
+        axpos.x0,
+        slider_bottom,
+        axpos.width,
+        slider_height
     ])
 
-    # Match the slider range to the x-axis limits
+    # match the slider range to the x-axis limits
     x_min, x_max = ax.get_xlim()
-    slider = Slider(slider_ax, "X", x_min, x_max, valinit=x_min)
+    slider = Slider(slider_ax, "Area ratio:", x_min, x_max, valinit=x_min)
 
-    # --- Update function for slider ---
+    # slider update function
     def update(val):
 
         fig.canvas.draw_idle()
@@ -225,13 +235,14 @@ def main():
 
                 break
 
-    print(f"{utils.Colours.GREEN}Blade configurations stored!{utils.Colours.END}")
-
     # analyse engine
     print(f"{utils.Colours.GREEN}Analysing engine...{utils.Colours.END}")
+    engine.collect_flow_states()
+    engine.visualise_velocity_triangles()
     engine.analyse()
     engine.collect_flow_states()
     engine.visualise_velocity_triangles()
+    plt.show()
 
     # store nominal flow and stage loading coefficients for each stage
     design_phi = [stage.phi for stage in engine.stages]

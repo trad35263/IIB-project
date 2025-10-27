@@ -311,55 +311,18 @@ Blade row configuration:
 
                 blade_row.colour = stage.colour
     
-    def solve_area_change(self, blade_row1, blade_row2):
-        """Solve for the flow state after an annulus area change with no work done."""
-        # find exit tangential velocity via conservation of angular momentum
-        v_t = (
-            blade_row1.exit.tangential_velocity * (blade_row1.tip_radius + blade_row1.hub_radius)
-            / (blade_row2.tip_radius + blade_row2.hub_radius)
-        )
-        
-        # stagnation pressure and temperature are conserved through area change
-        p_0 = blade_row1.exit.p_0
-        T_0 = blade_row1.exit.T_0
-
-        # establish velocity bounds, limiting v_max to the speed of sound
-        v_min = 1e-16
-        v_max = blade_row1.exit.a
-
-        # establish LHS quantity and solve iteratively
-        lhs = self.m_dot * R * T_0 / (blade_row2.area * p_0)
-        def residual(vx):
-            rhs = vx * np.power(1.0 - (vx**2 + v_t**2) / (2.0 * c_p * T_0), 1.0 / (gamma - 1.0))
-            return rhs - lhs
-
-        # uncomment for debugging
-        """xx = np.linspace(v_min, v_max, 20)
-        yy = residual(xx)
-        fig, ax = plt.subplots()
-        ax.plot(xx, yy)
-        ax.grid()
-        plt.show()"""
-
-        # solve numerically for vx and determine static quantities
-        v_x = brentq(residual, v_min, v_max)
-        Vr = np.sqrt(v_x**2 + v_t**2)
-        p = p_0 * np.power(1.0 - Vr**2 / (2.0 * c_p * T_0), gamma / (gamma - 1.0))
-        T = T_0 * (1.0 - Vr**2 / (2.0 * c_p * T_0))
-
-        # create instance of Flow_state class and return
-        exit_flow = Flow_state(v_x, v_t, p, T)
-        return exit_flow
-    
     def visualise_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
         # create matplotlib plot with multiple axes
-        height_ratio = 4 / len(self.stages)
+        # could not get this to work well!
+        """height_ratio = 24 / len(self.blade_rows)
         fig, (ax_upper, ax_lower) = plt.subplots(
-            2, 1, figsize = (12, 7),
+            2, 1, figsize = (9, 7),
             gridspec_kw={'height_ratios': [height_ratio, 1]},
             sharex = True
-        )
+        )"""
+        fig, ax_upper = plt.subplots(figsize = (10, 6))
+        fig, ax_lower = plt.subplots(figsize = (10, 6))
         ax_lower1 = ax_lower.twinx()
         ax_lower2 = ax_lower.twinx()
 
@@ -370,7 +333,7 @@ Blade row configuration:
             f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}\n"
             f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
         )
-        ax_upper.title.set_fontsize(12)
+        ax_upper.title.set_fontsize(10)
         ax_lower.title.set_text(
             f"Stagnation pressure ratio = {self.overall_p_0:.3g}\n"
             f"Stagnation temperature ratio = {self.overall_T_0:.3g}\n"
@@ -379,8 +342,19 @@ Blade row configuration:
         )
         ax_lower.title.set_fontsize(10)
 
-        # plot  quantities against blade row number
-        xx = np.arange(len(self.flow_states)) / 2 - 0.75
+        # plot quantities against blade row number
+        xx = np.arange(len(self.flow_states)) / 2 + 0.75
+        alpha = 0.5
+        ax_lower.plot(
+            xx, [flow_state.p_0 * utils.stagnation_pressure_ratio(flow_state.M)
+                 for flow_state in self.flow_states],
+            color = 'C1', alpha = alpha
+        )
+        ax_lower1.plot(
+            xx, [flow_state.T_0 * utils.stagnation_temperature_ratio(flow_state.M)
+                 for flow_state in self.flow_states],
+            color = 'C2', alpha = alpha
+        )
         ax_lower.plot(
             xx, [flow_state.p_0 for flow_state in self.flow_states],
             color = 'C1', label = 'Pressure'
@@ -413,6 +387,7 @@ Blade row configuration:
             camber_length = ll_0[-1]
             ll_0 = ll_0 / camber_length
 
+            # normalise camber line to unit camber length
             xx_0 = xx_0 / camber_length
             yy_0 = yy_0 / camber_length
 
@@ -545,36 +520,23 @@ Blade row configuration:
         # display all blade rows
         for index, blade_row in enumerate(self.blade_rows):
 
-            display_blade_row(blade_row, index)
+            display_blade_row(blade_row, index + 1)
 
-        #area_ratios = [self.intake.area_ratio]
-        """area_ratios = [blade_row.casing_area_ratio for blade_row in self.blade_rows]
-        areas = np.cumprod(area_ratios)""" # * self.intake.area_ratio
-        #for blade_row in self.blade_rows:
-            
-            #area_ratios.append(blade_row.casing_area_ratio)
+        # compute cumulative area ratios for plotting annulus area change
+        area_ratios = [blade_row.casing_area_ratio for blade_row in self.blade_rows]
+        area_ratios.append(self.nozzle.area_ratio)
+        areas = np.cumprod(area_ratios)
 
-        #area_ratios.append(self.nozzle.area_ratio)
-
-        """ax_upper.plot(np.arange(len(areas)), areas, color = 'k')
-        ax_upper.plot(np.arange(len(areas)), -np.array(areas), color = 'k')"""
-
-        #def display_nozzle(nozzle, index, scaling=1):
-            #"""Helper function to visualise a given nozzle's area change."""
-            #ax_upper.plot([index, index + 1], scaling * np.array([1, nozzle.area_ratio]), color = nozzle.colour)
-            #ax_upper.plot([index, index + 1], scaling * np.array([-1, -nozzle.area_ratio]), color = nozzle.colour)
-
-        # display intake and outlet nozzle
-        #display_nozzle(self.intake, -1)
-        #display_nozzle(self.nozzle, 2 * len(self.stages) + 1, areas[-1])
+        ax_upper.plot(np.arange(len(areas)) + 1, areas, color = 'k')
+        ax_upper.plot(np.arange(len(areas)) + 1, -np.array(areas), color = 'k')
 
         # label velocity arrows in legend
-        ax_upper.plot([], [], color = 'C0', label = 'Absolute flow velocity')
-        ax_upper.plot([], [], color = 'C3', label = 'Blade speeds')
+        ax_upper.plot([], [], color = 'C0', label = 'Absolute Mach number')
+        ax_upper.plot([], [], color = 'C4', label = 'Relative Mach number')
+        ax_upper.plot([], [], color = 'C3', label = 'Blade Mach number')
 
         # set axis limits and aspect ratio
-        #ax_upper.set_xlim(1e-6, len(self.stages) + 1 - 1e-6)
-        ax_upper.set_aspect('equal')
+        ax_upper.set_aspect('equal', adjustable='datalim')
 
         # set x-axis grid lines to be at integer intervals
         loc = plticker.MultipleLocator(base=1.0)
@@ -591,7 +553,6 @@ Blade row configuration:
         ax_lower.legend(
             lines_1 + lines_2 + lines_3,
             labels_1 + labels_2 + labels_3,
-            loc = 'right'
         )
 
         # colour plot ticks
@@ -601,23 +562,23 @@ Blade row configuration:
         ax_lower2.tick_params(axis = 'y', labelcolor = 'k')
 
         # ensure third y-axis labels appear without overlapping
-        ax_lower1.spines["right"].set_position(("axes", 1.01))
+        ax_lower1.spines["right"].set_position(("axes", 1.02))
         ax_lower1.spines["right"].set_visible(True)
-        ax_lower2.spines["right"].set_position(("axes", 1.1))
+        ax_lower2.spines["right"].set_position(("axes", 1.15))
         ax_lower2.spines["right"].set_visible(True)
 
         # set axis labels
-        ax_lower.set_xlabel("Blade row number")
+        ax_upper.set_xlabel("Blade row number")
         ax_upper.set_ylabel("Mach number", color = 'C0')
-        ax_lower.set_ylabel("Stagnation pressure ratio", color = 'C1')
-        ax_lower1.set_ylabel("Stagnation temperature ratio", color = 'C2')
+        
+        ax_lower.set_xlabel("Blade row number")
+        ax_lower.set_ylabel("Pressure ratio", color = 'C1')
+        ax_lower1.set_ylabel("Temperature ratio", color = 'C2')
         ax_lower2.set_ylabel("Mach number", color = 'k')
 
         # set grids on both plots
         ax_upper.grid()
         ax_lower.grid()
-
-        ax_upper.set_ylim(-1.2, 1.2)
 
         plt.tight_layout()
 

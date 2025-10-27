@@ -221,38 +221,25 @@ class Stage:
             T_1 = utils.stagnation_temperature_ratio(rotor.inlet.M) * rotor.inlet.T_0
             T_2 = utils.stagnation_temperature_ratio(rotor.exit.M) * rotor.exit.T_0
             T_3 = T_1 + (T_2 - T_1) / self.reaction
-            print(f"\nself.reaction: {self.reaction}")
-            print(f"T_1 = {T_1}")
-            print(f"T_2 = {T_2}")
-            print(f"T_3 = {T_3}")
-            print(f"T_3 / T_03 = {T_3 / stator.inlet.T_0}")
             M_exit = utils.invert(
                 utils.stagnation_temperature_ratio,
                 T_3 / stator.inlet.T_0
             )
-            print(f"M_2: {stator.inlet.M}")
-            print(f"f(M_2): {utils.mass_flow_function(stator.inlet.M)}")
-            print(f"cos_alpha2: {np.cos(stator.inlet.alpha)}")
-            print(f"M_3: {M_exit}")
-            print(f"f(M_3): {utils.mass_flow_function(M_exit)}")
 
-            # reaction cannot be achieved
+            # reaction cannot be achieved due to invalid exit Mach number
             if M_exit == None:
 
-                print(
-                    f"{utils.Colours.RED}Reaction of {self.reaction} could not be achieved! "
-                    f"Setting stator exit angle to zero.{utils.Colours.END}"
-                )
+                # print to terminal and set stator exit angle to zero
+                #print(
+                #    f"{utils.Colours.RED}Reaction of {self.reaction} could not be achieved!"
+                #    f"{utils.Colours.END}"
+                #)
                 M_exit, alpha_exit = zero_angle_stator()
 
+            # Mach number appears to be valid
             else:
 
                 # solve for exit angle
-                cos_alpha = (
-                    utils.mass_flow_function(stator.inlet.M) / utils.mass_flow_function(M_exit)
-                    * np.cos(stator.inlet.alpha) / stagnation_pressure_ratio
-                )
-                print(f"cos_alpha3: {cos_alpha}")
                 alpha_exit = (
                     np.arccos(
                         utils.mass_flow_function(stator.inlet.M) / utils.mass_flow_function(M_exit)
@@ -260,12 +247,14 @@ class Stage:
                     )
                 )
 
+                # reaction cannot be achieved due to invalid exit angle
                 if not np.isfinite(alpha_exit):
 
-                    print(
-                        f"{utils.Colours.RED}Reaction of {self.reaction} could not be achieved! "
-                        f"Setting stator exit angle to zero.{utils.Colours.END}"
-                    )
+                    # print to terminal and set stator exit angle to zero
+                    #print(
+                    #    f"{utils.Colours.RED}Reaction of {self.reaction} could not be achieved! "
+                    #    f"{utils.Colours.END}"
+                    #)
                     M_exit, alpha_exit = zero_angle_stator()
 
         # stagnation temperature is conserved across stator row

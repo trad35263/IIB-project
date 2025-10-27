@@ -20,9 +20,9 @@ class Defaults:
     stagnation_pressure_loss_coefficient = 0.02
 
     # code iteration parameters
-    M_min = 0.01
-    M_max = 0.5
-    N = 50
+    M_min = 0.05
+    M_max = 0.8
+    N = 200
 
     # default dimensional values
     engine_diameter = 0.65
