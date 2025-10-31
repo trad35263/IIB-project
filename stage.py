@@ -4,7 +4,6 @@ import utils
 from blade_row import Blade_row
 from flow_state import Flow_state
 
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import root_scalar
 

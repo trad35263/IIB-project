@@ -77,10 +77,10 @@ def main():
             except Exception as error:
 
                 # if an error occurs during construction, print to terminal and continue
-                #print(
-                #    f"{utils.Colours.RED}Engine construction failed at M = {M:.3g}: {error}"
-                #    f"{utils.Colours.END}"
-                #)
+                print(
+                    f"{utils.Colours.RED}Engine construction failed at M = {M:.3g}: {error}"
+                    f"{utils.Colours.END}"
+                )
                 continue
 
     # plot key parameters of the candidate engines

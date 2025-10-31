@@ -1,6 +1,7 @@
 # import modules
 
 import numpy as np
+from scipy.optimize import root
 
 from streamtube import Streamtube
 from flow_state import Flow_state
@@ -113,12 +114,55 @@ class Blade_row:
 
             self.inlet.append(Streamtube(flow_state, r, dr))
 
+    def rotor_design(self, phi, psi):
+        """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
+        # determine variation of phi, psi and blade Mach number across the span
+        for streamtube in self.inlet:
+
+            # determine local flow coefficient
+            streamtube.phi = (
+                phi
+                * streamtube.flow_state.M / self.inlet_mean.flow_state.M
+                * np.cos(streamtube.flow_state.alpha) / np.cos(self.inlet_mean.flow_state.alpha)
+                * np.sqrt(
+                    streamtube.flow_state.T / self.inlet_mean.flow_state.T
+                )
+                * self.inlet_mean.r / streamtube.r
+            )
+
+            # determine local stage loading coefficient
+            streamtube.psi = (
+                psi * np.power(streamtube.r / self.inlet_mean.r, utils.Defauls.vortex_exponent - 1)
+            )
+
+            # determine local blade Mach number
+            streamtube.M_blade = (
+                streamtube.flow_state.M * np.cos(streamtube.flow_state.alpha) / streamtube.phi
+            )
+
+            # determine relative Mach number and swirl angle via vector addition 
+            v1 = streamtube.flow_state.M * np.array(
+                [np.cos(streamtube.flow_state.alpha), np.sin(streamtube.flow_state.alpha)]
+            )
+            v2 = streamtube.M_blade * np.array([0, 1])
+            v3 = v1 - v2
+            streamtube.flow_state.M_rel = np.linalg.norm(v3)
+            streamtube.flow_state.beta = np.arctan2(v3[1], v3[0])
+
+            # determine relative stagnation pressure loss
+            relative_stagnation_pressure_ratio = (
+                1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(streamtube.flow_state.M_rel))
+            )
+
+        # set up 3N equations to solve for rotor exit conditions
+        pass
+
     def solve_blade_row(self):
         """Calculates conditions at outlet to the blade row, given the inlet conditions."""
         # consider stator case
         #if self.blade_speed_ratio == 0:
         if not self.is_rotor:
-            
+
             # find stagnation pressure ratio after stagnation pressure loss
             stagnation_pressure_ratio = (
                 1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(self.inlet.M))
@@ -134,12 +178,6 @@ class Blade_row:
             )
             exit_M = utils.invert(utils.mass_flow_function, exit_mass_flow_function)
             # do we need to catch errors here?
-
-            # find exit flow coefficient via conservation of mass
-            #exit_phi = (
-            #    self.inlet.phi * utils.stagnation_density_ratio(self.inlet.M)
-            #    / (utils.stagnation_density_ratio(exit_M) * stagnation_pressure_ratio)
-            #)
 
             # stagnation temperature is conserved across stator row
             T_0 = self.inlet.T_0
