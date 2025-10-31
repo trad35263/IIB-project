@@ -18,11 +18,13 @@ class Defaults:
     stage_loading_coefficient = 0.2
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.02
+    vortex_exponent = 1
 
     # code iteration parameters
     M_min = 0.05
     M_max = 0.8
-    N = 200
+    N = 1
+    no_of_annuli = 3
 
     # default dimensional values
     engine_diameter = 0.65
@@ -31,7 +33,7 @@ class Defaults:
     # area change ratios
     blade_row_area_ratio = 0.96
 
-    # values used for determining engine inlet conditions
+    # specify inlet swirl
     inlet_swirl = 0
 
 # 0.3 compressible flow perfect gas relations

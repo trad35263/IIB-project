@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from streamtube import Streamtube
 from flow_state import Flow_state
 import utils
 
@@ -34,7 +35,8 @@ class Blade_row:
         self.casing_area_ratio = casing_area_ratio
         self.hub_area_ratio = hub_area_ratio
         self.Y_p = Y_p
-        self.is_rotor = is_rotor
+
+        # initialise inlet and exit variables to store a list of streamtubes
         self.inlet = None
         self.exit = None
 
@@ -42,29 +44,7 @@ class Blade_row:
         self.colour = 'k'
 
         # categorise blade row
-        self.categorise()
-
-    def categorise(self):
-        """Categorise blade row as Rotor, Stator or Contra-Rotating."""
-        # identify rotors
-        #if self.blade_speed_ratio > 0:
-        if self.is_rotor:
-
-            self.label = f"{utils.Colours.ORANGE}Rotor{utils.Colours.END}"
-            self.short_label = f"{utils.Colours.ORANGE}R{utils.Colours.END}"
-
-        # identify stators
-        #elif self.blade_speed_ratio == 0:
-        else:
-
-            self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
-            self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
-
-        # all other cases must be counter-rotating
-        #else:
-
-        #    self.label = f"{utils.Colours.PURPLE}Contra-Rotating{utils.Colours.END}"
-        #    self.short_label = f"{utils.Colours.PURPLE}CR{utils.Colours.END}"
+        self.categorise(is_rotor)
 
     def __str__(self):
         """Prints a string representation of the blade row."""
@@ -85,6 +65,53 @@ class Blade_row:
         string += "\n"
 
         return string
+
+    def categorise(self, is_rotor):
+        """Categorise blade row as Rotor or Stator."""
+        # identify rotors
+        if is_rotor:
+
+            self.label = f"{utils.Colours.ORANGE}Rotor{utils.Colours.END}"
+            self.short_label = f"{utils.Colours.ORANGE}R{utils.Colours.END}"
+
+        # identify stators
+        else:
+
+            self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
+            self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
+    
+    def set_inlet_conditions(self, M, alpha):
+        """Distributes the given inlet conditions across several annular streamtubes."""
+        self.inlet = []
+        for index in range(utils.Defaults.no_of_annuli):
+            
+            if index == 0:
+
+                r = (
+                    (utils.Defaults.hub_tip_ratio + np.sqrt(
+                        utils.Defaults.hub_tip_ratio**2 * (1 - 1 / utils.Defaults.no_of_annuli)
+                        + 1 / utils.Defaults.no_of_annuli
+                    )) / 2
+                )
+                dr = r - utils.Defaults.hub_tip_ratio
+                flow_state = Flow_state(
+                    M, alpha, 1, 1
+                )
+            
+            else:
+
+                r = (
+                    (self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
+                        (self.inlet[index - 1].r + self.inlet[index - 1].dr)**2
+                        - (utils.Defaults.hub_tip_ratio**2 - 1) / utils.Defaults.no_of_annuli
+                    )) / 2
+                )
+                dr = r - self.inlet[index - 1].r - self.inlet[index - 1].dr
+                flow_state = Flow_state(
+                    M, alpha, 1, 1
+                )
+
+            self.inlet.append(Streamtube(flow_state, r, dr))
 
     def solve_blade_row(self):
         """Calculates conditions at outlet to the blade row, given the inlet conditions."""

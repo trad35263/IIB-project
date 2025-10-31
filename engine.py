@@ -32,64 +32,24 @@ class Engine:
         self.C_th_design = scenario.C_th
         self.design()
 
-        return
-
-        # create intake
-        """self.intake = Nozzle(
-            utils.Defaults.intake_area_ratio
-        )
-
-        # create inlet guide vanes
-        self.blade_rows = []
-        self.inlet_guide_vanes = Blade_row(
-            0,
-            utils.Defaults.inlet_guide_vanes_blade_angle,
-            1,
-            1,
-            utils.Defaults.stagnation_pressure_loss_coefficient
-        )
-        self.blade_rows.append(self.inlet_guide_vanes)
-
-        # create stages
-        self.stages = []
-        for i in range(no_of_stages):
-
-            self.stages.append(Stage())
-            self.blade_rows.extend(self.stages[-1].blade_rows)
-
-        # create outlet guide vanes
-        self.outlet_guide_vanes = Blade_row(
-            0,
-            utils.Defaults.outlet_guide_vanes_blade_angle,
-            1,
-            1,
-            utils.Defaults.stagnation_pressure_loss_coefficient
-        )
-        self.blade_rows.append(self.outlet_guide_vanes)
-
-        # create exit nozzle
-        self.nozzle = Nozzle(
-            utils.Defaults.nozzle_area_ratio
-        )"""
-
     def __str__(self):
-        """Print a simplifed summary of the information contained in the class."""
-        # print header and state number of blade rows
-        string = f"""
-{utils.Colours.UNDERLINE}Engine Summary{utils.Colours.END}
+        """Prints a string representation of the stage."""
+        string = ""
+        for name, value in self.__dict__.items():
 
-Number of stages: {utils.Colours.GREEN}{len(self.stages)}{utils.Colours.END}
-Blade row configuration:
-"""
+            if isinstance(value, (int, float)):
 
-        # print abbreviated form of each type of blade row and return final string
-        for stage in self.stages:
+                if ("alpha" in name or "angle" in name or "beta" in name) and not value == 0:
 
-            for blade_row in stage.blade_rows:
+                    string += f"{name}: {utils.Colours.GREEN}{utils.rad_to_deg(value):.4g} °"
+                    string += f"{utils.Colours.END}\n"
 
-                string += f"{blade_row.short_label}-"
+                else:
 
-        string = string[:-1]
+                    string += f"{name}: {utils.Colours.GREEN}{value:.4g}{utils.Colours.END}\n"
+
+        string += "\n"
+
         return string
 
     def __repr__(self):
@@ -121,9 +81,11 @@ Blade row configuration:
             if index == 0:
 
                 # set first stage to default inlet conditions
-                stage.blade_rows[0].inlet = (
+                """stage.blade_rows[0].inlet = (
                     Flow_state(self.M_1, utils.Defaults.inlet_swirl, 1, 1)
-                )
+                )"""
+                print("hi")
+                stage.blade_rows[0].set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
 
             else:
 
