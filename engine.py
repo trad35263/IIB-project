@@ -86,6 +86,7 @@ class Engine:
                 )"""
                 print("hi")
                 stage.blade_rows[0].set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
+                stage.blade_rows[0].rotor_design(stage.phi, stage.psi)
 
             else:
 

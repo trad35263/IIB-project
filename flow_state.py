@@ -22,11 +22,14 @@ class Flow_state:
     T_0_ratio : float
         Ratio of stagnation temperature at current position in system to the inlet condition.
     """
-    def __init__(self, M, alpha, T_0, p_0, M_rel = None, beta = None):
+    def __init__(self, M, alpha, T_0, p_0, s, M_rel = None, beta = None):
+        """Creates an instance of the Flow_state class."""
+        # stored passed arguments
         self.M = M
         self.alpha = alpha
         self.T_0 = T_0
         self.p_0 = p_0
+        self.s = s
         self.M_rel = M_rel
         self.beta = beta
 
