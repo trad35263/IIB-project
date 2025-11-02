@@ -69,7 +69,9 @@ def main():
         # choose array of candidate inlet Mach numbers to consider
         for M in np.linspace(utils.Defaults.M_min, utils.Defaults.M_max, utils.Defaults.N):
 
-            try:
+            scenario.engines.append(Engine(no_of_stages, M, scenario))
+
+            """try:
 
                 # create an engine corresponding to the given scenario and inlet Mach number
                 scenario.engines.append(Engine(no_of_stages, M, scenario))
@@ -81,7 +83,7 @@ def main():
                     f"{utils.Colours.RED}Engine construction failed at M = {M:.3g}: {error}"
                     f"{utils.Colours.END}"
                 )
-                continue
+                continue"""
 
     # plot key parameters of the candidate engines
     fig, ax = plt.subplots()

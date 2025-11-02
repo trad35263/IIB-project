@@ -17,21 +17,22 @@ class Defaults:
     flow_coefficient = 0.5
     stage_loading_coefficient = 0.2
     reaction = 0.8
-    stagnation_pressure_loss_coefficient = 0.02
+    stagnation_pressure_loss_coefficient = 0.00
     vortex_exponent = 1
 
     # code iteration parameters
     M_min = 0.05
     M_max = 0.8
     N = 1
-    no_of_annuli = 3
+    no_of_annuli = 2
 
     # default dimensional values
     engine_diameter = 0.65
     hub_tip_ratio = 0.2
 
     # area change ratios
-    blade_row_area_ratio = 0.96
+    blade_row_radius = 1
+    blade_row_radius_ratio = 1
 
     # specify inlet swirl
     inlet_swirl = 0

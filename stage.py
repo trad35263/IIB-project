@@ -29,8 +29,7 @@ class Stage:
         # create rotor
         self.blade_rows.append(
             Blade_row(
-                utils.Defaults.blade_row_area_ratio,
-                1,
+                utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
                 True
             )
@@ -39,8 +38,7 @@ class Stage:
         # create stator
         self.blade_rows.append(
             Blade_row(
-                utils.Defaults.blade_row_area_ratio,
-                1,
+                utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
                 False
             )

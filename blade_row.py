@@ -2,6 +2,7 @@
 
 import numpy as np
 from scipy.optimize import root
+from scipy.optimize import least_squares
 
 from streamtube import Streamtube
 from flow_state import Flow_state
@@ -25,21 +26,19 @@ class Blade_row:
         Ratio of blade row hub area to a reference area.
     Y_p : float
         Stagnation pressure loss coefficient.
-    inlet : Flow_state
-        Container to store inlet fluid conditions.
-    exit : Flow_state
-        Container to store exit fluid conditions.
+    is_rotor : boolean
+        Reference to whether or not to categorise the blade row as a rotor or a stator.
     """
-    def __init__(self, casing_area_ratio, hub_area_ratio, Y_p, is_rotor=False):
+    def __init__(self, r_inlet, Y_p, is_rotor=False):
         """Create instance of the Blade_row class."""
         # assign attributes
-        self.casing_area_ratio = casing_area_ratio
-        self.hub_area_ratio = hub_area_ratio
+        self.r_inlet = r_inlet
         self.Y_p = Y_p
 
-        # initialise inlet and exit variables to store a list of streamtubes
-        self.inlet = None
-        self.exit = None
+        # derive inlet and exit areas
+        self.r_exit = self.r_inlet * utils.Defaults.blade_row_radius_ratio
+        self.area_inlet = np.pi *  (self.r_inlet**2 - utils.Defaults.hub_tip_ratio**2)
+        self.area_exit = np.pi * (self.r_exit**2 - utils.Defaults.hub_tip_ratio**2)
 
         # assign the default colour of black
         self.colour = 'k'
@@ -84,7 +83,6 @@ class Blade_row:
     def set_inlet_conditions(self, M, alpha):
         """Distributes the given inlet conditions across several annular streamtubes."""
         # create list of inlet streamtubes and iterate over each annulus of interest
-        print("setting inlet conditions...")
         self.inlet = []
         for index in range(utils.Defaults.no_of_annuli):
             
@@ -121,10 +119,34 @@ class Blade_row:
             # store instance of the streamtube class as an inlet condition
             self.inlet.append(Streamtube(flow_state, r, dr))
 
+        self.mean_line()
+        print(f"{utils.Colours.PURPLE}Inlet conditions:{utils.Colours.END}")
+        for streamtube in self.inlet:
+
+            print(streamtube)
+
+        print(self.inlet_mean)
+
+    def mean_line(self):
+        """Determines the mean line inlet conditions from a series of annular streamtubes."""
+        r_mean = (self.r_inlet + utils.Defaults.hub_tip_ratio) / 2
+        rr = [streamtube.r for streamtube in self.inlet]
+        quantities = ["M", "alpha", "T_0", "p_0", "s"]
+        interp_values = {
+            q: np.interp(r_mean, rr, [getattr(st.flow_state, q) for st in self.inlet])
+            for q in quantities
+        }
+        M_mean, alpha_mean, T_0_mean, p_0_mean, s_mean = [interp_values[q] for q in quantities]
+        flow_state = Flow_state(
+            M_mean, alpha_mean, T_0_mean, p_0_mean, s_mean
+        )
+        self.inlet_mean = Streamtube(
+            flow_state, r_mean, 0
+        )
+
     def rotor_design(self, phi, psi):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
         # determine variation of phi, psi and blade Mach number across the span
-        print("Designing rotor...")
         for streamtube in self.inlet:
 
             # determine local flow coefficient
@@ -138,7 +160,7 @@ class Blade_row:
 
             # determine local stage loading coefficient
             streamtube.psi = (
-                psi * np.power(streamtube.r / self.inlet_mean.r, utils.Defauls.vortex_exponent - 1)
+                psi * np.power(streamtube.r / self.inlet_mean.r, utils.Defaults.vortex_exponent - 1)
             )
 
             # determine local blade Mach number
@@ -187,8 +209,6 @@ class Blade_row:
             # add streamtube thicknesses to matrix of input variables
             vars_matrix = np.column_stack((vars_matrix, dr_list))
 
-            print(f"vars_matrix: {vars_matrix}")
-
             # initialise empty lists of guessed variables
             M_blade_list = np.zeros(len(self.inlet))
             M_list = np.zeros(len(self.inlet))
@@ -204,9 +224,10 @@ class Blade_row:
                 # find local blade Mach number at exit to the rotor row
                 M_blade_list[index] = (
                     streamtube.M_blade * np.sqrt(
-                        utils.stagnation_temperature_ratio(streamtube.M_rel)
-                        / utils.stangnation_temperature_ratio(M_rel)
+                        utils.stagnation_temperature_ratio(streamtube.flow_state.M_rel)
+                        / utils.stagnation_temperature_ratio(M_rel)
                     )
+                    * r / streamtube.r
                 )
 
                 # determine absolute Mach number and swirl angle via vector addition 
@@ -231,9 +252,10 @@ class Blade_row:
                 # determine residual for continuity equation
                 solutions[index][0] = (
                     utils.mass_flow_function(streamtube.flow_state.M_rel)
-                    * streamtube.A / (r * dr)
+                    * streamtube.A / (4 * np.pi * r * dr)
                     * np.cos(streamtube.flow_state.beta) / np.cos(beta)
                     / relative_stagnation_pressure_ratio
+                    - utils.mass_flow_function(M_rel)
                 )
 
                 # determine residual for specified stage loading
@@ -260,7 +282,7 @@ class Blade_row:
                 )
 
                 # determine residual for radial equilibrium equation
-                if index < self.inlet - 1:
+                if index < len(self.inlet) - 1:
 
                     term_1 = (
                         utils.stagnation_temperature_ratio(M_list[index])
@@ -308,12 +330,101 @@ class Blade_row:
 
             # final residual comes from constraint for all areas to sum to the exit area
             solutions[-1][-1] = (
-                np.sum([var[2] * var[3] for var in vars_matrix]) - self.area
+                np.sum([4 * np.pi * var[2] * var[3] for var in vars_matrix]) - self.area_exit
             )
 
             # flatten solutions matrix and return
             solutions = solutions.ravel()
             return solutions
+        
+        x0 = np.zeros((len(self.inlet), 3))
+        for index, streamtube in enumerate(self.inlet):
+
+            x0[index] = [
+                0.9 * streamtube.flow_state.M_rel,
+                0.9 * streamtube.flow_state.beta,
+                streamtube.r
+            ]
+
+        x0 = x0.ravel()
+        lower = [0, -np.pi / 2, utils.Defaults.hub_tip_ratio]
+        upper = [1, np.pi / 2, 1]
+        lower = np.tile(lower, (len(self.inlet), 1)).ravel()
+        upper = np.tile(upper, (len(self.inlet), 1)).ravel()
+        sol = least_squares(equations, x0, bounds = (lower, upper))
+        print(f"Success: {utils.Colours.PURPLE}{sol.success}{utils.Colours.END}")
+
+        # separate out solution variables
+        M_rel_list = sol.x[0::3]
+        beta_list = sol.x[1::3]
+        r_list = sol.x[2::3]
+
+        self.exit = []
+
+        for (streamtube, M_rel, beta, r) in zip(self.inlet, M_rel_list, beta_list, r_list):
+
+            # find new blade Mach number
+            M_blade = (
+                streamtube.M_blade * np.sqrt(
+                    utils.stagnation_temperature_ratio(streamtube.flow_state.M_rel)
+                    / utils.stagnation_temperature_ratio(M_rel)
+                )
+                * r / streamtube.r
+            )
+
+            # determine absolute Mach number and swirl angle via vector addition
+            v1 = M_rel * np.array([np.cos(beta), np.sin(beta)])
+            v2 = M_blade * np.array([0, 1])
+            v3 = v1 + v2
+            M = np.linalg.norm(v3)
+            alpha = np.arctan2(v3[1], v3[0])
+
+            print(f"M: {M}")
+            print(f"alpha: {utils.rad_to_deg(alpha)} deg")
+            print(f"r: {r}")
+            print(f"M_blade: {M_blade}\n")
+
+            T_0 = (
+                streamtube.flow_state.T_0 * (
+                    1 + (utils.gamma - 1) * streamtube.psi * streamtube.M_blade**2
+                    * utils.stagnation_temperature_ratio(streamtube.flow_state.M)
+                )
+            )
+
+            print(f"T_0: {T_0}")
+
+            T_0 = (
+                streamtube.flow_state.T_0
+                / utils.stagnation_temperature_ratio(M)
+                * utils.stagnation_temperature_ratio(M_rel)
+                / utils.stagnation_temperature_ratio(streamtube.flow_state.M_rel)
+                * utils.stagnation_temperature_ratio(streamtube.flow_state.M)
+            )
+
+            p_0 = (
+                streamtube.flow_state.p_0
+                / utils.stagnation_pressure_ratio(M)
+                * utils.stagnation_pressure_ratio(M_rel)
+                / utils.stagnation_pressure_ratio(streamtube.flow_state.M_rel)
+                * utils.stagnation_pressure_ratio(streamtube.flow_state.M)
+                * relative_stagnation_pressure_ratio
+            )
+
+            s = (
+                streamtube.flow_state.s + np.log(
+                    utils.stagnation_temperature_ratio(M_rel)
+                    / utils.stagnation_temperature_ratio(streamtube.flow_state.M_rel)
+                ) / (utils.gamma - 1)
+                + np.log(
+                    utils.stagnation_pressure_ratio(M_rel)
+                    / utils.stagnation_pressure_ratio(streamtube.flow_state.M_rel)
+                    * relative_stagnation_pressure_ratio
+                ) / utils.gamma
+            )
+
+            flow_state = Flow_state(
+                M, alpha, T_0, p_0, s
+            )
 
     def stator_design(self):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""

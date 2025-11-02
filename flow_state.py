@@ -33,6 +33,10 @@ class Flow_state:
         self.M_rel = M_rel
         self.beta = beta
 
+        # calculate static quantities
+        self.T = T_0 * utils.stagnation_temperature_ratio(M)
+        self.p = p_0 * utils.stagnation_pressure_ratio(M)
+
     def __str__(self):
         """Prints a string representation of the flow state."""
         string = ""

@@ -67,7 +67,7 @@ class Engine:
 
     def design(self):
         """Determines appropriate values for blade metal angles for the given requirements."""
-        # create the appropriate number of empty stages
+        # create the appropriate number of empty stages and blade rows
         self.stages = []
         self.blade_rows = []
         for i in range(self.no_of_stages):
@@ -84,8 +84,8 @@ class Engine:
                 """stage.blade_rows[0].inlet = (
                     Flow_state(self.M_1, utils.Defaults.inlet_swirl, 1, 1)
                 )"""
-                print("hi")
                 stage.blade_rows[0].set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
+                print(f"{utils.Colours.GREEN}Designing rotor...{utils.Colours.END}")
                 stage.blade_rows[0].rotor_design(stage.phi, stage.psi)
 
             else:

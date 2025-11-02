@@ -46,6 +46,4 @@ class Streamtube:
 
                     string += f"{name}: {utils.Colours.GREEN}{value:.4g}{utils.Colours.END}\n"
 
-        string += "\n"
-
         return string
