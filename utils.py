@@ -15,16 +15,16 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # define non-dimensional stage parameters
     flow_coefficient = 0.5
-    stage_loading_coefficient = 0.2
+    stage_loading_coefficient = 0.4
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
     vortex_exponent = -0.5
 
     # code iteration parameters
-    M_min = 0.01
+    M_min = 0.05
     M_max = 0.8
     N = 1
-    no_of_annuli = 2
+    no_of_annuli = 5
 
     # default dimensional values
     engine_diameter = 0.65

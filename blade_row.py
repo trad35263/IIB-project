@@ -182,15 +182,16 @@ class Blade_row:
                 1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(streamtube.flow_state.M_rel))
             )
 
+        self.exit = np.empty((len(self.inlet),), dtype = object)
+
         def equations(vars):
             """Series of equations to solve the root of."""
             # reshape input vars for iteration
-            vars_matrix = vars.reshape((len(self.inlet), 3))
-            solutions = np.zeros_like(vars_matrix)
-            self.exit = []
+            vars = vars.reshape((len(self.inlet), 3))
+            solutions = np.zeros_like(vars)
 
             # create empty list to store streamtube thicknesses and iterate
-            for index, var in enumerate(vars_matrix):
+            for index, var in enumerate(vars):
 
                 flow_state = Flow_state(
                     0, 0, 0, 0, 0, var[0], var[1]
@@ -200,27 +201,17 @@ class Blade_row:
                 if index == 0:
 
                     # set thickness using hub radius
-                    dr = vars_matrix[0][2] - utils.Defaults.hub_tip_ratio
-                    self.exit.append(Streamtube(flow_state, var[2], dr))
+                    dr = vars[0][2] - utils.Defaults.hub_tip_ratio
+                    self.exit[index] = Streamtube(flow_state, var[2], dr)
 
                 # for all other streamtubes
                 else:
 
                     # set thickness using previous radius
                     dr = var[2] - self.exit[index - 1].r - self.exit[index - 1].dr
-                    self.exit.append(Streamtube(flow_state, var[2], dr))
-
-            # add streamtube thicknesses to matrix of input variables
-            #vars_matrix = np.column_stack((vars_matrix, dr_list))
-
-            # initialise empty lists of guessed variables
-            #M_blade_list = np.zeros(len(self.inlet))
-            #M_list = np.zeros(len(self.inlet))
-            #alpha_list = np.zeros(len(self.inlet))
-            #T_0_ratio_list = np.zeros(len(self.inlet))
+                    self.exit[index] = Streamtube(flow_state, var[2], dr)
 
             # iterate over all streamtubes and sets of variables
-            #for index, (streamtube, var) in enumerate(zip(self.inlet, vars_matrix)):
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
                 # find local blade Mach number at exit to the rotor row
@@ -262,9 +253,6 @@ class Blade_row:
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
-                # separate variables out
-                #M_rel, beta, r, dr = var
-
                 # determine residual for continuity equation
                 solutions[index][0] = (
                     utils.mass_flow_function(inlet.flow_state.M_rel)
@@ -275,15 +263,6 @@ class Blade_row:
                 )
 
                 # determine residual for specified stage loading
-                """solutions[index][1] = (
-                    1 - inlet.psi + (
-                        exit.flow_state.M_rel * np.sin(exit.flow_state.beta) * np.sqrt(
-                            utils.stagnation_temperature_ratio(exit.flow_state.M_rel)
-                            / utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
-                        ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                    ) / inlet.M_blade
-                )"""
-
                 solutions[index][1] = (
                     inlet.psi - (
                         exit.flow_state.M * np.sin(exit.flow_state.alpha) * np.sqrt(
@@ -292,19 +271,6 @@ class Blade_row:
                         ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
                     ) / inlet.M_blade
                 )
-
-                # find non-dimensional entropy
-                """s_2i = (
-                    streamtube.flow_state.s + np.log(
-                        utils.stagnation_temperature_ratio(M_rel)
-                        / utils.stagnation_temperature_ratio(streamtube.flow_state.M_rel)
-                    ) / (utils.gamma - 1)
-                    - np.log(
-                        utils.stagnation_pressure_ratio(M_rel)
-                        / utils.stagnation_pressure_ratio(streamtube.flow_state.M_rel)
-                        * relative_stagnation_pressure_ratio
-                    ) / utils.gamma
-                )"""
 
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
@@ -350,12 +316,13 @@ class Blade_row:
                         term_1 + term_2 + term_3 + term_4
                     )
 
-                    print("\n---------------------------")
+                    # debugging
+                    """print("\n---------------------------")
                     print(f"term_1: {term_1}")
                     print(f"term_2: {term_2}")
                     print(f"term_3: {term_3}")
                     print(f"term_4: {term_4}")
-                    print(f"solutions[index][2]: {solutions[index][2]}")
+                    print(f"solutions[index][2]: {solutions[index][2]}")"""
 
             # final residual comes from constraint for all areas to sum to the exit area
             solutions[-1][-1] = (
@@ -392,19 +359,33 @@ class Blade_row:
 
         if sol.status == 1:
 
-            print(sol.x)
-            print(sol.fun)
+            print(f"sol.x: {sol.x}")
+            print(f"sol.fun: {sol.fun}")
 
         else:
 
             print(sol)
 
+        # iterate over all inlet-exit pairs
+        for (inlet, exit) in zip(self.inlet, self.exit):
+
+            # find new stagnation pressure and use to find static pressure
+            exit.flow_state.p_0 = (
+                inlet.flow_state.p_0
+                / utils.stagnation_pressure_ratio(exit.flow_state.M)
+                * utils.stagnation_pressure_ratio(exit.flow_state.M_rel)
+                / utils.stagnation_pressure_ratio(inlet.flow_state.M_rel)
+                * utils.stagnation_pressure_ratio(inlet.flow_state.M)
+                * relative_stagnation_pressure_ratio
+            )
+            exit.flow_state.static_quantities()
+        
+        return
+
         # separate out solution variables
         M_rel_list = sol.x[0::3]
         beta_list = sol.x[1::3]
         r_list = sol.x[2::3]
-
-        print(f"max M_rel: {max(M_rel_list)}")
 
         # find corresponding list of streamtube thicknesses
         dr_list = np.zeros_like(r_list)
@@ -583,7 +564,6 @@ class Blade_row:
         print(f"{self.area_exit}")
         x = np.sum([exit.A for exit in self.exit])
         print(f"{x}")
-
 
     def stator_design(self):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
