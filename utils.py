@@ -18,10 +18,10 @@ class Defaults:
     stage_loading_coefficient = 0.2
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = 1
+    vortex_exponent = -0.5
 
     # code iteration parameters
-    M_min = 0.05
+    M_min = 0.01
     M_max = 0.8
     N = 1
     no_of_annuli = 2

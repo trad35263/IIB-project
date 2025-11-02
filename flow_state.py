@@ -34,8 +34,7 @@ class Flow_state:
         self.beta = beta
 
         # calculate static quantities
-        self.T = T_0 * utils.stagnation_temperature_ratio(M)
-        self.p = p_0 * utils.stagnation_pressure_ratio(M)
+        self.static_quantities()
 
     def __str__(self):
         """Prints a string representation of the flow state."""
@@ -56,3 +55,9 @@ class Flow_state:
         string += "\n"
 
         return string
+    
+    def static_quantities(self):
+        """Determines static quantities via Mach number relations."""
+        # calculate static quantities
+        self.T = self.T_0 * utils.stagnation_temperature_ratio(self.M)
+        self.p = self.p_0 * utils.stagnation_pressure_ratio(self.M)
