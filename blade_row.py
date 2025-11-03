@@ -121,22 +121,27 @@ class Blade_row:
 
         self.mean_line()
         print(f"{utils.Colours.PURPLE}Inlet conditions:{utils.Colours.END}")
-        for streamtube in self.inlet:
+        for inlet in self.inlet:
 
-            print(streamtube)
+            print(inlet)
 
         print(self.inlet_mean)
 
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
+        # determine mean radius and array of radii over which to interpolate
         r_mean = (self.r_inlet + utils.Defaults.hub_tip_ratio) / 2
-        rr = [streamtube.r for streamtube in self.inlet]
+        rr = [inlet.r for inlet in self.inlet]
+
+        # establish quantities of interest and interpolate
         quantities = ["M", "alpha", "T_0", "p_0", "s"]
         interp_values = {
             q: np.interp(r_mean, rr, [getattr(st.flow_state, q) for st in self.inlet])
             for q in quantities
         }
         M_mean, alpha_mean, T_0_mean, p_0_mean, s_mean = [interp_values[q] for q in quantities]
+
+        # create Flow_state of interpolated mean-line quantities and store as a Streamtube
         flow_state = Flow_state(
             M_mean, alpha_mean, T_0_mean, p_0_mean, s_mean
         )
@@ -147,52 +152,53 @@ class Blade_row:
     def rotor_design(self, phi, psi):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
         # determine variation of several parameters across the blade span at inlet
-        for streamtube in self.inlet:
+        for inlet in self.inlet:
 
             # determine local flow coefficient
-            streamtube.phi = (
+            inlet.phi = (
                 phi
-                * streamtube.flow_state.M / self.inlet_mean.flow_state.M
-                * np.cos(streamtube.flow_state.alpha) / np.cos(self.inlet_mean.flow_state.alpha)
-                * np.sqrt(streamtube.flow_state.T / self.inlet_mean.flow_state.T)
-                * self.inlet_mean.r / streamtube.r
+                * inlet.flow_state.M / self.inlet_mean.flow_state.M
+                * np.cos(inlet.flow_state.alpha) / np.cos(self.inlet_mean.flow_state.alpha)
+                * np.sqrt(inlet.flow_state.T / self.inlet_mean.flow_state.T)
+                * self.inlet_mean.r / inlet.r
             )
 
             # determine local stage loading coefficient
-            streamtube.psi = (
-                psi * np.power(streamtube.r / self.inlet_mean.r, utils.Defaults.vortex_exponent - 1)
+            inlet.psi = (
+                psi * np.power(inlet.r / self.inlet_mean.r, utils.Defaults.vortex_exponent - 1)
             )
 
             # determine local blade Mach number
-            streamtube.M_blade = (
-                streamtube.flow_state.M * np.cos(streamtube.flow_state.alpha) / streamtube.phi
+            inlet.M_blade = (
+                inlet.flow_state.M * np.cos(inlet.flow_state.alpha) / inlet.phi
             )
 
             # determine relative Mach number and swirl angle via vector addition 
-            v1 = streamtube.flow_state.M * np.array(
-                [np.cos(streamtube.flow_state.alpha), np.sin(streamtube.flow_state.alpha)]
+            v1 = inlet.flow_state.M * np.array(
+                [np.cos(inlet.flow_state.alpha), np.sin(inlet.flow_state.alpha)]
             )
-            v2 = streamtube.M_blade * np.array([0, 1])
+            v2 = inlet.M_blade * np.array([0, 1])
             v3 = v1 - v2
-            streamtube.flow_state.M_rel = np.linalg.norm(v3)
-            streamtube.flow_state.beta = np.arctan2(v3[1], v3[0])
+            inlet.flow_state.M_rel = np.linalg.norm(v3)
+            inlet.flow_state.beta = np.arctan2(v3[1], v3[0])
 
             # determine relative stagnation pressure loss
-            relative_stagnation_pressure_ratio = (
-                1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(streamtube.flow_state.M_rel))
+            inlet.p_0_rel_ratio = (
+                1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(inlet.flow_state.M_rel))
             )
 
         self.exit = np.empty((len(self.inlet),), dtype = object)
 
         def equations(vars):
             """Series of equations to solve the root of."""
-            # reshape input vars for iteration
+            # reshape input variables for iteration and create empty solutions array
             vars = vars.reshape((len(self.inlet), 3))
             solutions = np.zeros_like(vars)
 
-            # create empty list to store streamtube thicknesses and iterate
+            # iterate over all sets of input variables
             for index, var in enumerate(vars):
 
+                # create a holder flow_state to be populated
                 flow_state = Flow_state(
                     0, 0, 0, 0, 0, var[0], var[1]
                 )
@@ -201,18 +207,26 @@ class Blade_row:
                 if index == 0:
 
                     # set thickness using hub radius
-                    dr = vars[0][2] - utils.Defaults.hub_tip_ratio
-                    self.exit[index] = Streamtube(flow_state, var[2], dr)
+                    dr = var[2] - utils.Defaults.hub_tip_ratio
 
                 # for all other streamtubes
                 else:
 
                     # set thickness using previous radius
                     dr = var[2] - self.exit[index - 1].r - self.exit[index - 1].dr
-                    self.exit[index] = Streamtube(flow_state, var[2], dr)
 
-            # iterate over all streamtubes and sets of variables
+                # create streamtube and store at exit to the rotor
+                self.exit[index] = Streamtube(flow_state, var[2], dr)
+
+            # iterate over all inlet-exit pairs
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+                # determine change in relative stagnation temperature
+                inlet.T_0_rel_ratio = (
+                    1 - inlet.M_blade**2 * (utils.gamma - 1)
+                    * utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
+                    * (1 - exit.r / inlet.r)
+                )
 
                 # find local blade Mach number at exit to the rotor row
                 exit.M_blade = (
@@ -232,23 +246,25 @@ class Blade_row:
 
                 # find local stagnation temperature ratio
                 exit.flow_state.T_0 = (
-                    1 + (utils.gamma - 1) * streamtube.psi * streamtube.M_blade**2
-                    * utils.stagnation_temperature_ratio(streamtube.flow_state.M)
+                    1 + (utils.gamma - 1) * inlet.psi * inlet.M_blade**2
+                    * utils.stagnation_temperature_ratio(inlet.flow_state.M)
                 )
                 exit.flow_state.static_quantities()
 
                 # find non-dimensional entropy
                 exit.flow_state.s = (
                     inlet.flow_state.s + np.log(
-                        utils.stagnation_temperature_ratio(exit.flow_state.M_rel)
-                        / utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
+                        exit.flow_state.T / inlet.flow_state.T
                     ) / (utils.gamma - 1)
                     - np.log(
                         utils.stagnation_pressure_ratio(exit.flow_state.M_rel)
                         / utils.stagnation_pressure_ratio(inlet.flow_state.M_rel)
-                        * relative_stagnation_pressure_ratio
+                        * inlet.p_0_rel_ratio
                     ) / utils.gamma
                 )
+
+                print(f"inlet.flow_state.s: {inlet.flow_state.s}")
+                print(f"exit.flow_state.s: {exit.flow_state.s}")
 
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
@@ -256,18 +272,19 @@ class Blade_row:
                 # determine residual for continuity equation
                 solutions[index][0] = (
                     utils.mass_flow_function(inlet.flow_state.M_rel)
+                    * np.sqrt(inlet.T_0_rel_ratio)
                     * inlet.A / exit.A
                     * np.cos(inlet.flow_state.beta) / np.cos(exit.flow_state.beta)
-                    / relative_stagnation_pressure_ratio
+                    / inlet.p_0_rel_ratio
                     - utils.mass_flow_function(exit.flow_state.M_rel)
                 )
 
                 # determine residual for specified stage loading
                 solutions[index][1] = (
                     inlet.psi - (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha) * np.sqrt(
-                            utils.stagnation_temperature_ratio(exit.flow_state.M_rel)
-                            / utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
+                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                        * exit.r / inlet.r * np.sqrt(
+                            exit.flow_state.T / inlet.flow_state.T
                         ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
                     ) / inlet.M_blade
                 )
@@ -317,12 +334,14 @@ class Blade_row:
                     )
 
                     # debugging
-                    """print("\n---------------------------")
+                    print("\n---------------------------")
                     print(f"term_1: {term_1}")
                     print(f"term_2: {term_2}")
                     print(f"term_3: {term_3}")
                     print(f"term_4: {term_4}")
-                    print(f"solutions[index][2]: {solutions[index][2]}")"""
+                    print(f"exit.flow_state.T_0: {exit.flow_state.T_0}")
+                    print(f"self.exit[index + 1].flow_state.T_0: {self.exit[index + 1].flow_state.T_0}")
+                    print(f"solutions[index][2]: {solutions[index][2]}")
 
             # final residual comes from constraint for all areas to sum to the exit area
             solutions[-1][-1] = (
@@ -335,13 +354,13 @@ class Blade_row:
         
         # initialise array to store initial guess and iterate
         x0 = np.zeros((len(self.inlet), 3))
-        for index, streamtube in enumerate(self.inlet):
+        for index, inlet in enumerate(self.inlet):
 
             # assume solution is close to the inlet conditions
             x0[index] = [
-                0.9 * streamtube.flow_state.M_rel,
-                0.9 * streamtube.flow_state.beta,
-                streamtube.r
+                0.9 * inlet.flow_state.M_rel,
+                0.9 * inlet.flow_state.beta,
+                inlet.r
             ]
 
         # flatten initial guess array
@@ -376,7 +395,7 @@ class Blade_row:
                 * utils.stagnation_pressure_ratio(exit.flow_state.M_rel)
                 / utils.stagnation_pressure_ratio(inlet.flow_state.M_rel)
                 * utils.stagnation_pressure_ratio(inlet.flow_state.M)
-                * relative_stagnation_pressure_ratio
+                * inlet.p_0_rel_ratio
             )
             exit.flow_state.static_quantities()
         
