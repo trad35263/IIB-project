@@ -119,12 +119,12 @@ class Blade_row:
             self.inlet.append(Streamtube(flow_state, r, dr))
 
         self.mean_line()
-        print(f"{utils.Colours.PURPLE}Inlet conditions:{utils.Colours.END}")
-        for inlet in self.inlet:
+        #print(f"{utils.Colours.PURPLE}Inlet conditions:{utils.Colours.END}")
+        #for inlet in self.inlet:
 
-            print(inlet)
+        #    print(inlet)
 
-        print(self.inlet_mean)
+        #print(self.inlet_mean)
 
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
@@ -370,16 +370,16 @@ class Blade_row:
 
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
-        print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
+        #print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
 
-        if sol.status == 1:
+        """if sol.status == 1:
 
             print(f"sol.x: {sol.x}")
             print(f"sol.fun: {sol.fun}")
 
         else:
 
-            print(sol)
+            print(sol)"""
 
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -394,6 +394,9 @@ class Blade_row:
                 * inlet.p_0_rel_ratio
             )
             exit.flow_state.static_quantities()
+
+        self.inlet_angle = [inlet.flow_state.beta for inlet in self.inlet]
+        self.exit_angle = [exit.flow_state.beta for exit in self.exit]
 
     def stator_design(self, reaction, T_1, T_2, last_stage = False):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
@@ -572,16 +575,19 @@ class Blade_row:
 
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
-        print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
+        #print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
 
-        if sol.status == 1:
+        """if sol.status == 1:
 
             print(f"sol.x: {sol.x}")
             print(f"sol.fun: {sol.fun}")
 
         else:
 
-            print(sol)
+            print(sol)"""
+
+        self.inlet_angle = [inlet.flow_state.alpha for inlet in self.inlet]
+        self.exit_angle = [exit.flow_state.alpha for exit in self.exit]
 
     def solve_blade_row(self):
         """Calculates conditions at outlet to the blade row, given the inlet conditions."""

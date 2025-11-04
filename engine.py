@@ -99,10 +99,10 @@ class Engine:
                 rotor.inlet = self.stages[index - 1].blade_rows[1].exit
 
             # define blade geometry for that stage
-            print(f"{utils.Colours.GREEN}Designing rotor...{utils.Colours.END}")
+            #print(f"{utils.Colours.GREEN}Designing rotor...{utils.Colours.END}")
             rotor.rotor_design(stage.phi, stage.psi)
             stator.inlet = rotor.exit
-            print(f"{utils.Colours.GREEN}Designing stator...{utils.Colours.END}")
+            #print(f"{utils.Colours.GREEN}Designing stator...{utils.Colours.END}")
             stator.stator_design(
                 stage.reaction,
                 stage.blade_rows[0].inlet[index].flow_state.T,
@@ -114,7 +114,7 @@ class Engine:
         self.nozzle = Nozzle()
         self.nozzle.inlet = self.blade_rows[-1].exit
 
-        # residual function
+        # residual function - think this is the wrong approach
         def residual(M_guess):
             #print(f"\nM_guess: {M_guess}")
             """Residual function to find root of."""
@@ -192,10 +192,10 @@ class Engine:
             M_j = 1"""
 
         # design nozzle to match atmospheric pressure in jet periphery
-        print(f"{utils.Colours.GREEN}Designing nozzle...{utils.Colours.END}")
+        #print(f"{utils.Colours.GREEN}Designing nozzle...{utils.Colours.END}")
         p_atm = utils.stagnation_pressure_ratio(self.M_flight)
         self.nozzle.nozzle_design(p_atm)
-        input()
+        self.engine_analysis()
 
         # determine Mach number for which nozzle exit static pressure is equal to atmospheric
         """p_r = utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0
@@ -205,7 +205,7 @@ class Engine:
             M_j = 1
 
         self.nozzle.define_nozzle_geometry(M_j)"""
-        self.determine_efficiency()
+        #self.determine_efficiency()
 
     def analyse(self):
         """Analyses the entire engine system."""
@@ -564,6 +564,30 @@ class Engine:
         ax_lower.grid()
 
         plt.tight_layout()
+
+    def engine_analysis(self):
+        """Determine key performance metrics for the engine system."""
+        self.C_th = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        self.eta_p = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        for index, (inlet, exit) in enumerate(zip(self.blade_rows[0].inlet, self.nozzle.exit)):
+
+            self.eta_p[index] = (
+                (utils.gamma - 1) * np.log(exit.flow_state.p_0 / inlet.flow_state.p_0)
+                / (utils.gamma * np.log(exit.flow_state.T_0 / inlet.flow_state.T_0))
+            )
+            self.C_th[index] = (
+                utils.mass_flow_function(self.blade_rows[0].inlet[index].flow_state.M)
+                * np.sqrt(utils.gamma - 1)
+                * (
+                    self.nozzle.exit[index].flow_state.M * np.sqrt(
+                    self.nozzle.exit[index].flow_state.T / self.blade_rows[0].inlet[index].flow_state.T_0
+                )
+                - self.M_flight * utils.stagnation_temperature_ratio(self.M_flight)
+                )
+            )
+
+        self.eta_p[-1] = np.mean(self.eta_p)
+        self.C_th[-1] = np.sum(self.C_th)
 
     def determine_efficiency(self):
         """Determine key performance metrics for the engine system and individual stages."""

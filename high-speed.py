@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import numpy as np
+from scipy.optimize import least_squares
 
 from engine import Engine
 from flow_state import Flow_state
@@ -65,6 +66,28 @@ def main():
 
     # iterate over every flight scenario
     for scenario in flight_scenarios:
+
+        def equations(vars):
+            """"""
+            engine = Engine(no_of_stages, vars[0], scenario)
+            scenario.engines.append(engine)
+            return engine.C_th[-1] - scenario.C_th
+
+        x0 = [0.2]
+        lower = [0]
+        upper = [1]
+        sol = least_squares(equations, x0, bounds = (lower, upper))
+        print(sol)
+        engine = scenario.engines[-1]
+        print(engine)
+        print(engine.C_th)
+        print(engine.eta_p)
+        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[0].inlet_angle])
+        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[0].exit_angle])
+        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[1].inlet_angle])
+        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[1].exit_angle])
+
+        input()
 
         # choose array of candidate inlet Mach numbers to consider
         for M in np.linspace(utils.Defaults.M_min, utils.Defaults.M_max, utils.Defaults.N):

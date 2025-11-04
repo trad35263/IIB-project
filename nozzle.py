@@ -188,10 +188,14 @@ class Nozzle:
             x0[index] = [
                 utils.invert(utils.stagnation_pressure_ratio, p / inlet.flow_state.p_0),
                 1.5 * inlet.flow_state.alpha,
-                0.8 * inlet.r
+                0.8 * inlet.A
             ]
 
-        # flatten initial guess array
+            # flatten initial guess array
+            if not np.isfinite(x0[index][0]):
+
+                x0[index][0] = 0
+
         x0 = x0.ravel()
 
         # set lower and upper guess bounds and shape correctly
@@ -212,9 +216,11 @@ class Nozzle:
 
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
-        print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
-        print(f"sol.x: {sol.x}")
-        print(f"sol.fun: {sol.fun}")
+        #print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
+        #print(f"sol.x: {sol.x}")
+        #print(f"sol.fun: {sol.fun}")
+
+        self.A_exit = np.sum([exit.A for exit in self.exit])
     
     def define_nozzle_geometry(self, M_exit):
         """Determine area ratio required to achieve specified thrust coefficient."""
