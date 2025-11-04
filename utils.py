@@ -21,10 +21,10 @@ class Defaults:
     vortex_exponent = 0
 
     # code iteration parameters
-    M_min = 0.05
+    M_min = 0.1
     M_max = 0.8
     N = 1
-    no_of_annuli = 5
+    no_of_annuli = 3
 
     # default dimensional values
     engine_diameter = 0.65

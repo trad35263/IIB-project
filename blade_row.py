@@ -262,9 +262,6 @@ class Blade_row:
                     ) / utils.gamma
                 )
 
-                print(f"inlet.flow_state.s: {inlet.flow_state.s}")
-                print(f"exit.flow_state.s: {exit.flow_state.s}")
-
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
@@ -398,7 +395,7 @@ class Blade_row:
             )
             exit.flow_state.static_quantities()
 
-    def stator_design(self, reaction, T_1, T_2):
+    def stator_design(self, reaction, T_1, T_2, last_stage = False):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
         # determine variation of several parameters across the blade span at inlet
         for inlet in self.inlet:
@@ -463,9 +460,6 @@ class Blade_row:
                     ) / utils.gamma
                 )
 
-                print(f"inlet.flow_state.s: {inlet.flow_state.s}")
-                print(f"exit.flow_state.s: {exit.flow_state.s}")
-
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
@@ -478,16 +472,20 @@ class Blade_row:
                     - utils.mass_flow_function(exit.flow_state.M)
                 )
 
-                # determine residual for specified reaction - ignore following:
-                # determine residual for specified stage loading
-                """solutions[index][1] = (
-                    inlet.psi - (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        * exit.r / inlet.r * np.sqrt(
-                            exit.flow_state.T / inlet.flow_state.T
-                        ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                    ) / inlet.M_blade
-                )"""
+                # handle last stage scenario
+                if last_stage:
+
+                    # set residual to be the exit angle
+                    solutions[index][1] = exit.flow_state.alpha
+
+                # handle all other stages
+                else:
+
+                    # determine residual for specified reaction
+                    solutions[index][1] = (
+                        inlet.reaction - (T_2 / T_1 - 1)
+                        / (exit.flow_state.T / T_1 - 1)
+                    )
 
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:

@@ -78,23 +78,37 @@ class Engine:
         # iterate over all stages
         for index, stage in enumerate(self.stages):
 
+            rotor = stage.blade_rows[0]
+            stator = stage.blade_rows[1]
+
+            # handle first stage
             if index == 0:
 
                 # set first stage to default inlet conditions
-                """stage.blade_rows[0].inlet = (
-                    Flow_state(self.M_1, utils.Defaults.inlet_swirl, 1, 1)
-                )"""
-                stage.blade_rows[0].set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
-                print(f"{utils.Colours.GREEN}Designing rotor...{utils.Colours.END}")
-                stage.blade_rows[0].rotor_design(stage.phi, stage.psi)
+                rotor.set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
 
+            # handle final stage
+            if index == len(self.stages) - 1:
+
+                pass
+
+            # handle all other stages
             else:
 
                 # set stage inlet to previous stage exit conditions
-                stage.blade_rows[0].inlet = self.stages[index - 1].blade_rows[-1].exit
+                rotor.inlet = self.stages[index - 1].blade_rows[1].exit
 
             # define blade geometry for that stage
-            stage.define_blade_geometry(index == len(self.stages) - 1)
+            print(f"{utils.Colours.GREEN}Designing rotor...{utils.Colours.END}")
+            rotor.rotor_design(stage.phi, stage.psi)
+            stator.inlet = rotor.exit
+            print(f"{utils.Colours.GREEN}Designing stator...{utils.Colours.END}")
+            stator.stator_design(
+                stage.reaction,
+                stage.blade_rows[0].inlet[index].flow_state.T,
+                stage.blade_rows[0].exit[index].flow_state.T,
+                index == len(self.stages) - 1
+            )
 
         # create nozzle and set inlet conditions
         self.nozzle = Nozzle()
@@ -177,14 +191,20 @@ class Engine:
             )
             M_j = 1"""
 
+        # design nozzle to match atmospheric pressure in jet periphery
+        print(f"{utils.Colours.GREEN}Designing nozzle...{utils.Colours.END}")
+        p_atm = utils.stagnation_pressure_ratio(self.M_flight)
+        self.nozzle.nozzle_design(p_atm)
+        input()
+
         # determine Mach number for which nozzle exit static pressure is equal to atmospheric
-        p_r = utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0
+        """p_r = utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0
         M_j = utils.invert(utils.stagnation_pressure_ratio, p_r)
         if M_j == None:
 
             M_j = 1
 
-        self.nozzle.define_nozzle_geometry(M_j)
+        self.nozzle.define_nozzle_geometry(M_j)"""
         self.determine_efficiency()
 
     def analyse(self):

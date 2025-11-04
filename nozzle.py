@@ -67,36 +67,32 @@ class Nozzle:
             solutions = np.zeros_like(vars)
 
             # iterate over all sets of input variables
-            for index, var in enumerate(vars):
+            for index, (inlet, var) in enumerate(zip(self.inlet, vars)):
 
-                # create a holder flow_state to be populated
+                # create a holder flow_state given that process is isentropic
                 flow_state = Flow_state(
-                    var[0], var[1], 0, 0, 0
+                    var[0], var[1], inlet.flow_state.T_0, inlet.flow_state.p_0, inlet.flow_state.s
                 )
+                flow_state.static_quantities()
 
-                # use hub radius for first streamtube
+                # handle inner streamtube
                 if index == 0:
 
-                    # set thickness using hub radius
-                    dr = var[2] - utils.Defaults.hub_tip_ratio
+                    # set thickness given that there is no hub
+                    r = np.sqrt(var[2] / np.pi) / 2
+                    dr = r
 
                 # for all other streamtubes
                 else:
 
                     # set thickness using previous radius
-                    dr = var[2] - self.exit[index - 1].r - self.exit[index - 1].dr
+                    r1 = self.exit[index - 1].r + self.exit[index - 1].dr
+                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r = (r1 + r2) / 2
+                    dr = r - r1
 
                 # create streamtube and store at exit to the rotor
-                self.exit[index] = Streamtube(flow_state, var[2], dr)
-
-            # iterate over all inlet-exit pairs
-            for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
-
-                # stagnation temperature and pressure is conserved and process is isentropic
-                exit.flow_state.T_0 = inlet.flow_state.T_0
-                exit.flow_state.p_0 = inlet.flow_state.p_0
-                exit.flow_state.s = inlet.flow_state.s
-                exit.flow_state.static_quantities()
+                self.exit[index] = Streamtube(flow_state, r, dr)
 
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
@@ -111,10 +107,10 @@ class Nozzle:
 
                 # determine residual for conservation of angular momentum
                 solutions[index][1] = (
-                    inlet.r / exit.r
-                    - exit.flow_state.M / inlet.flow_state.M
-                    * np.sin(exit.flow_state.alpha) / np.sin(inlet.flow_state.alpha)
-                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
+                    inlet.r * inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                    * np.sqrt(inlet.flow_state.T)
+                    - exit.r * exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                    * np.sqrt(exit.flow_state.T)
                 )
 
                 # determine residual for radial equilibrium equation
@@ -161,6 +157,9 @@ class Nozzle:
                         term_1 + term_2 + term_3 + term_4
                     )
 
+                    # residual for zero pressure gradient
+                    #solutions[index][2] = exit.flow_state.p - self.exit[index + 1].flow_state.p
+
                     # debugging
                     """print("\n---------------------------")
                     print(f"term_1: {term_1}")
@@ -174,8 +173,11 @@ class Nozzle:
             # final residual comes from atmospheric pressure boundary condition
             solutions[-1][-1] = p - self.exit[-1].flow_state.p
 
-            # flatten solutions matrix and return
+            # flatten solutions matrix
             solutions = solutions.ravel()
+
+            # extra residual comes from areas summing to nozzle area guess
+            #solutions = np.append(solutions, A - np.sum([np.abs(exit.A) for exit in self.exit]))
             return solutions
         
         # initialise array to store initial guess and iterate
@@ -184,32 +186,35 @@ class Nozzle:
 
             # assume solution is close to the inlet conditions
             x0[index] = [
-                max(1.5 * inlet.flow_state.M, 1),
+                utils.invert(utils.stagnation_pressure_ratio, p / inlet.flow_state.p_0),
                 1.5 * inlet.flow_state.alpha,
-                inlet.r
+                0.8 * inlet.r
             ]
 
         # flatten initial guess array
         x0 = x0.ravel()
 
         # set lower and upper guess bounds and shape correctly
-        lower = [0, -np.pi / 2, utils.Defaults.hub_tip_ratio]
-        upper = [1, np.pi / 2, 1]
+        lower = [0, -np.pi / 2, 0]
+        upper = [1, np.pi / 2, np.pi]
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
+
+        # check to see if inlet swirl is zero
+        """for index, inlet in enumerate(self.inlet):
+
+            # check if inlet swirl is near-zero
+            if np.abs(inlet.flow_state.alpha) < 1e-6:
+
+                # set bounds on exit swirl to be zero
+                lower[3 * index + 1] = -1e-9
+                upper[3 * index + 1] = 1e-9"""
 
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
         print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
-
-        if sol.status == 1:
-
-            print(f"sol.x: {sol.x}")
-            print(f"sol.fun: {sol.fun}")
-
-        else:
-
-            print(sol)
+        print(f"sol.x: {sol.x}")
+        print(f"sol.fun: {sol.fun}")
     
     def define_nozzle_geometry(self, M_exit):
         """Determine area ratio required to achieve specified thrust coefficient."""
