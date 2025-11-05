@@ -24,7 +24,7 @@ class Defaults:
     M_min = 0.1
     M_max = 0.8
     N = 1
-    no_of_annuli = 3
+    no_of_annuli = 1
 
     # default dimensional values
     engine_diameter = 0.65

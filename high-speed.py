@@ -71,7 +71,7 @@ def main():
             """"""
             engine = Engine(no_of_stages, vars[0], scenario)
             scenario.engines.append(engine)
-            return engine.C_th[-1] - scenario.C_th
+            return engine.C_th - scenario.C_th
 
         x0 = [0.2]
         lower = [0]
@@ -80,8 +80,6 @@ def main():
         print(sol)
         engine = scenario.engines[-1]
         print(engine)
-        print(engine.C_th)
-        print(engine.eta_p)
         print([utils.rad_to_deg(angle) for angle in engine.blade_rows[0].inlet_angle])
         print([utils.rad_to_deg(angle) for angle in engine.blade_rows[0].exit_angle])
         print([utils.rad_to_deg(angle) for angle in engine.blade_rows[1].inlet_angle])

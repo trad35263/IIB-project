@@ -567,27 +567,130 @@ class Engine:
 
     def engine_analysis(self):
         """Determine key performance metrics for the engine system."""
-        self.C_th = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        # find thrust coefficient
+        self.C_th = (
+            utils.mass_flow_function(self.M_1) * np.sqrt(utils.gamma - 1) * (
+                np.sum([
+                    exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                    * np.sqrt(exit.flow_state.T)
+                    - self.M_flight * np.sqrt(utils.stagnation_temperature_ratio(self.M_flight))
+                    for exit in self.nozzle.exit
+                ])
+            )
+        )
+
+        # find propulsive efficiency
+        self.eta_prop = (
+            2 * self.C_th / utils.mass_flow_function(self.M_1) * np.sqrt(
+                utils.stagnation_temperature_ratio(self.M_flight) / (utils.gamma - 1)
+            ) / np.sum([
+                exit.flow_state.M**2 * exit.flow_state.T
+                - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
+                for exit in self.nozzle.exit
+            ])
+        )
+
+        # find nozzle efficiency
+        self.eta_nozz = (
+            (utils.gamma - 1) / 2 * np.sum([
+                (
+                    exit.flow_state.M**2 * exit.flow_state.T
+                    - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
+                ) / (
+                    np.power(exit.flow_state.p_0, 1 - 1 / utils.gamma) - 1
+                )
+                for exit in self.nozzle.exit
+            ])
+        )
+
+        # find compressor efficiency
+        self.eta_comp = (
+            np.sum([
+                (np.power(exit.flow_state.p_0, 1 - 1 / utils.gamma) - 1)
+                / (exit.flow_state.T_0 - 1)
+                for exit in self.nozzle.exit
+            ])
+        )
+
+        print(f"self.C_th: {self.C_th}")
+        print(f"self.eta_prop: {self.eta_prop}")
+        print(f"self.eta_nozz: {self.eta_nozz}")
+        print(f"self.eta_comp: {self.eta_comp}")
+
+    def engine_analysis2(self):
+        """Determine key performance metrics for the engine system."""
+        # initialise arrays for storing key engine metrics
         self.eta_p = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        self.C_th = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        self.eta_prop = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        self.eta_nozz = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        self.eta_comp = np.zeros((len(self.blade_rows[0].inlet) + 1,))
+        self.eta_elec = np.zeros((len(self.blade_rows[0].inlet) + 1,))
         for index, (inlet, exit) in enumerate(zip(self.blade_rows[0].inlet, self.nozzle.exit)):
 
+            # calculate polytropic efficiency
             self.eta_p[index] = (
                 (utils.gamma - 1) * np.log(exit.flow_state.p_0 / inlet.flow_state.p_0)
                 / (utils.gamma * np.log(exit.flow_state.T_0 / inlet.flow_state.T_0))
             )
+
+            # calculate thrust coefficient
             self.C_th[index] = (
                 utils.mass_flow_function(self.blade_rows[0].inlet[index].flow_state.M)
                 * np.sqrt(utils.gamma - 1)
                 * (
                     self.nozzle.exit[index].flow_state.M * np.sqrt(
-                    self.nozzle.exit[index].flow_state.T / self.blade_rows[0].inlet[index].flow_state.T_0
+                    self.nozzle.exit[index].flow_state.T
+                    / self.blade_rows[0].inlet[index].flow_state.T_0
                 )
                 - self.M_flight * utils.stagnation_temperature_ratio(self.M_flight)
                 )
             )
 
-        self.eta_p[-1] = np.mean(self.eta_p)
-        self.C_th[-1] = np.sum(self.C_th)
+            # calculate propulsive efficiency
+            self.eta_prop[index] = (
+                2 * self.C_th[index]
+                / utils.mass_flow_function(self.blade_rows[0].inlet[index].flow_state.M)
+                * np.sqrt(utils.stagnation_temperature_ratio(self.M_flight) / (utils.gamma - 1))
+                / (
+                    self.nozzle.exit[index].flow_state.M**2 * self.nozzle.exit[index].flow_state.T
+                    - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
+                )
+            )
+
+            # calculate nozzle efficiency
+            self.eta_nozz[index] = (
+                (utils.gamma - 1) / 2 * (
+                    self.nozzle.exit[index].flow_state.M**2 * self.nozzle.exit[index].flow_state.T
+                    - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
+                ) / (
+                    np.power(self.nozzle.exit[index].flow_state.p_0, 1 - 1 / utils.gamma) - 1
+                )
+            )
+
+            # calculate compressor isentropic compressor
+            self.eta_comp[index] = (
+                (np.power(self.nozzle.exit[index].flow_state.p_0, 1 - 1 / utils.gamma) - 1)
+                / (self.nozzle.exit[index].flow_state.T_0 - 1)
+            )
+
+            # calculate electrical efficiency - for now set to 1
+            self.eta_elec[index] = 1
+
+        self.eta_p[-1] = np.mean(self.eta_p[:-1])
+        self.C_th[-1] = np.sum(self.C_th[:-1])
+        self.eta_prop[-1] = np.mean(self.eta_prop[:-1])
+        self.eta_nozz[-1] = np.mean(self.eta_nozz[:-1])
+        self.eta_comp[-1] = np.mean(self.eta_comp[:-1])
+        self.eta_elec[-1] = np.mean(self.eta_elec[:-1])
+
+        self.eta = self.eta_prop * self.eta_nozz * self.eta_comp * self.eta_elec
+
+        print(f"self.eta_p: {self.eta_p}")
+        print(f"self.C_th: {self.C_th}")
+        print(f"self.eta_prop: {self.eta_prop}")
+        print(f"self.eta_nozz: {self.eta_nozz}")
+        print(f"self.eta_comp: {self.eta_comp}")
 
     def determine_efficiency(self):
         """Determine key performance metrics for the engine system and individual stages."""

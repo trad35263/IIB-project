@@ -181,11 +181,6 @@ class Blade_row:
             inlet.flow_state.M_rel = np.linalg.norm(v3)
             inlet.flow_state.beta = np.arctan2(v3[1], v3[0])
 
-            # determine relative stagnation pressure loss
-            inlet.p_0_rel_ratio = (
-                1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(inlet.flow_state.M_rel))
-            )
-
         self.exit = np.empty((len(self.inlet),), dtype = object)
 
         def equations(vars):
@@ -222,9 +217,15 @@ class Blade_row:
 
                 # determine change in relative stagnation temperature
                 inlet.T_0_rel_ratio = (
-                    1 - inlet.M_blade**2 * (utils.gamma - 1)
+                    1 - inlet.M_blade**2 * (utils.gamma - 1) / 2
                     * utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
-                    * (1 - exit.r / inlet.r)
+                    * (1 - (exit.r / inlet.r)**2)
+                )
+
+                # determine change in relative stagnation pressure
+                inlet.p_0_rel_ratio = (
+                    np.power(inlet.T_0_rel_ratio, utils.gamma / (utils.gamma - 1))
+                    - self.Y_p * (1 - utils.stagnation_pressure_ratio(inlet.flow_state.M_rel))
                 )
 
                 # find local blade Mach number at exit to the rotor row
