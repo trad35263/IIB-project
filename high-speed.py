@@ -8,6 +8,7 @@ from scipy.optimize import least_squares
 from engine import Engine
 from flow_state import Flow_state
 from flight_scenario import Flight_scenario
+from output import Output
 import utils
 
 # main function
@@ -67,23 +68,29 @@ def main():
     # iterate over every flight scenario
     for scenario in flight_scenarios:
 
-        def equations(vars):
+        def equations(vars, n, N):
             """"""
-            engine = Engine(no_of_stages, vars[0], scenario)
-            scenario.engines.append(engine)
+            engine = Engine(
+                no_of_stages, vars[0], scenario,
+                n, N
+            )
+            scenario.engine = engine
             return engine.C_th - scenario.C_th
 
-        x0 = [0.2]
+        x0 = [0.02]
         lower = [0]
         upper = [1]
-        sol = least_squares(equations, x0, bounds = (lower, upper))
+        sol = least_squares(equations, x0, bounds = (lower, upper), args = (utils.Defaults.vortex_exponent, 1))
         print(sol)
-        engine = scenario.engines[-1]
-        print(engine)
-        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[0].inlet_angle])
-        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[0].exit_angle])
-        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[1].inlet_angle])
-        print([utils.rad_to_deg(angle) for angle in engine.blade_rows[1].exit_angle])
+        engine = scenario.engine
+        print(repr(engine))
+        x0 = [engine.M_1]
+
+        sol = least_squares(equations, x0, bounds = (lower, upper), args = (utils.Defaults.vortex_exponent, utils.Defaults.no_of_annuli))
+        print(sol)
+        engine = scenario.engine
+        print(repr(engine))
+        output = Output(engine)
 
         input()
 

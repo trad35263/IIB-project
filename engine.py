@@ -23,13 +23,25 @@ class Engine:
     no_of_stages : int
         Number of rotor-stator compressor stages to add to the engine.
     """
-    def __init__(self, no_of_stages, M_1, scenario):
+    def __init__(self, no_of_stages, M_1, scenario, n, N):
         """Create instance of the Engine class."""
-        # design engine for given default values of thrust etc.
+        # store input variables
         self.no_of_stages = no_of_stages
         self.M_1 = M_1
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
+        self.n = n
+        self.N = N
+
+        # create the appropriate number of empty stages and blade rows
+        self.stages = []
+        self.blade_rows = []
+        for i in range(self.no_of_stages):
+
+            self.stages.append(Stage(self.n, self.N))
+            self.blade_rows.extend(self.stages[-1].blade_rows)
+
+        # run engine design subroutine
         self.design()
 
     def __str__(self):
@@ -67,17 +79,10 @@ class Engine:
 
     def design(self):
         """Determines appropriate values for blade metal angles for the given requirements."""
-        # create the appropriate number of empty stages and blade rows
-        self.stages = []
-        self.blade_rows = []
-        for i in range(self.no_of_stages):
-
-            self.stages.append(Stage())
-            self.blade_rows.extend(self.stages[-1].blade_rows)
-
         # iterate over all stages
         for index, stage in enumerate(self.stages):
 
+            # store rotor and stator as variables for convenience
             rotor = stage.blade_rows[0]
             stator = stage.blade_rows[1]
 
@@ -99,10 +104,8 @@ class Engine:
                 rotor.inlet = self.stages[index - 1].blade_rows[1].exit
 
             # define blade geometry for that stage
-            #print(f"{utils.Colours.GREEN}Designing rotor...{utils.Colours.END}")
             rotor.rotor_design(stage.phi, stage.psi)
             stator.inlet = rotor.exit
-            #print(f"{utils.Colours.GREEN}Designing stator...{utils.Colours.END}")
             stator.stator_design(
                 stage.reaction,
                 stage.blade_rows[0].inlet[index].flow_state.T,
@@ -116,7 +119,6 @@ class Engine:
 
         # residual function - think this is the wrong approach
         def residual(M_guess):
-            #print(f"\nM_guess: {M_guess}")
             """Residual function to find root of."""
             # for a guessed value of nozzle exit Mach number, determine the jet velocity ratio
             jet_velocity_ratio = (
@@ -126,8 +128,6 @@ class Engine:
                     / self.nozzle.inlet.T_0
                 )
             )
-
-            #print(f"jet_velocity_ratio: {jet_velocity_ratio}")
 
             # find the corresponding nozzle area ratio
             area_ratio = (
@@ -141,8 +141,6 @@ class Engine:
                 / self.nozzle.inlet.p_0
             )
 
-            #print(f"area_ratio: {area_ratio}")
-
             # find the corresponding thrust coefficient
             C_th_guess = (
                 area_ratio * self.nozzle.inlet.p_0 * (
@@ -152,12 +150,6 @@ class Engine:
                     + 2 * utils.dynamic_pressure_function(M_guess) * jet_velocity_ratio
                 )
             )
-            #print(f"C_th_guess: {C_th_guess}")
-            """C_th_guess = (
-                utils.impulse_function(M_guess)
-                - utils.stagnation_pressure_ratio(self.M_flight) / self.blade_rows[-1].exit.p_0
-                - 2 * utils.dynamic_pressure_function(M_guess) * jet_velocity_ratio
-            )"""
 
             # return difference to design thrust coefficient
             return C_th_guess - self.C_th_design
@@ -192,7 +184,6 @@ class Engine:
             M_j = 1"""
 
         # design nozzle to match atmospheric pressure in jet periphery
-        #print(f"{utils.Colours.GREEN}Designing nozzle...{utils.Colours.END}")
         p_atm = utils.stagnation_pressure_ratio(self.M_flight)
         self.nozzle.nozzle_design(p_atm)
         self.engine_analysis()
@@ -611,11 +602,6 @@ class Engine:
                 for exit in self.nozzle.exit
             ])
         )
-
-        print(f"self.C_th: {self.C_th}")
-        print(f"self.eta_prop: {self.eta_prop}")
-        print(f"self.eta_nozz: {self.eta_nozz}")
-        print(f"self.eta_comp: {self.eta_comp}")
 
     def engine_analysis2(self):
         """Determine key performance metrics for the engine system."""

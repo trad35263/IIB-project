@@ -28,16 +28,19 @@ class Blade_row:
     is_rotor : boolean
         Reference to whether or not to categorise the blade row as a rotor or a stator.
     """
-    def __init__(self, r_inlet, Y_p, is_rotor=False):
+    def __init__(self, r_casing_inlet, Y_p, n, N, is_rotor=False):
         """Create instance of the Blade_row class."""
         # assign attributes
-        self.r_inlet = r_inlet
+        self.r_casing_inlet = r_casing_inlet
+        self.r_hub = utils.Defaults.hub_tip_ratio
         self.Y_p = Y_p
+        self.n = n
+        self.N = N
 
         # derive inlet and exit areas
-        self.r_exit = self.r_inlet * utils.Defaults.blade_row_radius_ratio
-        self.area_inlet = np.pi *  (self.r_inlet**2 - utils.Defaults.hub_tip_ratio**2)
-        self.area_exit = np.pi * (self.r_exit**2 - utils.Defaults.hub_tip_ratio**2)
+        self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
+        self.area_inlet = np.pi *  (self.r_casing_inlet**2 - self.r_hub**2)
+        self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
 
         # assign the default colour of black
         self.colour = 'k'
@@ -83,7 +86,7 @@ class Blade_row:
         """Distributes the given inlet conditions across several annular streamtubes."""
         # create list of inlet streamtubes and iterate over each annulus of interest
         self.inlet = []
-        for index in range(utils.Defaults.no_of_annuli):
+        for index in range(self.N):
             
             # consider annulus nearest the hub
             if index == 0:
@@ -91,8 +94,8 @@ class Blade_row:
                 # find corresponding annulus radius and thickness
                 r = (
                     (utils.Defaults.hub_tip_ratio + np.sqrt(
-                        utils.Defaults.hub_tip_ratio**2 * (1 - 1 / utils.Defaults.no_of_annuli)
-                        + 1 / utils.Defaults.no_of_annuli
+                        utils.Defaults.hub_tip_ratio**2 * (1 - 1 / self.N)
+                        + 1 / self.N
                     )) / 2
                 )
                 dr = r - utils.Defaults.hub_tip_ratio
@@ -107,7 +110,7 @@ class Blade_row:
                 r = (
                     (self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
                         (self.inlet[index - 1].r + self.inlet[index - 1].dr)**2
-                        - (utils.Defaults.hub_tip_ratio**2 - 1) / utils.Defaults.no_of_annuli
+                        - (utils.Defaults.hub_tip_ratio**2 - 1) / self.N
                     )) / 2
                 )
                 dr = r - self.inlet[index - 1].r - self.inlet[index - 1].dr
@@ -129,7 +132,7 @@ class Blade_row:
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
         # determine mean radius and array of radii over which to interpolate
-        r_mean = (self.r_inlet + utils.Defaults.hub_tip_ratio) / 2
+        r_mean = (self.r_casing_inlet + utils.Defaults.hub_tip_ratio) / 2
         rr = [inlet.r for inlet in self.inlet]
 
         # establish quantities of interest and interpolate
@@ -164,7 +167,7 @@ class Blade_row:
 
             # determine local stage loading coefficient
             inlet.psi = (
-                psi * np.power(inlet.r / self.inlet_mean.r, utils.Defaults.vortex_exponent - 1)
+                psi * np.power(inlet.r / self.inlet_mean.r, self.n - 1)
             )
 
             # determine local blade Mach number

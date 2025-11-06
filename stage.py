@@ -19,9 +19,16 @@ class Stage:
     ----------
     None
     """
-    def __init__(self):
+    def __init__(self, n, N):
         """Create instance of the Stage class."""
+        # store input parameters
+        self.n = n
+        self.N = N
+
+        # create list of blade rows
         self.blade_rows = []
+
+        # store non-dimensional stage parameters
         self.phi = utils.Defaults.flow_coefficient
         self.psi = utils.Defaults.stage_loading_coefficient
         self.reaction = utils.Defaults.reaction
@@ -31,7 +38,7 @@ class Stage:
             Blade_row(
                 utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
-                True
+                self.n, self.N, True
             )
         )
 
@@ -40,7 +47,7 @@ class Stage:
             Blade_row(
                 utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
-                False
+                self.n, self.N, False
             )
         )
 
