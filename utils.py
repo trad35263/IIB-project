@@ -128,7 +128,7 @@ data = np.loadtxt(
 
 class Colours:
     """Class used to store ANSI escape sequences for printing colours."""
-
+    # store ASCII codes for selected colours as class attributes
     RED = '\033[91m'
     ORANGE = '\033[38;5;208m'
     YELLOW = '\033[93m'
