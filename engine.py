@@ -3,12 +3,8 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
 import numpy as np
-from scipy.optimize import brentq
-from scipy.optimize import root_scalar
-from time import perf_counter as timer
 
 from stage import Stage
-from blade_row import Blade_row
 from nozzle import Nozzle
 import utils
 from flow_state import Flow_state
@@ -187,7 +183,7 @@ class Engine:
         # design nozzle to match atmospheric pressure in jet periphery
         p_atm = utils.stagnation_pressure_ratio(self.M_flight)
         self.nozzle.nozzle_design(p_atm)
-        self.engine_analysis()
+        self.performance_metrics()
 
         # determine Mach number for which nozzle exit static pressure is equal to atmospheric
         """p_r = utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0
@@ -288,14 +284,33 @@ class Engine:
     
     def visualise_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
-        # create matplotlib plot with multiple axes
-        # could not get this to work well!
-        """height_ratio = 24 / len(self.blade_rows)
-        fig, (ax_upper, ax_lower) = plt.subplots(
-            2, 1, figsize = (9, 7),
-            gridspec_kw={'height_ratios': [height_ratio, 1]},
-            sharex = True
-        )"""
+        # create plot for displaying velocity triangles
+        fig, ax = plt.subplots(figsize = (10, 6))
+
+        # set title
+        ax.title.set_text(
+            f"Flight Mach number: {self.M_flight:.3g}\n"
+            f"Thrust coefficient: {self.C_th:.3g}\n"
+            f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}\n"
+            f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
+        )
+
+        # iterate over all blade rows
+        for index, blade_row in enumerate(self.blade_rows):
+
+            # generate blade shape data in blade row
+            blade_row.draw_blades()
+
+            # iterate over all spanwise positions of the blade row
+            for j, (xx, yy) in enumerate(zip(blade_row.xx, blade_row.yy)):
+
+                # draw blade row
+                ax.plot(xx + index, yy + j)
+
+        ax.set_aspect('equal')
+        plt.show()
+
+        # old code
         fig, ax_upper = plt.subplots(figsize = (10, 6))
         fig, ax_lower = plt.subplots(figsize = (10, 6))
         ax_lower1 = ax_lower.twinx()
@@ -557,7 +572,7 @@ class Engine:
 
         plt.tight_layout()
 
-    def engine_analysis(self):
+    def performance_metrics(self):
         """Determine key performance metrics for the engine system."""
         # find thrust coefficient
         self.C_th = (
@@ -603,6 +618,8 @@ class Engine:
                 for exit in self.nozzle.exit
             ])
         )
+
+        self.jet_velocity_ratio = 1
 
     def engine_analysis2(self):
         """Determine key performance metrics for the engine system."""

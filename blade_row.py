@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.optimize import least_squares
 from scipy.optimize import root_scalar
+import matplotlib.pyplot as plt
 
 from streamtube import Streamtube
 from flow_state import Flow_state
@@ -648,6 +649,69 @@ class Blade_row:
 
         self.inlet_angle = [inlet.flow_state.alpha for inlet in self.inlet]
         self.exit_angle = [exit.flow_state.alpha for exit in self.exit]
+
+    def draw_blades(self):
+        """Creates a series of x- and y- coordinates based on the blade shape data."""
+        # initialise arrays to store blade shape data in
+        self.xx = np.empty(len(self.inlet), dtype=object)
+        self.yy = np.empty(len(self.inlet), dtype=object)
+
+        # loop over all inlet and exit angles
+        for index, (X_in, X_out) in enumerate(zip(self.inlet_angle, self.exit_angle)):
+
+            # construct parabolic camber line
+            b = np.tan(X_in)
+            a = (np.tan(X_out) - b) / 2
+            xx_0 = 0.5 * (1 - np.cos(np.pi * np.linspace(0, 1, 1000)))
+            yy_0 = [a * x**2 + b * x for x in xx_0]
+
+            # determine cumulative length of chord line
+            ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])
+            chord_length = ll_0[-1]
+            ll_0 *= 1 / chord_length
+
+            # normalise camber line to unit camber length
+            xx_0 = xx_0 / chord_length
+            yy_0 = yy_0 / chord_length
+
+            # calculate derivatives in x and y with respect to l
+            dx_dl = np.gradient(xx_0, ll_0)
+            dy_dl = np.gradient(yy_0, ll_0)
+
+            # compute unit normals
+            norm = np.sqrt(dx_dl**2 + dy_dl**2)
+            nx = -dy_dl / norm
+            ny =  dx_dl / norm
+
+            # get the upper surface only from the imported aerofoil data and sort
+            zz_0 = utils.aerofoil_data
+            zz_0 = zz_0[:, zz_0[0].argsort()]
+
+            # initialise empty arrays for the upper and lower surfaces
+            xx_upper = np.zeros(xx_0.shape)
+            xx_lower = np.zeros(xx_0.shape)
+            yy_upper = np.zeros(xx_0.shape)
+            yy_lower = np.zeros(xx_0.shape)
+
+            # iterate over each datapoint
+            for i, (x, y, l) in enumerate(zip(xx_0, yy_0, ll_0)):
+
+                # add thickness to the camberline
+                dy = np.interp(l, *zz_0)
+                nx_i = np.interp(l, ll_0, nx)
+                ny_i = np.interp(l, ll_0, ny)
+                xx_upper[i] = x + dy * nx_i
+                yy_upper[i] = y + dy * ny_i
+                xx_lower[i] = x - dy * nx_i
+                yy_lower[i] = y - dy * ny_i
+
+            # reverse upper surface
+            xx_upper = xx_upper[::-1]
+            yy_upper = yy_upper[::-1]
+
+            # combine upper and lower surfaces
+            self.xx[index] = np.concatenate([xx_upper, xx_lower])
+            self.yy[index] = np.concatenate([yy_upper, yy_lower])
 
     def solve_blade_row(self):
         """Calculates conditions at outlet to the blade row, given the inlet conditions."""

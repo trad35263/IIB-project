@@ -106,28 +106,15 @@ def main():
         t1 = timer()
         sol = root_scalar(equations, x0 = x0, x1 = x1, method = "secant")
         t2 = timer()
-        print(f"engine design took {t2 - t1:.4f} seconds")
+        print(
+            f"{utils.Colours.GREEN}Engine design found after {t2 - t1:.4f} seconds after "
+            f"{sol.iterations} iterations!{utils.Colours.END}"
+        )
+
+        scenario.engine.visualise_velocity_triangles()
 
         input()
 
-        # choose array of candidate inlet Mach numbers to consider
-        for M in np.linspace(utils.Defaults.M_min, utils.Defaults.M_max, utils.Defaults.N):
-
-            scenario.engines.append(Engine(no_of_stages, M, scenario))
-
-            """try:
-
-                # create an engine corresponding to the given scenario and inlet Mach number
-                scenario.engines.append(Engine(no_of_stages, M, scenario))
-
-            except Exception as error:
-
-                # if an error occurs during construction, print to terminal and continue
-                print(
-                    f"{utils.Colours.RED}Engine construction failed at M = {M:.3g}: {error}"
-                    f"{utils.Colours.END}"
-                )
-                continue"""
 
     # plot key parameters of the candidate engines
     fig, ax = plt.subplots()

@@ -2,8 +2,10 @@
 
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
-from scipy.optimize import brentq
 from scipy.optimize import root_scalar
+from scipy.interpolate import splprep, splev
+from scipy.interpolate import make_interp_spline
+import matplotlib.pyplot as plt
 
 # 0.1 global variables
 
@@ -18,13 +20,13 @@ class Defaults:
     stage_loading_coefficient = 0.4
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = -0.5
+    vortex_exponent = 0.5
 
     # code iteration parameters
     M_min = 0.1
     M_max = 0.8
     N = 1
-    no_of_annuli = 3
+    no_of_annuli = 5
 
     # default dimensional values
     engine_diameter = 0.65
@@ -120,9 +122,19 @@ data = np.loadtxt(
     filename,
     skiprows = 1
 )
-#print(f"data: {data}")
-#data *= 0.6
-#data[:, 0] -= 0.25
+z = np.array([x for x in data if x[1] >= 0])
+x = np.array(z[:-1, 0])[::-1]
+y = np.array(z[:-1, 1])[::-1]
+spline = make_interp_spline(x, y, k = 2)
+x_fine = np.linspace(x.min(), x.max(), 10000)
+y_fine = spline(x_fine)
+aerofoil_data = np.array([x_fine, y_fine])
+
+"""fig, ax = plt.subplots()
+ax.plot(x, y)
+ax.plot(aerofoil_data[0], aerofoil_data[1])
+ax.set_aspect('equal', 'box')
+plt.show()"""
 
 # 0.5 define Colours class
 
