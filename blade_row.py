@@ -2,10 +2,12 @@
 
 import numpy as np
 from scipy.optimize import least_squares
+from scipy.optimize import root_scalar
 
 from streamtube import Streamtube
 from flow_state import Flow_state
 import utils
+from time import perf_counter as timer
 
 # define Blade_row class
 
@@ -351,15 +353,79 @@ class Blade_row:
             # flatten solutions matrix and return
             solutions = solutions.ravel()
             return solutions
-        
-        # initialise array to store initial guess and iterate
+
+        def residual(M_rel, inlet):
+            """Find exit relative Mach number which reduces residual to zero assuming constant radius."""
+            # guess the value of cos(beta) via stage loading coefficient
+            sin_beta = (
+                (
+                    (inlet.psi - 1) * inlet.M_blade
+                    + inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                ) / (
+                    M_rel * np.sqrt(
+                        utils.stagnation_temperature_ratio(M_rel)
+                        / utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
+                    )
+                )
+            )
+
+            # guess the value of cos(beta) via conservation of mass
+            cos_beta = (
+                utils.mass_flow_function(inlet.flow_state.M_rel)
+                * np.cos(inlet.flow_state.beta)
+                / utils.mass_flow_function(M_rel)
+            )
+            
+            return sin_beta**2 + cos_beta**2 - 1
+
+        # debugging
+        """xx = np.linspace(1e-3, 1, 50)
+        yy = [residual(x) for x in xx]
+        fig, ax = plt.subplots()
+        ax.plot(xx, yy)
+        plt.show()"""
+     
+        # initialise array to store initial guess and loop over all inlet streamtubes
         x0 = np.zeros((len(self.inlet), 3))
         for index, inlet in enumerate(self.inlet):
 
+            # create initial guess
+            a0 = 1e-6
+            a1 = inlet.flow_state.M_rel
+
+            # solve for an exit relative Mach number recursively, assuming constant radius
+            sol = root_scalar(
+                residual, x0 = a0, x1 = a1, method = "secant",
+                args = (inlet,)
+            )
+            x0[index][0] = sol.root
+            
+            # find the corresponding exit relative flow angle
+            x0[index][1] = (
+                np.arcsin(
+                    (
+                        (inlet.psi - 1) * inlet.M_blade
+                        + inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                    ) / (
+                        sol.root * np.sqrt(
+                            utils.stagnation_temperature_ratio(sol.root)
+                            / utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
+                        )
+                    )
+                )
+            )
+
+            # key assumption behind initial guess is that radius is constant
+            x0[index][2] = inlet.r
+        
+        # initialise array to store initial guess and iterate - OLD GUESS
+        x02 = np.zeros((len(self.inlet), 3))
+        for index, inlet in enumerate(self.inlet):
+
             # assume solution is close to the inlet conditions
-            x0[index] = [
-                0.9 * inlet.flow_state.M_rel,
-                0.9 * inlet.flow_state.beta,
+            x02[index] = [
+                0.7 * inlet.flow_state.M_rel,
+                0.8 * inlet.flow_state.beta,
                 inlet.r
             ]
 
@@ -374,16 +440,6 @@ class Blade_row:
 
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
-        #print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
-
-        """if sol.status == 1:
-
-            print(f"sol.x: {sol.x}")
-            print(f"sol.fun: {sol.fun}")
-
-        else:
-
-            print(sol)"""
 
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):

@@ -1,6 +1,7 @@
 # import modules
 
 import sys
+from time import perf_counter as timer
 
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
@@ -92,10 +93,9 @@ def main():
         x0 = 1e-6
         x1 = 0.5 * scenario.M + 1e-2
         sol = root_scalar(
-            equations, x0 = x0, x1 = x1, method = 'secant',
+            equations, x0 = x0, x1 = x1, method = "secant",
             args = (1,)
         )
-        print(sol)
 
         # perform analysis with full number of streamtubes
         print(
@@ -103,8 +103,10 @@ def main():
             f"streamtubes...{utils.Colours.END}"
         )
         x1 = scenario.engine.M_1
-        sol = root_scalar(equations, x0 = x0, x1 = x1, method = 'secant')
-        print(sol)
+        t1 = timer()
+        sol = root_scalar(equations, x0 = x0, x1 = x1, method = "secant")
+        t2 = timer()
+        print(f"engine design took {t2 - t1:.4f} seconds")
 
         input()
 

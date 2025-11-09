@@ -5,6 +5,7 @@ import matplotlib.ticker as plticker
 import numpy as np
 from scipy.optimize import brentq
 from scipy.optimize import root_scalar
+from time import perf_counter as timer
 
 from stage import Stage
 from blade_row import Blade_row
