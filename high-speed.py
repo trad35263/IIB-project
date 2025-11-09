@@ -1,9 +1,12 @@
 # import modules
 
+import sys
+
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import numpy as np
 from scipy.optimize import least_squares
+from scipy.optimize import root_scalar
 
 from engine import Engine
 from flow_state import Flow_state
@@ -19,23 +22,28 @@ def main():
     """colours = utils.Colours()
     print(colours)"""
 
-    # determine from user how many stages to construct the engine with
-    print(f"{utils.Colours.RED}Please state the desired number of stages:{utils.Colours.END}")
-    while True:
+    if utils.Defaults.no_of_stages == None:
 
-        user_input = input()
-        try:
+        # determine from user how many stages to construct the engine with
+        print(f"{utils.Colours.RED}Please state the desired number of stages:{utils.Colours.END}")
+        while True:
 
-            no_of_stages = int(user_input)
-            break
+            user_input = input()
+            try:
 
-        except ValueError:
+                no_of_stages = int(user_input)
+                break
 
-            print(f"{utils.Colours.RED}Error: Please provide a positive integer.{utils.Colours.END}")
+            except ValueError:
+
+                print(f"{utils.Colours.RED}Error: Please provide a positive integer.{utils.Colours.END}")
+
+    else:
+
+        no_of_stages = utils.Defaults.no_of_stages
 
     # user feedback
     print(f"{utils.Colours.GREEN}{no_of_stages} stages selected!{utils.Colours.END}")
-    print(f"{utils.Colours.CYAN}Constructing engines for analysis...{utils.Colours.END}")
 
     # store list of conditions to design candidate engines for
     flight_scenarios = [
@@ -67,30 +75,36 @@ def main():
 
     # iterate over every flight scenario
     for scenario in flight_scenarios:
-
-        def equations(vars, n, N):
+        
+        # set up function to solve for root of
+        def equations(var, N = utils.Defaults.no_of_annuli, n = utils.Defaults.vortex_exponent):
             """"""
-            engine = Engine(
-                no_of_stages, vars[0], scenario,
-                n, N
-            )
+            # unpack var in case it is passed as an array
+            var = float(np.squeeze(var))
+
+            # create engine and store in the given scenario
+            engine = Engine(no_of_stages, var, scenario, n, N)
             scenario.engine = engine
             return engine.C_th - scenario.C_th
 
-        x0 = [0.02]
-        lower = [0]
-        upper = [1]
-        sol = least_squares(equations, x0, bounds = (lower, upper), args = (utils.Defaults.vortex_exponent, 1))
+        # perform analysis with N = 1 to obtain an estimate
+        print(f"{utils.Colours.CYAN}Performing precursory mean-line analysis...{utils.Colours.END}")
+        x0 = 1e-6
+        x1 = 0.5 * scenario.M + 1e-2
+        sol = root_scalar(
+            equations, x0 = x0, x1 = x1, method = 'secant',
+            args = (1,)
+        )
         print(sol)
-        engine = scenario.engine
-        print(repr(engine))
-        x0 = [engine.M_1]
 
-        sol = least_squares(equations, x0, bounds = (lower, upper), args = (utils.Defaults.vortex_exponent, utils.Defaults.no_of_annuli))
+        # perform analysis with full number of streamtubes
+        print(
+            f"{utils.Colours.CYAN}Performing analysis with {utils.Defaults.no_of_annuli} "
+            f"streamtubes...{utils.Colours.END}"
+        )
+        x1 = scenario.engine.M_1
+        sol = root_scalar(equations, x0 = x0, x1 = x1, method = 'secant')
         print(sol)
-        engine = scenario.engine
-        print(repr(engine))
-        output = Output(engine)
 
         input()
 
@@ -371,4 +385,27 @@ def main():
 
 if __name__ == "__main__":
     """Run main() on running the script."""
+    # check if enough arguments are provided to declare number of stages immediately
+    if len(sys.argv) > 1:
+
+        try:
+
+            # store number of stages and attempt to convert to integer
+            utils.Defaults.no_of_stages = int(sys.argv[1])
+
+        except Exception as error:
+
+            # explain error if user provides a non-integer input
+            print(
+                f"{utils.Colours.RED}Please provide an integer argument for the number of stages!"
+                f"{utils.Colours.END}\n{error}"
+            )
+
+    # user has not provided a number of stages and will be prompted later
+    else: 
+
+        # set number of stages to None for now
+        utils.Defaults.no_of_stages = None
+
+    # call main function
     main()

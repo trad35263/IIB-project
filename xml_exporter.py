@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import numpy as np
 import os
 import sys
+from scipy.spatial import distance
 
 # create class for storing colours
 class Colours:
@@ -32,6 +33,14 @@ def xml_exporter(data, label = False):
     """Exports an input of x-y data pairs in XML format for import to draw.io."""
     # store colours class in a convenient variable
     c = Colours()
+
+    # adjust data
+    D = distance.pdist(data)
+    min_index = np.argmin(D)
+    i, j = np.triu_indices(len(data), 1)
+    closest_pair = (i[min_index], j[min_index])
+    data -= data[closest_pair[0]]
+    data *= 320 / (np.max(data[:, 0]) - np.min(data[:, 0]))
 
     # store current data and time and determine a name for the file
     date_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -139,6 +148,24 @@ def main():
 
 # on script execution
 if __name__ == "__main__":
+
+    # uncomment this to convert .csv to .npz
+    """data = []
+    with open("naca644421-il.csv") as f:
+        for line in f:
+            try:
+                numbers = [float(x) for x in line.strip().split(",")]
+                data.append(numbers)
+            except ValueError:
+                # Skip lines that contain non-numeric data
+                continue
+
+    data = np.array(data)
+    print(data)
+    print(data.shape)
+    np.savez("turbine_stator.npz", data=data)
+    xml_exporter(data, "turbine_stator")
+    input()"""
 
     # run main() on script execution
     main()
