@@ -3,6 +3,8 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
 import numpy as np
+import copy
+from scipy.interpolate import make_interp_spline
 
 from stage import Stage
 from nozzle import Nozzle
@@ -19,6 +21,14 @@ class Engine:
     ----------
     no_of_stages : int
         Number of rotor-stator compressor stages to add to the engine.
+    M_1 : float
+        Inlet Mach number used as input to solve through the engine.
+    scenario : class
+        Instance of the Flight_scenario class for which this engine is designed.
+    n : float
+        The vortex exponent.
+    N : float
+        The number of annular streamtubes through which to solve the flow.
     """
     def __init__(self, no_of_stages, M_1, scenario, n, N):
         """Create instance of the Engine class."""
@@ -35,8 +45,11 @@ class Engine:
         self.blade_rows = []
         for i in range(self.no_of_stages):
 
-            self.stages.append(Stage(self.n, self.N))
+            self.stages.append(Stage(self.n, self.N, i))
             self.blade_rows.extend(self.stages[-1].blade_rows)
+
+        # create nozzle
+        self.nozzle = Nozzle(2 * self.no_of_stages)
 
         # run engine design subroutine
         self.design()
@@ -102,7 +115,7 @@ class Engine:
 
             # define blade geometry for that stage
             rotor.rotor_design(stage.phi, stage.psi)
-            stator.inlet = rotor.exit
+            stator.inlet = copy.deepcopy(rotor.exit)
             stator.stator_design(
                 stage.reaction,
                 stage.blade_rows[0].inlet[index].flow_state.T,
@@ -110,90 +123,13 @@ class Engine:
                 index == len(self.stages) - 1
             )
 
-        # create nozzle and set inlet conditions
-        self.nozzle = Nozzle()
-        self.nozzle.inlet = self.blade_rows[-1].exit
-
-        # residual function - think this is the wrong approach
-        def residual(M_guess):
-            """Residual function to find root of."""
-            # for a guessed value of nozzle exit Mach number, determine the jet velocity ratio
-            jet_velocity_ratio = (
-                self.M_flight / M_guess * np.sqrt(
-                    utils.stagnation_temperature_ratio(self.M_flight)
-                    / utils.stagnation_temperature_ratio(M_guess)
-                    / self.nozzle.inlet.T_0
-                )
-            )
-
-            # find the corresponding nozzle area ratio
-            area_ratio = (
-                utils.stagnation_density_ratio(self.M_1)
-                / utils.stagnation_density_ratio(M_guess)
-                * self.M_1 / M_guess * np.sqrt(
-                    utils.stagnation_temperature_ratio(self.M_1)
-                    / utils.stagnation_temperature_ratio(M_guess)
-                    * self.nozzle.inlet.T_0
-                )
-                / self.nozzle.inlet.p_0
-            )
-
-            # find the corresponding thrust coefficient
-            C_th_guess = (
-                area_ratio * self.nozzle.inlet.p_0 * (
-                    utils.impulse_function(M_guess)
-                    - utils.stagnation_pressure_ratio(self.M_flight)
-                    / self.nozzle.inlet.p_0
-                    + 2 * utils.dynamic_pressure_function(M_guess) * jet_velocity_ratio
-                )
-            )
-
-            # return difference to design thrust coefficient
-            return C_th_guess - self.C_th_design
-
-        # uncomment for debugging
-        """xx = np.linspace(self.M_flight, 1 - 1e-3, 20)
-        yy = [residual(x) + self.C_th_design for x in xx]
-        zz = [utils.stagnation_pressure_ratio(x) * self.nozzle.inlet.p_0 for x in xx]
-        pp = [utils.stagnation_pressure_ratio(self.nozzle.inlet.M) * self.nozzle.inlet.p_0 for x in xx]
-        pp_0 = [utils.stagnation_pressure_ratio(self.M_flight) for x in xx]
-        fig, ax = plt.subplots()
-        ax.plot(xx, yy, label = "Thrust coefficient")
-        ax.plot(xx, zz, label = "Nozzle pressure ratio")
-        ax.plot(xx, pp, label = "Nozzle static pressure")
-        ax.plot(xx, pp_0, label = "Atmospheric static pressure")
-        ax.grid()
-        ax.legend()
-        ax.set_xlabel("Nozzle exit Mach number")
-        plt.show()"""
-
-        """try:
-
-            solution = root_scalar(residual, bracket = [self.M_flight, 1], method = "brentq")
-            M_j = solution.root
-
-        except:
-
-            print(
-                f"{utils.Colours.RED}Error occured solving for thrust coefficient! "
-                f"Setting nozzle to choke instead.{utils.Colours.END}"
-            )
-            M_j = 1"""
+        # set nozzle inlet conditions
+        self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
 
         # design nozzle to match atmospheric pressure in jet periphery
         p_atm = utils.stagnation_pressure_ratio(self.M_flight)
         self.nozzle.nozzle_design(p_atm)
         self.performance_metrics()
-
-        # determine Mach number for which nozzle exit static pressure is equal to atmospheric
-        """p_r = utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0
-        M_j = utils.invert(utils.stagnation_pressure_ratio, p_r)
-        if M_j == None:
-
-            M_j = 1
-
-        self.nozzle.define_nozzle_geometry(M_j)"""
-        #self.determine_efficiency()
 
     def analyse(self):
         """Analyses the entire engine system."""
@@ -295,20 +231,134 @@ class Engine:
             f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
         )
 
+        spanwise_positions = [0]
+
+        if self.N > 1:
+
+            spanwise_positions.append(-1)
+
+        if self.N > 2:
+
+            spanwise_positions.append(int(np.floor(self.N / 2)))
+
         # iterate over all blade rows
         for index, blade_row in enumerate(self.blade_rows):
 
-            # generate blade shape data in blade row
-            blade_row.draw_blades()
+            # iterate over all inlet and exit streamtubes chosen for plotting
+            for j, k in enumerate(spanwise_positions):
 
-            # iterate over all spanwise positions of the blade row
-            for j, (xx, yy) in enumerate(zip(blade_row.xx, blade_row.yy)):
+                # generate blade shape data in blade row
+                blade_row.draw_blades()
 
                 # draw blade row
-                ax.plot(xx + index, yy + j)
+                ax.plot(blade_row.xx[k] + index, blade_row.yy[k] + j, color = blade_row.colour)
+
+        # iterate over all blade rows again
+        for index, blade_row in enumerate(self.blade_rows):
+
+            # iterate over all inlet and exit streamtubes chosen for plotting
+            for j, k in enumerate(spanwise_positions):
+
+                # plot blade row at chosen spanwise positions
+                self.plot_blade_row(blade_row, ax, index, j, k)
 
         ax.set_aspect('equal')
-        plt.show()
+        return
+
+        # iterate over all blade rows again
+        """for index, blade_row in enumerate(self.blade_rows):
+
+            # iterate over all inlet and exit streamtubes:
+            for j, (inlet, exit) in enumerate(zip(blade_row.inlet, blade_row.exit)):
+
+                x_te, y_te = blade_row.xx[j][0], blade_row.yy[j][0]
+                if "Rotor" in blade_row.label:
+                        
+                    # display relative velocity vector at blade row inlet
+                    ax.annotate(
+                        "",
+                        xy = (
+                            index + inlet.flow_state.M_rel * np.cos(inlet.flow_state.beta),
+                            j + inlet.flow_state.M_rel * np.sin(inlet.flow_state.beta)
+                        ),
+                        xytext = (index, j),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C4',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+
+                    # display relative velocity vector at blade row exit
+                    ax.annotate(
+                        "",
+                        xy = (
+                            x_te + index + exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
+                            y_te + j + exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
+                        ),
+                        xytext = (x_te + index, y_te + j),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C4',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+
+                # display absolute velocity vector at blade row inlet
+                ax.annotate(
+                    "",
+                    xy = (
+                        index + inlet.flow_state.M * np.cos(inlet.flow_state.alpha),
+                        j + inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                    ),
+                    xytext = (index, j),
+                    arrowprops = dict(
+                        arrowstyle = "->", color = 'C0',
+                        shrinkA = 0, shrinkB = 0, lw = 1.5
+                    )
+                )
+
+                # display absolute velocity vector at blade row exit
+                ax.annotate(
+                    "",
+                    xy = (
+                        x_te + index + exit.flow_state.M * np.cos(exit.flow_state.alpha),
+                        y_te + j + exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                    ),
+                    xytext = (x_te + index, y_te + j),
+                    arrowprops = dict(
+                        arrowstyle = "->", color = 'C0',
+                        shrinkA = 0, shrinkB = 0, lw = 1.5
+                    )
+                )
+
+                if "Rotor" in blade_row.label:
+
+                    # display blade row speed vector at blade row inlet
+                    ax.annotate(
+                        "",
+                        xy = (
+                            index,
+                            j + inlet.M_blade
+                        ),
+                        xytext = (index, j),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C3',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+
+                    # display blade row speed vector at blade row exit
+                    ax.annotate(
+                        "",
+                        xy = (
+                            x_te + index,
+                            y_te + j + exit.M_blade
+                        ),
+                        xytext = (x_te + index, y_te + j),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C3',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )"""
 
         # old code
         fig, ax_upper = plt.subplots(figsize = (10, 6))
@@ -572,6 +622,104 @@ class Engine:
 
         plt.tight_layout()
 
+    def plot_blade_row(self, blade_row, ax, index, j, k):
+        """Plots a blade row onto a given axes at a specified spanwise position."""
+        # store inlet and exit for convenience
+        inlet = blade_row.inlet[k]
+        exit = blade_row.exit[k]
+
+        # get trailing edge coordinates
+        x_te, y_te = blade_row.xx[k][0], blade_row.yy[k][0]
+
+        # only plot relative quantities if blade is a rotor
+        if "Rotor" in blade_row.label:
+                
+            # display relative velocity vector at blade row inlet
+            ax.annotate(
+                "",
+                xy = (
+                    index + inlet.flow_state.M_rel * np.cos(inlet.flow_state.beta),
+                    j + inlet.flow_state.M_rel * np.sin(inlet.flow_state.beta)
+                ),
+                xytext = (index, j),
+                arrowprops = dict(
+                    arrowstyle = "->", color = 'C4',
+                    shrinkA = 0, shrinkB = 0, lw = 1.5
+                )
+            )
+
+            # display relative velocity vector at blade row exit
+            ax.annotate(
+                "",
+                xy = (
+                    x_te + index + exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
+                    y_te + j + exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
+                ),
+                xytext = (x_te + index, y_te + j),
+                arrowprops = dict(
+                    arrowstyle = "->", color = 'C4',
+                    shrinkA = 0, shrinkB = 0, lw = 1.5
+                )
+            )
+
+        # display absolute velocity vector at blade row inlet
+        ax.annotate(
+            "",
+            xy = (
+                index + inlet.flow_state.M * np.cos(inlet.flow_state.alpha),
+                j + inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+            ),
+            xytext = (index, j),
+            arrowprops = dict(
+                arrowstyle = "->", color = 'C0',
+                shrinkA = 0, shrinkB = 0, lw = 1.5
+            )
+        )
+
+        # display absolute velocity vector at blade row exit
+        ax.annotate(
+            "",
+            xy = (
+                x_te + index + exit.flow_state.M * np.cos(exit.flow_state.alpha),
+                y_te + j + exit.flow_state.M * np.sin(exit.flow_state.alpha)
+            ),
+            xytext = (x_te + index, y_te + j),
+            arrowprops = dict(
+                arrowstyle = "->", color = 'C0',
+                shrinkA = 0, shrinkB = 0, lw = 1.5
+            )
+        )
+
+        if "Rotor" in blade_row.label:
+
+            # display blade row speed vector at blade row inlet
+            ax.annotate(
+                "",
+                xy = (
+                    index,
+                    j + inlet.M_blade
+                ),
+                xytext = (index, j),
+                arrowprops = dict(
+                    arrowstyle = "->", color = 'C3',
+                    shrinkA = 0, shrinkB = 0, lw = 1.5
+                )
+            )
+
+            # display blade row speed vector at blade row exit
+            ax.annotate(
+                "",
+                xy = (
+                    x_te + index,
+                    y_te + j + exit.M_blade
+                ),
+                xytext = (x_te + index, y_te + j),
+                arrowprops = dict(
+                    arrowstyle = "->", color = 'C3',
+                    shrinkA = 0, shrinkB = 0, lw = 1.5
+                )
+            )
+
     def performance_metrics(self):
         """Determine key performance metrics for the engine system."""
         # find thrust coefficient
@@ -620,6 +768,185 @@ class Engine:
         )
 
         self.jet_velocity_ratio = 1
+
+    def plot_contours(self):
+        """Creates a plot of a section view of the engine with contours of a specified quantity."""
+        # create a plot
+        fig, ax = plt.subplots(figsize = (10, 6))
+
+        # initialise fine array of x-values
+        xx = np.linspace(-0.5, len(self.blade_rows), 200)
+        
+        # iterate over all radial positions
+        for index in range(self.N):
+
+            # create spline for upper bound of streamtube
+            spline = make_interp_spline(
+                [-0.5] + [
+                    x for blade_row in self.blade_rows 
+                    for x in (blade_row.x_inlet, blade_row.x_exit)
+                ] + [self.nozzle.x_exit],
+                [self.blade_rows[0].inlet[index].r + self.blade_rows[0].inlet[index].dr] + [
+                    r for blade_row in self.blade_rows for r in (
+                        blade_row.inlet[index].r + blade_row.inlet[index].dr,
+                        blade_row.exit[index].r + blade_row.exit[index].dr
+                    )
+                ] + [self.nozzle.exit[index].r + self.nozzle.exit[index].dr],
+                k = min(2, len(self.blade_rows))
+            )
+
+            # plot spline
+            rr = spline(xx)
+            ax.plot(xx, rr, color = 'k')
+
+            # plot upper bound datapoints as dots
+            ax.plot(
+                [
+                    x for blade_row in self.blade_rows 
+                    for x in (blade_row.x_inlet, blade_row.x_exit)
+                ] + [self.nozzle.x_exit],
+                [
+                    r for blade_row in self.blade_rows for r in (
+                        blade_row.inlet[index].r + blade_row.inlet[index].dr,
+                        blade_row.exit[index].r + blade_row.exit[index].dr
+                    )
+                ] + [self.nozzle.exit[index].r + self.nozzle.exit[index].dr],
+                linestyle = '', marker = '.', color = 'k'
+            )
+
+            # create spline for lower bound of streamtube
+            spline = make_interp_spline(
+                [-0.5] + [
+                    x for blade_row in self.blade_rows 
+                    for x in (blade_row.x_inlet, blade_row.x_exit)
+                ] + [self.nozzle.x_exit],
+                [self.blade_rows[0].inlet[index].r - self.blade_rows[0].inlet[index].dr] + [
+                    r for blade_row in self.blade_rows for r in (
+                        blade_row.inlet[index].r - blade_row.inlet[index].dr,
+                        blade_row.exit[index].r - blade_row.exit[index].dr
+                    )
+                ] + [self.nozzle.exit[index].r - self.nozzle.exit[index].dr],
+                k = min(2, len(self.blade_rows))
+            )
+
+            # plot spline
+            rr = spline(xx)
+            ax.plot(xx, rr, color = 'k')
+
+            # plot lower bound datapoints as dots
+            ax.plot(
+                [
+                    x for blade_row in self.blade_rows 
+                    for x in (blade_row.x_inlet, blade_row.x_exit)
+                ] + [self.nozzle.x_exit],
+                [
+                    r for blade_row in self.blade_rows for r in (
+                        blade_row.inlet[index].r - blade_row.inlet[index].dr,
+                        blade_row.exit[index].r - blade_row.exit[index].dr
+                    )
+                ] + [self.nozzle.exit[index].r - self.nozzle.exit[index].dr],
+                linestyle = '', marker = '.', color = 'k'
+            )
+        
+        # set axis limits
+        ax.set_xlim(-0.2, len(self.blade_rows) + 0.2)
+
+    def plot_spanwise_variations(self, q, label):
+        """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
+        # create plot with an axis for each blade row inlet and exit and reshape
+        fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (10, 6))
+        axes = np.reshape(axes, (len(self.blade_rows), 2))
+
+        # initialise array of r values for convenience
+        rr = np.linspace(utils.Defaults.hub_tip_ratio, 1, 100)
+
+        # assign values for capturing appropriate axis limits
+        x_min = 1e12
+        x_max = -1e12
+
+        # iterate over all axes:
+        for ax, blade_row in zip(axes, self.blade_rows):
+
+            # handle case where only one inlet/exit datapoint is available
+            if len(blade_row.inlet) == 1:
+
+                # plot a constant value everywhere
+                yy_0 = np.full_like(rr, [getattr(inlet.flow_state, q) for inlet in blade_row.inlet])
+                yy_1 = np.full_like(rr, [getattr(exit.flow_state, q) for exit in blade_row.exit])
+
+            # if more than one inlet/exit datapoint exists, fit spline
+            else:
+
+                # fit spline and store corresponding outputs
+                spline = make_interp_spline(
+                    [inlet.r for inlet in blade_row.inlet],
+                    [getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
+                    k = min(2, len(blade_row.inlet) - 1)
+                )
+                yy_0 = spline(rr)
+                spline = make_interp_spline(
+                    [exit.r for exit in blade_row.exit],
+                    [getattr(exit.flow_state, q) for exit in blade_row.exit],
+                    k = min(2, len(blade_row.exit) - 1)
+                )
+                yy_1 = spline(rr)
+
+            # plot spline
+            ax[0].plot(yy_0, rr, alpha = 0.5)
+            ax[1].plot(yy_1, rr, alpha = 0.5)
+
+            # plot inlet conditions
+            ax[0].plot(
+                [getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
+                [inlet.r for inlet in blade_row.inlet],
+                linestyle = '', marker = '.'
+            )
+
+            # plot exit conditions
+            ax[1].plot(
+                [getattr(exit.flow_state, q) for exit in blade_row.exit],
+                [exit.r for exit in blade_row.exit],
+                linestyle = '', marker = '.'
+            )
+
+            # update x-axis limits
+            x_min = min(
+                x_min, *[getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
+                *[getattr(exit.flow_state, q) for exit in blade_row.exit]
+            )
+            x_max = max(
+                x_max, *[getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
+                *[getattr(exit.flow_state, q) for exit in blade_row.exit]
+            )
+
+        # flatten axes and iterate
+        axes = axes.ravel()
+        for ax in axes:
+
+            # set axis x- and y-limits
+            ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
+            ax.set_ylim(utils.Defaults.hub_tip_ratio, 1)
+
+            # set grid and maximum number pf x-ticks
+            ax.grid()
+            ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
+
+        # set y-label and tight layout
+        axes[0].set_ylabel('Dimensionless radius')
+        plt.tight_layout()
+
+        # set title
+        plt.subplots_adjust(top = 0.9)
+        fig.text(
+            0.5, 0.95, f"Spanwise variation of {label}",
+            ha = 'center', va = 'center', fontsize = 12
+        )
+
+        # set x-label
+        plt.subplots_adjust(bottom = 0.1)
+        fig.text(0.5, 0.03, label, ha = 'center', va = 'center')
+
+# IGNORE EVERYTHING FROM HERE ----------------------------------------------------------------
 
     def engine_analysis2(self):
         """Determine key performance metrics for the engine system."""

@@ -54,7 +54,7 @@ def main():
             velocity = 0,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 50
+            thrust = 100
         ),
         Flight_scenario(
             label = "Take-off",
@@ -76,6 +76,9 @@ def main():
 
     # iterate over every flight scenario
     for scenario in flight_scenarios:
+
+        scenario.x = []
+        scenario.y = []
         
         # set up function to solve for root of
         def equations(var, N = utils.Defaults.no_of_annuli, n = utils.Defaults.vortex_exponent):
@@ -86,6 +89,8 @@ def main():
             # create engine and store in the given scenario
             engine = Engine(no_of_stages, var, scenario, n, N)
             scenario.engine = engine
+            scenario.x.append(var)
+            scenario.y.append(engine.C_th - scenario.C_th)
             return engine.C_th - scenario.C_th
 
         # perform analysis with N = 1 to obtain an estimate
@@ -96,6 +101,8 @@ def main():
             equations, x0 = x0, x1 = x1, method = "secant",
             args = (1,)
         )
+        fig, ax = plt.subplots()
+        ax.plot(scenario.x, scenario.y, linestyle = '', marker = '.', label = 'Mean-line')
 
         # perform analysis with full number of streamtubes
         print(
@@ -103,6 +110,8 @@ def main():
             f"streamtubes...{utils.Colours.END}"
         )
         x1 = scenario.engine.M_1
+        scenario.x = []
+        scenario.y = []
         t1 = timer()
         sol = root_scalar(equations, x0 = x0, x1 = x1, method = "secant")
         t2 = timer()
@@ -111,7 +120,26 @@ def main():
             f"{sol.iterations} iterations!{utils.Colours.END}"
         )
 
+        ax.plot(scenario.x, scenario.y, linestyle = '', marker = '.', label = 'Full analysis')
+        ax.set_xlabel('Inlet Mach number')
+        ax.set_ylabel('Thrust coefficient residual')
+        ax.legend()
+        ax.grid()
+
+        quantities = [
+            ['M', 'Mach number'],
+            ['p', 'Static pressure'],
+            ['T', 'Stagnation temperature'],
+            ['alpha', 'Flow angle']
+        ]
+
+        for qty in quantities:
+
+            scenario.engine.plot_spanwise_variations(*qty)
+
         scenario.engine.visualise_velocity_triangles()
+        scenario.engine.plot_contours()
+        plt.show()
 
         input()
 

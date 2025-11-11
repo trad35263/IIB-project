@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.optimize import least_squares
 from scipy.optimize import root_scalar
+from scipy.interpolate import make_interp_spline
 import matplotlib.pyplot as plt
 
 from streamtube import Streamtube
@@ -125,12 +126,6 @@ class Blade_row:
             self.inlet.append(Streamtube(flow_state, r, dr))
 
         self.mean_line()
-        #print(f"{utils.Colours.PURPLE}Inlet conditions:{utils.Colours.END}")
-        #for inlet in self.inlet:
-
-        #    print(inlet)
-
-        #print(self.inlet_mean)
 
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
@@ -418,17 +413,6 @@ class Blade_row:
 
             # key assumption behind initial guess is that radius is constant
             x0[index][2] = inlet.r
-        
-        # initialise array to store initial guess and iterate - OLD GUESS
-        x02 = np.zeros((len(self.inlet), 3))
-        for index, inlet in enumerate(self.inlet):
-
-            # assume solution is close to the inlet conditions
-            x02[index] = [
-                0.7 * inlet.flow_state.M_rel,
-                0.8 * inlet.flow_state.beta,
-                inlet.r
-            ]
 
         # flatten initial guess array
         x0 = x0.ravel()
@@ -456,8 +440,9 @@ class Blade_row:
             )
             exit.flow_state.static_quantities()
 
-        self.inlet_angle = [inlet.flow_state.beta for inlet in self.inlet]
-        self.exit_angle = [exit.flow_state.beta for exit in self.exit]
+            # save blade angles in inlet and exit streamtubes
+            inlet.metal_angle = inlet.flow_state.beta
+            exit.metal_angle = exit.flow_state.beta
 
     def stator_design(self, reaction, T_1, T_2, last_stage = False):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
@@ -636,34 +621,66 @@ class Blade_row:
 
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
-        #print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
+        
+        # save blade angles in inlet and exit streamtubes
+        for (inlet, exit) in zip(self.inlet, self.exit):
 
-        """if sol.status == 1:
-
-            print(f"sol.x: {sol.x}")
-            print(f"sol.fun: {sol.fun}")
-
-        else:
-
-            print(sol)"""
-
-        self.inlet_angle = [inlet.flow_state.alpha for inlet in self.inlet]
-        self.exit_angle = [exit.flow_state.alpha for exit in self.exit]
+            inlet.metal_angle = inlet.flow_state.alpha
+            exit.metal_angle = exit.flow_state.alpha
 
     def draw_blades(self):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
+        # this might not belong in this function!
+        # create array of radial positions to interpolate over
+        self.ss = np.linspace(0, 1, 100)
+        rr = self.ss * (self.r_casing_inlet - self.r_hub) + self.r_hub
+
+        # create spline interpolation between inlet blade angles and radial position
+        spline = make_interp_spline(
+            [inlet.r for inlet in self.inlet],
+            [inlet.metal_angle for inlet in self.inlet],
+            k = min(len(self.inlet) - 1, 2)
+        )
+
+        self.blade_angles_inlet = spline(rr)
+
+        rr = self.ss * (self.r_casing_exit - self.r_hub) + self.r_hub
+
+        # create spline interpolation between exit blade angles and radial position
+        spline = make_interp_spline(
+            [exit.r for exit in self.exit],
+            [exit.metal_angle for exit in self.exit],
+            k = min(len(self.inlet) - 1, 2)
+        )
+
+        self.blade_angles_exit = spline(rr)
+        # until here
+
         # initialise arrays to store blade shape data in
         self.xx = np.empty(len(self.inlet), dtype=object)
         self.yy = np.empty(len(self.inlet), dtype=object)
 
         # loop over all inlet and exit angles
-        for index, (X_in, X_out) in enumerate(zip(self.inlet_angle, self.exit_angle)):
+        for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+            # construct circular camber line
+            r = 1 / (exit.metal_angle - inlet.metal_angle)
+            x0 = -r * np.sin(inlet.metal_angle)
+            y0 = r * np.cos(inlet.metal_angle)
+            theta = np.linspace(inlet.metal_angle, exit.metal_angle, 100)
+            xx_0 = x0 + r * np.sin(theta)
+            yy_0 = y0 - r * np.cos(theta)
+
+            """fig, ax = plt.subplots()
+            ax.plot(xx_0, yy_0)
+            ax.set_aspect('equal', 'box')
+            plt.show()
 
             # construct parabolic camber line
-            b = np.tan(X_in)
-            a = (np.tan(X_out) - b) / 2
+            b = np.tan(inlet.metal_angle)
+            a = (np.tan(exit.metal_angle) - b) / 2
             xx_0 = 0.5 * (1 - np.cos(np.pi * np.linspace(0, 1, 1000)))
-            yy_0 = [a * x**2 + b * x for x in xx_0]
+            yy_0 = [a * x**2 + b * x for x in xx_0]"""
 
             # determine cumulative length of chord line
             ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])

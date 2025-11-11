@@ -3,7 +3,6 @@
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 from scipy.optimize import root_scalar
-from scipy.interpolate import splprep, splev
 from scipy.interpolate import make_interp_spline
 import matplotlib.pyplot as plt
 
@@ -17,16 +16,13 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # define non-dimensional stage parameters
     flow_coefficient = 0.5
-    stage_loading_coefficient = 0.4
+    stage_loading_coefficient = 0.2
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = 0.5
+    vortex_exponent = -0.5
 
     # code iteration parameters
-    M_min = 0.1
-    M_max = 0.8
-    N = 1
-    no_of_annuli = 5
+    no_of_annuli = 3
 
     # default dimensional values
     engine_diameter = 0.65
@@ -35,6 +31,8 @@ class Defaults:
     # area change ratios
     blade_row_radius = 1
     blade_row_radius_ratio = 1
+
+    blade_row_axial_depth = 0.5
 
     # specify inlet swirl
     inlet_swirl = 0

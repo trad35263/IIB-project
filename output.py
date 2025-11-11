@@ -64,8 +64,6 @@ class Output:
 
         self.save_to_json()
 
-        
-
     def save_to_json(self):
         """Save the Output data as a JSON file in the same directory."""
         data = self.__dict__

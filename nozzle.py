@@ -27,8 +27,12 @@ class Nozzle:
     exit : object or None
         Exit flow state (to be defined externally).
     """
-    def __init__(self, inlet=None):
+    def __init__(self, x_exit, inlet=None):
         """Create instance of the Nozzle class."""
+        # store input variables
+        self.x_exit = x_exit
+
+        # derived quantities
         self.area_ratio = 1
         self.inlet = inlet
         self.exit = None
@@ -204,22 +208,8 @@ class Nozzle:
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 
-        # check to see if inlet swirl is zero
-        """for index, inlet in enumerate(self.inlet):
-
-            # check if inlet swirl is near-zero
-            if np.abs(inlet.flow_state.alpha) < 1e-6:
-
-                # set bounds on exit swirl to be zero
-                lower[3 * index + 1] = -1e-9
-                upper[3 * index + 1] = 1e-9"""
-
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
-        #print(f"Success: {utils.Colours.PURPLE}{sol.success} {sol.status}{utils.Colours.END}")
-        #print(f"sol.x: {sol.x}")
-        #print(f"sol.fun: {sol.fun}")
-
         self.A_exit = np.sum([exit.A for exit in self.exit])
     
     def define_nozzle_geometry(self, M_exit):
