@@ -625,8 +625,11 @@ class Blade_row:
         # save blade angles in inlet and exit streamtubes
         for (inlet, exit) in zip(self.inlet, self.exit):
 
+            # save stator metal angles and store blade Mach number
             inlet.metal_angle = inlet.flow_state.alpha
             exit.metal_angle = exit.flow_state.alpha
+            inlet.M_blade = 0
+            exit.M_blade = 0
 
     def draw_blades(self):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
@@ -729,6 +732,98 @@ class Blade_row:
             # combine upper and lower surfaces
             self.xx[index] = np.concatenate([xx_upper, xx_lower])
             self.yy[index] = np.concatenate([yy_upper, yy_lower])
+
+    def plot_blade_row(self, ax, index, j, k, scaling = 1):
+        """Plots a blade row onto a given axes at a specified spanwise position."""
+        # plot blade shape
+        self.draw_blades()
+        ax.plot(self.xx[k] + index, self.yy[k] + j, color = self.colour)
+
+        # store inlet and exit for convenience
+        inlet = self.inlet[k]
+        exit = self.exit[k]
+
+        # get trailing edge coordinates
+        x_te, y_te = self.xx[k][0], self.yy[k][0]
+
+        # helper function to simplify plotting arrows
+        def plot_arrow(z1, z2, colour = 'k'):
+            """Plot an arrow from (x1, y1) to (x2, y2) in a given colour."""
+            ax.annotate(
+                "",
+                xy = z2,
+                xytext = z1,
+                arrowprops = dict(
+                    arrowstyle = "->", color = colour,
+                    shrinkA = 0, shrinkB = 0, lw = 1.5
+                )
+            )
+            ax.plot([z1[0]] + [z2[0]], [z1[1]] + [z2[1]], linestyle = '')
+
+        # only plot rotating quantities if blade is a rotor
+        if "Rotor" in self.label:
+                
+            # display relative velocity vector at blade row inlet
+            plot_arrow(
+                (
+                    index - scaling * inlet.flow_state.M_rel * np.cos(inlet.flow_state.beta),
+                    j - scaling * inlet.flow_state.M_rel * np.sin(inlet.flow_state.beta)
+                ),
+                (index, j),
+                colour = 'C4'
+            )
+
+            # display relative velocity vector at blade row exit
+            plot_arrow(
+                (x_te + index, y_te + j),
+                (
+                    x_te + index + scaling * exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
+                    y_te + j + scaling * exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
+                ),
+                colour = 'C4'
+            )
+
+            # display blade row speed vector at blade row inlet
+            plot_arrow(
+                (index, j),
+                (index, j + scaling * inlet.M_blade),
+                colour = 'C3'
+            )
+
+            # display blade row speed vector at blade row exit
+            plot_arrow(
+                (
+                    x_te + index + scaling * exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
+                    y_te + j + scaling * exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
+                ),
+                (
+                    x_te + index + scaling * exit.flow_state.M * np.cos(exit.flow_state.alpha),
+                    y_te + j + scaling * exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                ),
+                colour = 'C3'
+            )
+
+        # display absolute velocity vector at blade row inlet
+        plot_arrow(
+            (
+                index - scaling * inlet.flow_state.M * np.cos(inlet.flow_state.alpha),
+                j + scaling * (inlet.M_blade - inlet.flow_state.M * np.sin(inlet.flow_state.alpha))
+            ),
+            (index, j + scaling * inlet.M_blade),
+            colour = 'C0'
+        )
+
+        # display absolute velocity vector at blade row exit
+        plot_arrow(
+            (x_te + index, y_te + j),
+            (
+                x_te + index + scaling * exit.flow_state.M * np.cos(exit.flow_state.alpha),
+                y_te + j + scaling * exit.flow_state.M * np.sin(exit.flow_state.alpha)
+            ),
+            colour = 'C0'
+        )
+
+# IGNORE EVERYTHING FROM HERE -------------------------
 
     def solve_blade_row(self):
         """Calculates conditions at outlet to the blade row, given the inlet conditions."""

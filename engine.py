@@ -1,7 +1,6 @@
 # import modules
 
 import matplotlib.pyplot as plt
-import matplotlib.ticker as plticker
 from matplotlib.patches import Polygon
 import numpy as np
 import copy
@@ -224,23 +223,31 @@ class Engine:
         # create plot for displaying velocity triangles
         fig, ax = plt.subplots(figsize = (10, 6))
 
+        # determine factor to scale Mach triangles by
+        scaling = 1 / (5 * self.M_1)
+
         # set title
-        ax.title.set_text(
+        """ax.title.set_text(
             f"Flight Mach number: {self.M_flight:.3g}\n"
             f"Thrust coefficient: {self.C_th:.3g}\n"
             f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}\n"
             f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
-        )
+        )"""    
 
+        # initialise array of spanwise position indices to plot
         spanwise_positions = [0]
 
-        if self.N > 1:
-
-            spanwise_positions.append(-1)
-
+        # if more than 2 streamtubes exist
         if self.N > 2:
 
+            # plot central streamtube
             spanwise_positions.append(int(np.floor(self.N / 2)))
+
+        # if more than 1 streamtubes exist
+        if self.N > 1:
+
+            # plot outer-most streamtube
+            spanwise_positions.append(-1)
 
         # iterate over all blade rows
         for index, blade_row in enumerate(self.blade_rows):
@@ -248,478 +255,19 @@ class Engine:
             # iterate over all inlet and exit streamtubes chosen for plotting
             for j, k in enumerate(spanwise_positions):
 
-                # generate blade shape data in blade row
-                blade_row.draw_blades()
-
-                # draw blade row
-                ax.plot(blade_row.xx[k] + index, blade_row.yy[k] + j, color = blade_row.colour)
-
-        # iterate over all blade rows again
-        for index, blade_row in enumerate(self.blade_rows):
-
-            # iterate over all inlet and exit streamtubes chosen for plotting
-            for j, k in enumerate(spanwise_positions):
-
                 # plot blade row at chosen spanwise positions
-                self.plot_blade_row(blade_row, ax, index, j, k)
+                blade_row.plot_blade_row(ax, index, j, k, scaling)
 
+        # set legend labels
+        ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
+        ax.plot([], [], color = 'C4', label = 'Relative Mach number')
+        ax.plot([], [], color = 'C3', label = 'Blade Mach number')
+
+        # configure plot
         ax.set_aspect('equal')
-        return
-
-        # iterate over all blade rows again
-        """for index, blade_row in enumerate(self.blade_rows):
-
-            # iterate over all inlet and exit streamtubes:
-            for j, (inlet, exit) in enumerate(zip(blade_row.inlet, blade_row.exit)):
-
-                x_te, y_te = blade_row.xx[j][0], blade_row.yy[j][0]
-                if "Rotor" in blade_row.label:
-                        
-                    # display relative velocity vector at blade row inlet
-                    ax.annotate(
-                        "",
-                        xy = (
-                            index + inlet.flow_state.M_rel * np.cos(inlet.flow_state.beta),
-                            j + inlet.flow_state.M_rel * np.sin(inlet.flow_state.beta)
-                        ),
-                        xytext = (index, j),
-                        arrowprops = dict(
-                            arrowstyle = "->", color = 'C4',
-                            shrinkA = 0, shrinkB = 0, lw = 1.5
-                        )
-                    )
-
-                    # display relative velocity vector at blade row exit
-                    ax.annotate(
-                        "",
-                        xy = (
-                            x_te + index + exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
-                            y_te + j + exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
-                        ),
-                        xytext = (x_te + index, y_te + j),
-                        arrowprops = dict(
-                            arrowstyle = "->", color = 'C4',
-                            shrinkA = 0, shrinkB = 0, lw = 1.5
-                        )
-                    )
-
-                # display absolute velocity vector at blade row inlet
-                ax.annotate(
-                    "",
-                    xy = (
-                        index + inlet.flow_state.M * np.cos(inlet.flow_state.alpha),
-                        j + inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                    ),
-                    xytext = (index, j),
-                    arrowprops = dict(
-                        arrowstyle = "->", color = 'C0',
-                        shrinkA = 0, shrinkB = 0, lw = 1.5
-                    )
-                )
-
-                # display absolute velocity vector at blade row exit
-                ax.annotate(
-                    "",
-                    xy = (
-                        x_te + index + exit.flow_state.M * np.cos(exit.flow_state.alpha),
-                        y_te + j + exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                    ),
-                    xytext = (x_te + index, y_te + j),
-                    arrowprops = dict(
-                        arrowstyle = "->", color = 'C0',
-                        shrinkA = 0, shrinkB = 0, lw = 1.5
-                    )
-                )
-
-                if "Rotor" in blade_row.label:
-
-                    # display blade row speed vector at blade row inlet
-                    ax.annotate(
-                        "",
-                        xy = (
-                            index,
-                            j + inlet.M_blade
-                        ),
-                        xytext = (index, j),
-                        arrowprops = dict(
-                            arrowstyle = "->", color = 'C3',
-                            shrinkA = 0, shrinkB = 0, lw = 1.5
-                        )
-                    )
-
-                    # display blade row speed vector at blade row exit
-                    ax.annotate(
-                        "",
-                        xy = (
-                            x_te + index,
-                            y_te + j + exit.M_blade
-                        ),
-                        xytext = (x_te + index, y_te + j),
-                        arrowprops = dict(
-                            arrowstyle = "->", color = 'C3',
-                            shrinkA = 0, shrinkB = 0, lw = 1.5
-                        )
-                    )"""
-
-        # old code
-        fig, ax_upper = plt.subplots(figsize = (10, 6))
-        fig, ax_lower = plt.subplots(figsize = (10, 6))
-        ax_lower1 = ax_lower.twinx()
-        ax_lower2 = ax_lower.twinx()
-
-        # set title and subtitle
-        ax_upper.title.set_text(
-            f"Flight Mach number: {self.M_flight:.3g}\n"
-            f"Thrust coefficient: {self.C_th:.3g}\n"
-            f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}\n"
-            f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
-        )
-        ax_upper.title.set_fontsize(10)
-        ax_lower.title.set_text(
-            f"Stagnation pressure ratio = {self.overall_p_0:.3g}\n"
-            f"Stagnation temperature ratio = {self.overall_T_0:.3g}\n"
-            f"Isentropic efficiency = {self.eta_s:.3g}\n"
-            f"Polytropic efficiency = {self.eta_p:.3g}"
-        )
-        ax_lower.title.set_fontsize(10)
-
-        # plot quantities against blade row number
-        xx = np.arange(len(self.flow_states)) / 2 + 0.75
-        alpha = 0.5
-        ax_lower.plot(
-            xx, [flow_state.p_0 * utils.stagnation_pressure_ratio(flow_state.M)
-                 for flow_state in self.flow_states],
-            color = 'C1', alpha = alpha
-        )
-        ax_lower1.plot(
-            xx, [flow_state.T_0 * utils.stagnation_temperature_ratio(flow_state.M)
-                 for flow_state in self.flow_states],
-            color = 'C2', alpha = alpha
-        )
-        ax_lower.plot(
-            xx, [flow_state.p_0 for flow_state in self.flow_states],
-            color = 'C1', label = 'Pressure'
-        )
-        ax_lower1.plot(
-            xx, [flow_state.T_0 for flow_state in self.flow_states],
-            color = 'C2', label = 'Temperature'
-        )
-        ax_lower2.plot(
-            xx, [flow_state.M for flow_state in self.flow_states],
-            color = 'k', label = 'Mach number'
-        )
-
-        def display_blade_row(blade_row, index):
-            """Helper function to plot a given blade row and corresponding velocity triangle."""
-            # construct camber line as a parabolic profile
-            b = np.tan(blade_row.inlet_blade_angle)
-            a = (np.tan(blade_row.exit_blade_angle) - b) / 2
-            def camber(x):
-                """Return the y-component of the parabolic camber line given the x-value."""
-                return a * x**2 + b * x
-
-            # determine points on the camberline to compute the aerofoil shape from
-            xx_0 = 0.5 * (1 - np.cos(np.pi * np.linspace(0, 1, 100)))
-            yy_0 = [camber(x) for x in xx_0]
-            dy_0 = np.gradient(yy_0, xx_0)
-
-            # determine cumulative length of chord line
-            ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])
-            camber_length = ll_0[-1]
-            ll_0 = ll_0 / camber_length
-
-            # normalise camber line to unit camber length
-            xx_0 = xx_0 / camber_length
-            yy_0 = yy_0 / camber_length
-
-            # get the upper surface from the raw imported aerofoil data
-            zz_0 = np.transpose([x for x in utils.data if x[1] >= 0])
-            zz_0 = zz_0[:, zz_0[0].argsort()]
-
-            # initialise empty arrays for the upper and lower surfaces
-            xx_upper = np.zeros(xx_0.shape, dtype = "float")
-            xx_lower = np.zeros(xx_0.shape, dtype = "float")
-            yy_upper = np.zeros(xx_0.shape, dtype = "float")
-            yy_lower = np.zeros(xx_0.shape, dtype = "float")
-
-            # iterate over each datapoint
-            for i, (x, y, dy_dx, l) in enumerate(zip(xx_0, yy_0, dy_0, ll_0)):
-
-                # add thickness to the camberline
-                norm = np.sqrt(1 + dy_dx**2)
-                xx_upper[i] = x - np.interp(l, *zz_0) * dy_dx / norm
-                xx_lower[i] = x + np.interp(l, *zz_0) * dy_dx / norm
-                yy_upper[i] = y + np.interp(l, *zz_0) / norm
-                yy_lower[i] = y - np.interp(l, *zz_0) / norm
-
-            # get trailing edge coordinates
-            x_te = xx_upper[-1]
-            y_te = yy_upper[-1]
-
-            # reverse upper surface
-            xx_upper = xx_upper[::-1]
-            yy_upper = yy_upper[::-1]
-
-            # combine upper and lower surfaces
-            xx = np.concatenate([xx_upper, xx_lower])
-            yy = np.concatenate([yy_upper, yy_lower])
-
-            # display aerofoil
-            ax_upper.plot(xx + index, yy, color = blade_row.colour)
-
-            # debugging
-            """fig, ax = plt.subplots()
-            ax.plot(xx, yy)
-            ax.plot(xx_0, yy_0)
-            plt.show()"""
-
-            # display relative velocity vector at blade row inlet
-            ax_upper.annotate(
-                "",
-                xy = (
-                    index + blade_row.inlet.M * np.cos(blade_row.inlet.alpha),
-                    blade_row.inlet.M * np.sin(blade_row.inlet.alpha)
-                    - blade_row.inlet_blade_Mach_number
-                ),
-                xytext = (index, 0),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C4',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display relative velocity vector at blade row exit
-            ax_upper.annotate(
-                "",
-                xy = (
-                    x_te + index + blade_row.exit.M * np.cos(blade_row.exit.alpha),
-                    y_te + blade_row.exit.M * np.sin(blade_row.exit.alpha) - blade_row.blade_Mach_number
-                ),
-                xytext = (x_te + index, y_te),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C4',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display absolute velocity vector at blade row inlet
-            ax_upper.annotate(
-                "",
-                xy = (
-                    index + blade_row.inlet.M * np.cos(blade_row.inlet.alpha),
-                    blade_row.inlet.M * np.sin(blade_row.inlet.alpha)
-                ),
-                xytext = (index, 0),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C0',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display absolute velocity vector at blade row exit
-            ax_upper.annotate(
-                "",
-                xy = (
-                    x_te + index + blade_row.exit.M * np.cos(blade_row.exit.alpha),
-                    y_te + blade_row.exit.M * np.sin(blade_row.exit.alpha)
-                ),
-                xytext = (x_te + index, y_te),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C0',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display blade row speed vector at blade row inlet
-            ax_upper.annotate(
-                "",
-                xy = (
-                    index,
-                    blade_row.inlet_blade_Mach_number
-                ),
-                xytext = (index, 0),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C3',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display blade row speed vector at blade row exit
-            ax_upper.annotate(
-                "",
-                xy = (
-                    x_te + index,
-                    y_te + blade_row.blade_Mach_number
-                ),
-                xytext = (x_te + index, y_te),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C3',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-        # display all blade rows
-        for index, blade_row in enumerate(self.blade_rows):
-
-            display_blade_row(blade_row, index + 1)
-
-        # compute cumulative area ratios for plotting annulus area change
-        area_ratios = [blade_row.casing_area_ratio for blade_row in self.blade_rows]
-        area_ratios.append(self.nozzle.area_ratio)
-        areas = np.cumprod(area_ratios)
-
-        ax_upper.plot(np.arange(len(areas)) + 1, areas, color = 'k')
-        ax_upper.plot(np.arange(len(areas)) + 1, -np.array(areas), color = 'k')
-
-        # label velocity arrows in legend
-        ax_upper.plot([], [], color = 'C0', label = 'Absolute Mach number')
-        ax_upper.plot([], [], color = 'C4', label = 'Relative Mach number')
-        ax_upper.plot([], [], color = 'C3', label = 'Blade Mach number')
-
-        # set axis limits and aspect ratio
-        ax_upper.set_aspect('equal', adjustable='datalim')
-
-        # set x-axis grid lines to be at integer intervals
-        loc = plticker.MultipleLocator(base=1.0)
-        ax_upper.xaxis.set_major_locator(loc)
-        ax_lower.xaxis.set_major_locator(loc)
-
-        # gather all legend handles on the lower plot
-        lines_1, labels_1 = ax_lower.get_legend_handles_labels()
-        lines_2, labels_2 = ax_lower1.get_legend_handles_labels()
-        lines_3, labels_3 = ax_lower2.get_legend_handles_labels()
-
-        # create legends for both plots
-        ax_upper.legend()
-        ax_lower.legend(
-            lines_1 + lines_2 + lines_3,
-            labels_1 + labels_2 + labels_3,
-        )
-
-        # colour plot ticks
-        ax_upper.tick_params(axis = 'y', labelcolor = 'C0')
-        ax_lower.tick_params(axis = 'y', labelcolor = 'C1')
-        ax_lower1.tick_params(axis = 'y', labelcolor = 'C2')
-        ax_lower2.tick_params(axis = 'y', labelcolor = 'k')
-
-        # ensure third y-axis labels appear without overlapping
-        ax_lower1.spines["right"].set_position(("axes", 1.02))
-        ax_lower1.spines["right"].set_visible(True)
-        ax_lower2.spines["right"].set_position(("axes", 1.15))
-        ax_lower2.spines["right"].set_visible(True)
-
-        # set axis labels
-        ax_upper.set_xlabel("Blade row number")
-        ax_upper.set_ylabel("Mach number", color = 'C0')
-        
-        ax_lower.set_xlabel("Blade row number")
-        ax_lower.set_ylabel("Pressure ratio", color = 'C1')
-        ax_lower1.set_ylabel("Temperature ratio", color = 'C2')
-        ax_lower2.set_ylabel("Mach number", color = 'k')
-
-        # set grids on both plots
-        ax_upper.grid()
-        ax_lower.grid()
-
+        ax.grid()
+        ax.legend()
         plt.tight_layout()
-
-    def plot_blade_row(self, blade_row, ax, index, j, k):
-        """Plots a blade row onto a given axes at a specified spanwise position."""
-        # store inlet and exit for convenience
-        inlet = blade_row.inlet[k]
-        exit = blade_row.exit[k]
-
-        # get trailing edge coordinates
-        x_te, y_te = blade_row.xx[k][0], blade_row.yy[k][0]
-
-        # only plot relative quantities if blade is a rotor
-        if "Rotor" in blade_row.label:
-                
-            # display relative velocity vector at blade row inlet
-            ax.annotate(
-                "",
-                xy = (
-                    index + inlet.flow_state.M_rel * np.cos(inlet.flow_state.beta),
-                    j + inlet.flow_state.M_rel * np.sin(inlet.flow_state.beta)
-                ),
-                xytext = (index, j),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C4',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display relative velocity vector at blade row exit
-            ax.annotate(
-                "",
-                xy = (
-                    x_te + index + exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
-                    y_te + j + exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
-                ),
-                xytext = (x_te + index, y_te + j),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C4',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-        # display absolute velocity vector at blade row inlet
-        ax.annotate(
-            "",
-            xy = (
-                index + inlet.flow_state.M * np.cos(inlet.flow_state.alpha),
-                j + inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-            ),
-            xytext = (index, j),
-            arrowprops = dict(
-                arrowstyle = "->", color = 'C0',
-                shrinkA = 0, shrinkB = 0, lw = 1.5
-            )
-        )
-
-        # display absolute velocity vector at blade row exit
-        ax.annotate(
-            "",
-            xy = (
-                x_te + index + exit.flow_state.M * np.cos(exit.flow_state.alpha),
-                y_te + j + exit.flow_state.M * np.sin(exit.flow_state.alpha)
-            ),
-            xytext = (x_te + index, y_te + j),
-            arrowprops = dict(
-                arrowstyle = "->", color = 'C0',
-                shrinkA = 0, shrinkB = 0, lw = 1.5
-            )
-        )
-
-        if "Rotor" in blade_row.label:
-
-            # display blade row speed vector at blade row inlet
-            ax.annotate(
-                "",
-                xy = (
-                    index,
-                    j + inlet.M_blade
-                ),
-                xytext = (index, j),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C3',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-
-            # display blade row speed vector at blade row exit
-            ax.annotate(
-                "",
-                xy = (
-                    x_te + index,
-                    y_te + j + exit.M_blade
-                ),
-                xytext = (x_te + index, y_te + j),
-                arrowprops = dict(
-                    arrowstyle = "->", color = 'C3',
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
 
     def performance_metrics(self):
         """Determine key performance metrics for the engine system."""
@@ -966,7 +514,7 @@ class Engine:
 
     def plot_spanwise_variations(self, q, label, angle = False):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
-        # helper function to convert angles if appropriate
+        # helper function to convert angles when needed
         def convert_angle(x):
 
             if angle:
@@ -976,6 +524,9 @@ class Engine:
             else:
 
                 return x
+            
+        # get me added!
+        _color_cycle = iter(plt.cm.tab10.colors)
 
         # create plot with an axis for each blade row inlet and exit and reshape
         fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (10, 6))
@@ -1069,130 +620,3 @@ class Engine:
         # set x-label
         plt.subplots_adjust(bottom = 0.1)
         fig.text(0.5, 0.03, label, ha = 'center', va = 'center')
-
-# IGNORE EVERYTHING FROM HERE ----------------------------------------------------------------
-
-    def engine_analysis2(self):
-        """Determine key performance metrics for the engine system."""
-        # initialise arrays for storing key engine metrics
-        self.eta_p = np.zeros((len(self.blade_rows[0].inlet) + 1,))
-        self.C_th = np.zeros((len(self.blade_rows[0].inlet) + 1,))
-        self.eta_prop = np.zeros((len(self.blade_rows[0].inlet) + 1,))
-        self.eta_nozz = np.zeros((len(self.blade_rows[0].inlet) + 1,))
-        self.eta_comp = np.zeros((len(self.blade_rows[0].inlet) + 1,))
-        self.eta_elec = np.zeros((len(self.blade_rows[0].inlet) + 1,))
-        for index, (inlet, exit) in enumerate(zip(self.blade_rows[0].inlet, self.nozzle.exit)):
-
-            # calculate polytropic efficiency
-            self.eta_p[index] = (
-                (utils.gamma - 1) * np.log(exit.flow_state.p_0 / inlet.flow_state.p_0)
-                / (utils.gamma * np.log(exit.flow_state.T_0 / inlet.flow_state.T_0))
-            )
-
-            # calculate thrust coefficient
-            self.C_th[index] = (
-                utils.mass_flow_function(self.blade_rows[0].inlet[index].flow_state.M)
-                * np.sqrt(utils.gamma - 1)
-                * (
-                    self.nozzle.exit[index].flow_state.M * np.sqrt(
-                    self.nozzle.exit[index].flow_state.T
-                    / self.blade_rows[0].inlet[index].flow_state.T_0
-                )
-                - self.M_flight * utils.stagnation_temperature_ratio(self.M_flight)
-                )
-            )
-
-            # calculate propulsive efficiency
-            self.eta_prop[index] = (
-                2 * self.C_th[index]
-                / utils.mass_flow_function(self.blade_rows[0].inlet[index].flow_state.M)
-                * np.sqrt(utils.stagnation_temperature_ratio(self.M_flight) / (utils.gamma - 1))
-                / (
-                    self.nozzle.exit[index].flow_state.M**2 * self.nozzle.exit[index].flow_state.T
-                    - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
-                )
-            )
-
-            # calculate nozzle efficiency
-            self.eta_nozz[index] = (
-                (utils.gamma - 1) / 2 * (
-                    self.nozzle.exit[index].flow_state.M**2 * self.nozzle.exit[index].flow_state.T
-                    - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
-                ) / (
-                    np.power(self.nozzle.exit[index].flow_state.p_0, 1 - 1 / utils.gamma) - 1
-                )
-            )
-
-            # calculate compressor isentropic compressor
-            self.eta_comp[index] = (
-                (np.power(self.nozzle.exit[index].flow_state.p_0, 1 - 1 / utils.gamma) - 1)
-                / (self.nozzle.exit[index].flow_state.T_0 - 1)
-            )
-
-            # calculate electrical efficiency - for now set to 1
-            self.eta_elec[index] = 1
-
-        self.eta_p[-1] = np.mean(self.eta_p[:-1])
-        self.C_th[-1] = np.sum(self.C_th[:-1])
-        self.eta_prop[-1] = np.mean(self.eta_prop[:-1])
-        self.eta_nozz[-1] = np.mean(self.eta_nozz[:-1])
-        self.eta_comp[-1] = np.mean(self.eta_comp[:-1])
-        self.eta_elec[-1] = np.mean(self.eta_elec[:-1])
-
-        self.eta = self.eta_prop * self.eta_nozz * self.eta_comp * self.eta_elec
-
-        print(f"self.eta_p: {self.eta_p}")
-        print(f"self.C_th: {self.C_th}")
-        print(f"self.eta_prop: {self.eta_prop}")
-        print(f"self.eta_nozz: {self.eta_nozz}")
-        print(f"self.eta_comp: {self.eta_comp}")
-
-    def determine_efficiency(self):
-        """Determine key performance metrics for the engine system and individual stages."""
-        # solve for pressure ratio and coefficient and temperature ratio
-        self.overall_p_0 = self.nozzle.exit.p_0
-        self.overall_T_0 = self.nozzle.exit.T_0
-        self.C_p = (
-            (self.nozzle.exit.p_0 - 1)
-            / (1 - utils.stagnation_pressure_ratio(self.M_flight))
-        )
-
-        # solve for isentropic and polytropic efficiency
-        self.eta_s = (
-            (np.power(self.overall_p_0, (utils.gamma - 1) / utils.gamma) - 1)
-            / (self.overall_T_0 - 1)
-        )
-        self.eta_p = (
-            (utils.gamma - 1) * np.log(self.overall_p_0)
-            / (utils.gamma * np.log(self.overall_T_0))
-        )
-
-        # for each stage, determine flow and stage loading coefficients and reaction
-        for stage in self.stages:
-
-            stage.determine_efficiency()
-
-        # determine engine jet velocity ratio
-        self.jet_velocity_ratio = (
-            self.M_flight / self.nozzle.exit.M * np.sqrt(
-                utils.stagnation_temperature_ratio(self.M_flight)
-                / utils.stagnation_temperature_ratio(self.nozzle.exit.M)
-                / self.nozzle.exit.T_0
-            )
-        )
-
-        # find the thrust coefficient
-        self.C_th = (
-            self.nozzle.area_ratio * self.nozzle.inlet.p_0 * (
-                utils.impulse_function(self.nozzle.exit.M)
-                - utils.stagnation_pressure_ratio(self.M_flight) / self.nozzle.inlet.p_0
-                + 2 * utils.dynamic_pressure_function(self.nozzle.exit.M) * self.jet_velocity_ratio
-            )
-        )
-
-        # find the nozzle static pressure ratio compared to atmospheric
-        self.nozzle_p_r = (
-            utils.stagnation_pressure_ratio(self.nozzle.exit.M)
-            / utils.stagnation_pressure_ratio(self.M_flight)
-            * self.nozzle.exit.p_0
-        )
