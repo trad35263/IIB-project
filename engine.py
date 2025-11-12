@@ -2,6 +2,7 @@
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
+from matplotlib.patches import Polygon
 import numpy as np
 import copy
 from scipy.interpolate import make_interp_spline
@@ -49,7 +50,7 @@ class Engine:
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
         # create nozzle
-        self.nozzle = Nozzle(2 * self.no_of_stages)
+        self.nozzle = Nozzle(2 * self.no_of_stages - 0.5, 2 * self.no_of_stages)
 
         # run engine design subroutine
         self.design()
@@ -771,67 +772,164 @@ class Engine:
 
     def plot_contours(self):
         """Creates a plot of a section view of the engine with contours of a specified quantity."""
+        # plotting parameters
+        alpha = 0.5
+        rotor_tip_span = 0.98
+
         # create a plot
         fig, ax = plt.subplots(figsize = (10, 6))
 
         # initialise fine array of x-values
-        xx = np.linspace(-0.5, len(self.blade_rows), 200)
+        xx = np.linspace(0, len(self.blade_rows) - 0.5, 200)
+        yy = np.linspace(xx[-1], xx[-1] + 0.5, 50)
+
+        # draw centreline
+        ax.plot(np.linspace(xx[0], yy[-1], 100), np.full(100, 0), linestyle = '--', color = 'k')
+
+        # create spline for upper boundary of outer streamtube
+        spline = make_interp_spline(
+            [-1e-3] + [
+                x for blade_row in self.blade_rows 
+                for x in (blade_row.x_inlet, blade_row.x_exit)
+            ] + [xx[-1] + 1e-3],
+            [self.blade_rows[0].inlet[-1].r + self.blade_rows[0].inlet[-1].dr] + [
+                r for blade_row in self.blade_rows for r in (
+                    blade_row.inlet[-1].r + blade_row.inlet[-1].dr,
+                    blade_row.exit[-1].r + blade_row.exit[-1].dr
+                )
+            ] + [self.blade_rows[-1].exit[-1].r + self.blade_rows[-1].exit[-1].dr],
+            k = min(3, len(self.blade_rows))
+        )
+
+        # iterate over all stages
+        for stage in self.stages:
+
+            # store rotor and stator locally for convenience
+            rotor = stage.blade_rows[0]
+            stator = stage.blade_rows[1]
+
+            # determine array of rotor x-values to plot
+            x = np.linspace(
+                rotor.x_inlet + (rotor.x_exit - rotor.x_inlet) * 0.05,
+                rotor.x_exit - (rotor.x_exit - rotor.x_inlet) * 0.05, 100
+            )
+
+            # create array of rotor vertex positions
+            vertices = np.column_stack([
+                np.concatenate([x, x[::-1]]),
+                np.concatenate([rotor_tip_span * spline(x), np.full_like(x, rotor.r_hub)])
+            ])
+
+            # create rotor polygon and add
+            poly = Polygon(
+                vertices, closed = True,
+                facecolor = (0.8392, 0.1529, 0.1569, alpha),
+                edgecolor = (0.8392, 0.1529, 0.1569),
+                linewidth = 2
+            )
+            ax.add_patch(poly)
+
+            # draw x-shape over rotor
+            ax.plot([x[0], x[-1]], [rotor.r_hub, rotor_tip_span * spline(x[-1])], color = 'C3')
+            ax.plot([x[0], x[-1]], [rotor_tip_span * spline(x[0]), rotor.r_hub], color = 'C3')
+
+            # determine array of stator x-values to plot
+            x = np.linspace(
+                stator.x_inlet + (stator.x_exit - stator.x_inlet) * 0.05,
+                stator.x_exit - (stator.x_exit - stator.x_inlet) * 0.05, 100
+            )
+
+            # create array of stator vertex positions
+            vertices = np.column_stack([
+                np.concatenate([x, x[::-1]]),
+                np.concatenate([spline(x), np.full_like(x, stator.r_hub)])
+            ])
+
+            # create stator polygon and add
+            poly = Polygon(
+                vertices, closed = True,
+                facecolor = (0.1216, 0.4667, 0.7059, alpha),
+                edgecolor = (0.1216, 0.4667, 0.7059),
+                linewidth = 2
+            )
+            ax.add_patch(poly)
+
+            # draw x-shape over stator
+            ax.plot([x[0], x[-1]], [stator.r_hub, spline(x[-1])], color = 'C0')
+            ax.plot([x[0], x[-1]], [spline(x[0]), stator.r_hub], color = 'C0')
+
+            # annotate rotor rows
+            ax.annotate(
+                "ROTOR",
+                xy = (0, 0),
+                xytext = ((rotor.x_inlet + rotor.x_exit) / 2, 3 * utils.Defaults.hub_tip_ratio / 4),
+                color = 'C3', fontsize = 12
+            )
+
+            # annotate stator rows
+            ax.annotate(
+                "STATOR",
+                xy = (0, 0),
+                xytext = ((stator.x_inlet + stator.x_exit) / 2, 3 * utils.Defaults.hub_tip_ratio / 4),
+                color = 'C0', fontsize = 12
+            )
+
+        # plot spline
+        ax.plot(xx, spline(xx), color = 'k')
+
+        # plot upper bound datapoints as dots
+        ax.plot(
+            [
+                x for blade_row in self.blade_rows 
+                for x in (blade_row.x_inlet, blade_row.x_exit)
+            ] + [self.nozzle.x_exit],
+            [
+                r for blade_row in self.blade_rows for r in (
+                    blade_row.inlet[-1].r + blade_row.inlet[-1].dr,
+                    blade_row.exit[-1].r + blade_row.exit[-1].dr
+                )
+            ] + [self.nozzle.exit[-1].r + self.nozzle.exit[-1].dr],
+            linestyle = '', marker = '.', color = 'k'
+        )
+
+        # create spline for upper bound of nozzle
+        spline = make_interp_spline(
+            [
+                xx[-1] - 1e-3, self.nozzle.x_inlet,
+                self.nozzle.x_exit, self.nozzle.x_exit + 1e-3
+            ],
+            [
+                self.nozzle.inlet[-1].r + self.nozzle.inlet[-1].dr,
+                self.nozzle.inlet[-1].r + self.nozzle.inlet[-1].dr,
+                self.nozzle.exit[-1].r + self.nozzle.exit[-1].dr,
+                self.nozzle.exit[-1].r + self.nozzle.exit[-1].dr
+            ],
+            k = 3
+        )
+
+        # plot spline
+        ax.plot(yy, spline(yy), color = 'k')
         
-        # iterate over all radial positions
+        # iterate over all radial positions, apart from outer streamtube
         for index in range(self.N):
-
-            # create spline for upper bound of streamtube
-            spline = make_interp_spline(
-                [-0.5] + [
-                    x for blade_row in self.blade_rows 
-                    for x in (blade_row.x_inlet, blade_row.x_exit)
-                ] + [self.nozzle.x_exit],
-                [self.blade_rows[0].inlet[index].r + self.blade_rows[0].inlet[index].dr] + [
-                    r for blade_row in self.blade_rows for r in (
-                        blade_row.inlet[index].r + blade_row.inlet[index].dr,
-                        blade_row.exit[index].r + blade_row.exit[index].dr
-                    )
-                ] + [self.nozzle.exit[index].r + self.nozzle.exit[index].dr],
-                k = min(2, len(self.blade_rows))
-            )
-
-            # plot spline
-            rr = spline(xx)
-            ax.plot(xx, rr, color = 'k')
-
-            # plot upper bound datapoints as dots
-            ax.plot(
-                [
-                    x for blade_row in self.blade_rows 
-                    for x in (blade_row.x_inlet, blade_row.x_exit)
-                ] + [self.nozzle.x_exit],
-                [
-                    r for blade_row in self.blade_rows for r in (
-                        blade_row.inlet[index].r + blade_row.inlet[index].dr,
-                        blade_row.exit[index].r + blade_row.exit[index].dr
-                    )
-                ] + [self.nozzle.exit[index].r + self.nozzle.exit[index].dr],
-                linestyle = '', marker = '.', color = 'k'
-            )
 
             # create spline for lower bound of streamtube
             spline = make_interp_spline(
-                [-0.5] + [
+                [-1e-3] + [
                     x for blade_row in self.blade_rows 
                     for x in (blade_row.x_inlet, blade_row.x_exit)
-                ] + [self.nozzle.x_exit],
+                ] + [xx[-1] + 1e-3],
                 [self.blade_rows[0].inlet[index].r - self.blade_rows[0].inlet[index].dr] + [
                     r for blade_row in self.blade_rows for r in (
                         blade_row.inlet[index].r - blade_row.inlet[index].dr,
                         blade_row.exit[index].r - blade_row.exit[index].dr
                     )
-                ] + [self.nozzle.exit[index].r - self.nozzle.exit[index].dr],
-                k = min(2, len(self.blade_rows))
+                ] + [self.blade_rows[-1].exit[index].r - self.blade_rows[-1].exit[index].dr],
+                k = min(3, len(self.blade_rows))
             )
 
             # plot spline
-            rr = spline(xx)
-            ax.plot(xx, rr, color = 'k')
+            ax.plot(xx, spline(xx), color = 'k')
 
             # plot lower bound datapoints as dots
             ax.plot(
@@ -847,12 +945,38 @@ class Engine:
                 ] + [self.nozzle.exit[index].r - self.nozzle.exit[index].dr],
                 linestyle = '', marker = '.', color = 'k'
             )
-        
-        # set axis limits
-        ax.set_xlim(-0.2, len(self.blade_rows) + 0.2)
 
-    def plot_spanwise_variations(self, q, label):
+            # create spline for lower bound of nozzle
+            spline = make_interp_spline(
+                [
+                    xx[-1] - 1e-3, self.nozzle.x_inlet,
+                    self.nozzle.x_exit, self.nozzle.x_exit + 1e-3
+                ],
+                [
+                    self.nozzle.inlet[index].r - self.nozzle.inlet[index].dr,
+                    self.nozzle.inlet[index].r - self.nozzle.inlet[index].dr,
+                    self.nozzle.exit[index].r - self.nozzle.exit[index].dr,
+                    self.nozzle.exit[index].r - self.nozzle.exit[index].dr
+                ],
+                k = 3
+            )
+
+            # plot spline
+            ax.plot(yy, spline(yy), color = 'k')
+
+    def plot_spanwise_variations(self, q, label, angle = False):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
+        # helper function to convert angles if appropriate
+        def convert_angle(x):
+
+            if angle:
+
+                return utils.rad_to_deg(x)
+            
+            else:
+
+                return x
+
         # create plot with an axis for each blade row inlet and exit and reshape
         fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (10, 6))
         axes = np.reshape(axes, (len(self.blade_rows), 2))
@@ -892,31 +1016,31 @@ class Engine:
                 yy_1 = spline(rr)
 
             # plot spline
-            ax[0].plot(yy_0, rr, alpha = 0.5)
-            ax[1].plot(yy_1, rr, alpha = 0.5)
+            ax[0].plot(convert_angle(yy_0), rr, alpha = 0.5)
+            ax[1].plot(convert_angle(yy_1), rr, alpha = 0.5)
 
             # plot inlet conditions
             ax[0].plot(
-                [getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
+                [convert_angle(getattr(inlet.flow_state, q)) for inlet in blade_row.inlet],
                 [inlet.r for inlet in blade_row.inlet],
                 linestyle = '', marker = '.'
             )
 
             # plot exit conditions
             ax[1].plot(
-                [getattr(exit.flow_state, q) for exit in blade_row.exit],
+                [convert_angle(getattr(exit.flow_state, q)) for exit in blade_row.exit],
                 [exit.r for exit in blade_row.exit],
                 linestyle = '', marker = '.'
             )
 
             # update x-axis limits
             x_min = min(
-                x_min, *[getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
-                *[getattr(exit.flow_state, q) for exit in blade_row.exit]
+                x_min, *[convert_angle(getattr(inlet.flow_state, q)) for inlet in blade_row.inlet],
+                *[convert_angle(getattr(exit.flow_state, q)) for exit in blade_row.exit]
             )
             x_max = max(
-                x_max, *[getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
-                *[getattr(exit.flow_state, q) for exit in blade_row.exit]
+                x_max, *[convert_angle(getattr(inlet.flow_state, q)) for inlet in blade_row.inlet],
+                *[convert_angle(getattr(exit.flow_state, q)) for exit in blade_row.exit]
             )
 
         # flatten axes and iterate

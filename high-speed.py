@@ -130,8 +130,10 @@ def main():
             ['M', 'Mach number'],
             ['p', 'Static pressure'],
             ['T', 'Stagnation temperature'],
-            ['alpha', 'Flow angle']
+            ['alpha', 'Flow angle (°)', True]
         ]
+
+        print(scenario.engine.nozzle.A_exit)
 
         for qty in quantities:
 

@@ -27,9 +27,10 @@ class Nozzle:
     exit : object or None
         Exit flow state (to be defined externally).
     """
-    def __init__(self, x_exit, inlet=None):
+    def __init__(self, x_inlet, x_exit, inlet=None):
         """Create instance of the Nozzle class."""
         # store input variables
+        self.x_inlet = x_inlet
         self.x_exit = x_exit
 
         # derived quantities
