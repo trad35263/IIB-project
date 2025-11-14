@@ -72,6 +72,8 @@ class Blade_row:
 
         return string
 
+# data handling functions -------------------------------------------------------------------------
+
     def categorise(self, is_rotor):
         """Categorise blade row as Rotor or Stator."""
         # identify rotors
@@ -125,7 +127,7 @@ class Blade_row:
             # store instance of the streamtube class as an inlet condition
             self.inlet.append(Streamtube(flow_state, r, dr))
 
-        self.mean_line()
+        #self.mean_line()
 
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
@@ -149,8 +151,13 @@ class Blade_row:
             flow_state, r_mean, 0
         )
 
+# design functions --------------------------------------------------------------------------------
+
     def rotor_design(self, phi, psi):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
+        # determine inlet mean line parameters
+        self.mean_line()
+
         # determine variation of several parameters across the blade span at inlet
         for inlet in self.inlet:
 
@@ -426,6 +433,28 @@ class Blade_row:
         # solve for least squares solution
         sol = least_squares(equations, x0, bounds = (lower, upper))
 
+        # set up residual function for finding pitch-to-chord ratio
+        def max_diffusion(vars):
+            pass
+            """Determine residual for diffusion factor given a solidity distribution."""
+            """self.pitch_to_chord = [1 / var for var in vars]
+            self.diffusion_factor()
+            residuals = [DF - utils.Defaults.DF_limit for DF in self.DF]
+            return residuals
+
+        # set initial guesses for pitch-to-chord ratio distributions
+        x0 = np.full(len(self.inlet), 0.1)
+        x1 = np.full(len(self.inlet), 1)
+
+        # iterate over number of blades per row, starting with 2
+        blades = 2
+        while True:
+
+            sol = root_scalar(max_diffusion, x0 = x0, x1 = x1, method = "secant")
+            print(sol)
+            input()
+            blades += 1"""
+
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
 
@@ -446,6 +475,9 @@ class Blade_row:
 
     def stator_design(self, reaction, T_1, T_2, last_stage = False):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
+        # for now treat every stage as last stage
+        last_stage = True
+
         # determine variation of several parameters across the blade span at inlet
         for inlet in self.inlet:
 
@@ -631,6 +663,52 @@ class Blade_row:
             inlet.M_blade = 0
             exit.M_blade = 0
 
+    def diffusion_factor(self):
+        """Calculate local diffusion factor across the blade span using Lieblein."""
+        # initialise array of diffusion factors
+        self.DF = np.zeros(len(self.inlet))
+
+        # iterate over all inlet-exit pairs
+        for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+            # calculate diffusion factor using Lieblein's correlation
+            self.DF[index] = (
+                1 - exit.flow_state.M / inlet.flow_state.M * np.sqrt(
+                    exit.flow_state.T / inlet.flow_state.T
+                ) + 0.5 * np.abs(
+                    (
+                        exit.flow_state.M * np.sin(exit.flow_state.alpha) * np.sqrt(
+                            exit.flow_state.T / inlet.flow_state.T
+                        ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                    ) / inlet.flow_state.M
+                ) * self.pitch_to_chord[index]
+            )
+
+    def deviation(self, angle):
+        """Calculate local deviation across the blade span using Carter and Howell."""
+        # initialise array of deviations
+        self.exit_metal_angle = np.array(len(self.inlet))
+
+        # iterate over all inlet-exit pairs
+        for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+            # store inlet and exit angle in degrees
+            inlet_angle = utils.rad_to_deg(getattr(inlet.flow_state, angle))
+            exit_angle = utils.rad_to_deg(getattr(exit.flow_state, angle))
+
+            # calculate deviation coefficient using Howell's correlation for a circular camber line
+            m = 0.23 + exit_angle / 500
+
+            # calculate exit metal angle using Carter's correlation
+            self.exit_metal_angle = (
+                utils.deg_to_rad(
+                    exit_angle + m * inlet_angle * np.sqrt(self.pitch_to_chord[index])
+                    / (1 + m * np.sqrt(self.pitch_to_chord[index]))
+                )
+            )
+
+# plotting functions ------------------------------------------------------------------------------
+
     def draw_blades(self):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
         # this might not belong in this function!
@@ -673,17 +751,6 @@ class Blade_row:
             theta = np.linspace(inlet.metal_angle, exit.metal_angle, 100)
             xx_0 = x0 + r * np.sin(theta)
             yy_0 = y0 - r * np.cos(theta)
-
-            """fig, ax = plt.subplots()
-            ax.plot(xx_0, yy_0)
-            ax.set_aspect('equal', 'box')
-            plt.show()
-
-            # construct parabolic camber line
-            b = np.tan(inlet.metal_angle)
-            a = (np.tan(exit.metal_angle) - b) / 2
-            xx_0 = 0.5 * (1 - np.cos(np.pi * np.linspace(0, 1, 1000)))
-            yy_0 = [a * x**2 + b * x for x in xx_0]"""
 
             # determine cumulative length of chord line
             ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])

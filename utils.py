@@ -32,10 +32,14 @@ class Defaults:
     blade_row_radius = 1
     blade_row_radius_ratio = 1
 
+    # placeholder for now
     blade_row_axial_depth = 0.5
 
     # specify inlet swirl
     inlet_swirl = 0
+
+    # specify maximum permissible diffusion factor
+    DF_limit = 0.45
 
 # 0.3 compressible flow perfect gas relations
 

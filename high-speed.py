@@ -128,8 +128,8 @@ def main():
 
         quantities = [
             ['M', 'Mach number'],
-            ['p', 'Static pressure', 'T', 'Static temperature'],
-            ['p_0', 'Stagnation pressure', 'T_0', 'Stagnation temperature'],
+            #['p', 'Static pressure', 'T', 'Static temperature'],
+            #['p_0', 'Stagnation pressure', 'T_0', 'Stagnation temperature'],
             ['alpha', 'Flow angle (°)', 'beta', 'Relative flow angle (°)']
         ]
 

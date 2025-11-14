@@ -26,9 +26,9 @@ class Engine:
     scenario : class
         Instance of the Flight_scenario class for which this engine is designed.
     n : float
-        The vortex exponent.
+        Vortex exponent.
     N : float
-        The number of annular streamtubes through which to solve the flow.
+        Number of annular streamtubes through which to solve the flow.
     """
     def __init__(self, no_of_stages, M_1, scenario, n, N):
         """Create instance of the Engine class."""
@@ -50,7 +50,7 @@ class Engine:
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
         # create nozzle
-        self.nozzle = Nozzle(2 * self.no_of_stages - 0.5, 2 * self.no_of_stages)
+        self.nozzle = Nozzle(2 * self.no_of_stages - 0.5, 2 * self.no_of_stages + 0.5)
 
         # run engine design subroutine
         self.design()
@@ -107,23 +107,24 @@ class Engine:
                 rotor.set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
 
             # handle final stage
-            if index == len(self.stages) - 1:
+            #elif index == len(self.stages) - 1:
 
-                pass
+                # set stage inlet to previous stage exit conditions
+                #rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
 
             # handle all other stages
             else:
 
                 # set stage inlet to previous stage exit conditions
-                rotor.inlet = self.stages[index - 1].blade_rows[1].exit
+                rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
 
             # define blade geometry for that stage
             rotor.rotor_design(stage.phi, stage.psi)
             stator.inlet = copy.deepcopy(rotor.exit)
             stator.stator_design(
                 stage.reaction,
-                stage.blade_rows[0].inlet[index].flow_state.T,
-                stage.blade_rows[0].exit[index].flow_state.T,
+                stage.blade_rows[0].inlet[0].flow_state.T,
+                stage.blade_rows[0].exit[0].flow_state.T,
                 index == len(self.stages) - 1
             )
 
@@ -333,7 +334,7 @@ class Engine:
 
         # initialise fine array of x-values
         xx = np.linspace(0, len(self.blade_rows) - 0.5, 200)
-        yy = np.linspace(xx[-1], xx[-1] + 0.5, 50)
+        yy = np.linspace(xx[-1], xx[-1] + 1, 50)
 
         # draw centreline
         ax.plot(np.linspace(xx[0], yy[-1], 100), np.full(100, 0), linestyle = '--', color = 'k')
@@ -415,7 +416,7 @@ class Engine:
                 "ROTOR",
                 xy = (0, 0),
                 xytext = ((rotor.x_inlet + rotor.x_exit) / 2, 3 * utils.Defaults.hub_tip_ratio / 4),
-                color = 'C3', fontsize = 12
+                color = 'C3', fontsize = 12, ha = 'center', va = 'center'
             )
 
             # annotate stator rows
@@ -423,7 +424,7 @@ class Engine:
                 "STATOR",
                 xy = (0, 0),
                 xytext = ((stator.x_inlet + stator.x_exit) / 2, 3 * utils.Defaults.hub_tip_ratio / 4),
-                color = 'C0', fontsize = 12
+                color = 'C0', fontsize = 12, ha = 'center', va = 'center'
             )
 
         # plot spline
@@ -516,6 +517,9 @@ class Engine:
             # plot spline
             ax.plot(yy, spline(yy), color = 'k')
 
+        # add grid
+        ax.grid()
+
     def plot_spanwise_variations(self, quantities):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
         # separate input list into pairs of values
@@ -533,7 +537,7 @@ class Engine:
                 return x
 
         # create plot with an axis for each blade row inlet and exit and reshape axes
-        fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (10, 6))
+        fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (15, 6))
         axes = np.reshape(axes, (len(self.blade_rows), 2))
 
         # assign values for capturing appropriate axis limits
