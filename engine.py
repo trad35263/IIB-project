@@ -45,6 +45,7 @@ class Engine:
         self.blade_rows = []
         for i in range(self.no_of_stages):
 
+            # create stage and blade rows and store in lists
             self.stages.append(Stage(self.n, self.N, i))
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
@@ -53,6 +54,9 @@ class Engine:
 
         # run engine design subroutine
         self.design()
+
+        # create cycle of colours
+        self.colour_cycle = iter(plt.cm.tab10.colors)
 
     def __str__(self):
         """Prints a string representation of the stage."""
@@ -512,87 +516,93 @@ class Engine:
             # plot spline
             ax.plot(yy, spline(yy), color = 'k')
 
-    def plot_spanwise_variations(self, q, label, angle = False):
+    def plot_spanwise_variations(self, quantities):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
-        # helper function to convert angles when needed
-        def convert_angle(x):
+        # separate input list into pairs of values
+        q_label_pairs = np.reshape(quantities, (int(len(quantities) / 2), 2))
 
-            if angle:
+        # helper function to convert angles when needed
+        def convert_angle(x, label):
+
+            if "angle" in label:
 
                 return utils.rad_to_deg(x)
-            
+
             else:
 
                 return x
-            
-        # get me added!
-        _color_cycle = iter(plt.cm.tab10.colors)
 
-        # create plot with an axis for each blade row inlet and exit and reshape
+        # create plot with an axis for each blade row inlet and exit and reshape axes
         fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (10, 6))
         axes = np.reshape(axes, (len(self.blade_rows), 2))
-
-        # initialise array of r values for convenience
-        rr = np.linspace(utils.Defaults.hub_tip_ratio, 1, 100)
 
         # assign values for capturing appropriate axis limits
         x_min = 1e12
         x_max = -1e12
+        
+        # iterate over all pairs of quantity and label
+        for q_label_pair in q_label_pairs:
 
-        # iterate over all axes:
-        for ax, blade_row in zip(axes, self.blade_rows):
+            # separate into quantity and label for convenience
+            q = q_label_pair[0]
+            label = q_label_pair[1]
 
-            # handle case where only one inlet/exit datapoint is available
-            if len(blade_row.inlet) == 1:
+            # set colour
+            colour = next(self.colour_cycle)
 
-                # plot a constant value everywhere
-                yy_0 = np.full_like(rr, [getattr(inlet.flow_state, q) for inlet in blade_row.inlet])
-                yy_1 = np.full_like(rr, [getattr(exit.flow_state, q) for exit in blade_row.exit])
+            # set legend entry in final axis
+            axes[-1][1].plot([], [], color = colour, label = label)
 
-            # if more than one inlet/exit datapoint exists, fit spline
-            else:
+            # initialise array of r values for convenience
+            rr = np.linspace(utils.Defaults.hub_tip_ratio, 1, 100)
 
-                # fit spline and store corresponding outputs
-                spline = make_interp_spline(
-                    [inlet.r for inlet in blade_row.inlet],
-                    [getattr(inlet.flow_state, q) for inlet in blade_row.inlet],
-                    k = min(2, len(blade_row.inlet) - 1)
-                )
-                yy_0 = spline(rr)
-                spline = make_interp_spline(
-                    [exit.r for exit in blade_row.exit],
-                    [getattr(exit.flow_state, q) for exit in blade_row.exit],
-                    k = min(2, len(blade_row.exit) - 1)
-                )
-                yy_1 = spline(rr)
+            # iterate over all axes:
+            for ax, blade_row in zip(axes, self.blade_rows):
 
-            # plot spline
-            ax[0].plot(convert_angle(yy_0), rr, alpha = 0.5)
-            ax[1].plot(convert_angle(yy_1), rr, alpha = 0.5)
+                # proceed with inlet and outlet successively
+                for index, inlet_outlet in enumerate([blade_row.inlet, blade_row.exit]):
 
-            # plot inlet conditions
-            ax[0].plot(
-                [convert_angle(getattr(inlet.flow_state, q)) for inlet in blade_row.inlet],
-                [inlet.r for inlet in blade_row.inlet],
-                linestyle = '', marker = '.'
-            )
+                    # store array of attributes separately for convenience
+                    qq = [getattr(in_out.flow_state, q) for in_out in inlet_outlet]
 
-            # plot exit conditions
-            ax[1].plot(
-                [convert_angle(getattr(exit.flow_state, q)) for exit in blade_row.exit],
-                [exit.r for exit in blade_row.exit],
-                linestyle = '', marker = '.'
-            )
+                    # if attribute is None, skip block of code
+                    if None in qq:
 
-            # update x-axis limits
-            x_min = min(
-                x_min, *[convert_angle(getattr(inlet.flow_state, q)) for inlet in blade_row.inlet],
-                *[convert_angle(getattr(exit.flow_state, q)) for exit in blade_row.exit]
-            )
-            x_max = max(
-                x_max, *[convert_angle(getattr(inlet.flow_state, q)) for inlet in blade_row.inlet],
-                *[convert_angle(getattr(exit.flow_state, q)) for exit in blade_row.exit]
-            )
+                        continue
+
+                    # handle case where only one inlet/exit datapoint is available
+                    if len(blade_row.inlet) == 1:
+
+                        # plot a constant value everywhere
+                        ax[index].plot(rr, np.full_like(rr, [getattr(in_out.flow_state, q) for in_out in inlet_outlet]))
+
+                    # if more than one inlet/exit datapoint exists, fit spline
+                    else:
+
+                        # fit spline and store corresponding outputs
+                        spline = make_interp_spline(
+                            [in_out.r for in_out in inlet_outlet],
+                            [getattr(in_out.flow_state, q) for in_out in inlet_outlet],
+                            k = min(2, len(blade_row.inlet) - 1)
+                        )
+
+                        # plot spline
+                        ax[index].plot([convert_angle(y, label) for y in spline(rr)], rr, alpha = 0.5, linewidth = 3, color = colour)
+
+                        # plot inlet conditions
+                        ax[index].plot(
+                            [convert_angle(getattr(in_out.flow_state, q), label) for in_out in inlet_outlet],
+                            [in_out.r for in_out in inlet_outlet],
+                            linestyle = '', marker = '.', markersize = 8, color = colour
+                        )
+
+                    # update x-axis limits
+                    x_min = min(
+                        x_min, *[convert_angle(getattr(in_out.flow_state, q), label) for in_out in inlet_outlet]
+                    )
+                    x_max = max(
+                        x_max, *[convert_angle(getattr(in_out.flow_state, q), label) for in_out in inlet_outlet]
+                    )
 
         # flatten axes and iterate
         axes = axes.ravel()
@@ -611,12 +621,15 @@ class Engine:
         plt.tight_layout()
 
         # set title
-        plt.subplots_adjust(top = 0.9)
+        """plt.subplots_adjust(top = 0.9)
         fig.text(
             0.5, 0.95, f"Spanwise variation of {label}",
             ha = 'center', va = 'center', fontsize = 12
-        )
+        )"""
 
         # set x-label
-        plt.subplots_adjust(bottom = 0.1)
-        fig.text(0.5, 0.03, label, ha = 'center', va = 'center')
+        plt.subplots_adjust(bottom = 0.16)
+        """fig.text(0.5, 0.03, label, ha = 'center', va = 'center')"""
+
+        # create legend
+        ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)

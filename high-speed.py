@@ -128,16 +128,16 @@ def main():
 
         quantities = [
             ['M', 'Mach number'],
-            ['p', 'Static pressure'],
-            ['T', 'Stagnation temperature'],
-            ['alpha', 'Flow angle (°)', True]
+            ['p', 'Static pressure', 'T', 'Static temperature'],
+            ['p_0', 'Stagnation pressure', 'T_0', 'Stagnation temperature'],
+            ['alpha', 'Flow angle (°)', 'beta', 'Relative flow angle (°)']
         ]
 
         print(scenario.engine.nozzle.A_exit)
 
-        for qty in quantities:
+        for quantity in quantities:
 
-            scenario.engine.plot_spanwise_variations(*qty)
+            scenario.engine.plot_spanwise_variations(quantity)
 
         scenario.engine.visualise_velocity_triangles()
         scenario.engine.plot_contours()
