@@ -5,6 +5,8 @@ from matplotlib.patches import Polygon
 import numpy as np
 import copy
 from scipy.interpolate import make_interp_spline
+from scipy.optimize import root_scalar
+from time import perf_counter as timer
 
 from stage import Stage
 from nozzle import Nozzle
@@ -30,15 +32,28 @@ class Engine:
     N : float
         Number of annular streamtubes through which to solve the flow.
     """
-    def __init__(self, no_of_stages, M_1, scenario, n, N):
+    #def __init__(self, no_of_stages, M_1, scenario, n, N):
+    def __init__(self, scenario):
         """Create instance of the Engine class."""
         # store input variables
-        self.no_of_stages = no_of_stages
+        """self.no_of_stages = no_of_stages
         self.M_1 = M_1
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
         self.n = n
-        self.N = N
+        self.N = N"""
+
+        # store input variables
+        self.M_flight = scenario.M
+        self.C_th_design = scenario.C_th
+
+        # store default engine parameters
+        self.no_of_stages = utils.Defaults.no_of_stages
+        self.n = utils.Defaults.vortex_exponent
+        self.N = utils.Defaults.no_of_annuli
+
+        # initial guess for inlet Mach number
+        self.M_1 = 0.1
 
         # create the appropriate number of empty stages and blade rows
         self.stages = []
@@ -46,14 +61,61 @@ class Engine:
         for i in range(self.no_of_stages):
 
             # create stage and blade rows and store in lists
-            self.stages.append(Stage(self.n, self.N, i))
+            self.stages.append(Stage(self.n, i))
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
         # create nozzle
         self.nozzle = Nozzle(2 * self.no_of_stages - 0.5, 2 * self.no_of_stages + 0.5)
 
-        # run engine design subroutine
-        self.design()
+        # set up root-solving function for thrust coefficient
+        def solve_thrust(var):
+            """Iterates through engine designs until a given thrust is achieved."""
+            # unpack var in case it is passed as an array and use as inlet Mach number
+            var = float(np.squeeze(var))
+            self.M_1 = var
+
+            # design engine and store in scenario
+            self.design()
+            scenario.engine = self
+
+            # append x and y values for visualising iteration process
+            scenario.x.append(var)
+            scenario.y.append(self.C_th - self.C_th_design)
+
+            # return thrust coefficient residual
+            return self.C_th - self.C_th_design
+
+        fig, ax = plt.subplots()
+
+        for N in range(utils.Defaults.no_of_annuli):
+
+            scenario.x = []
+            scenario.y = []
+            self.N = N + 1
+            print(
+                f"{utils.Colours.CYAN}Performing analysis with {self.N} streamtubes..."
+                f"{utils.Colours.END}"
+            )
+            x0 = 1e-6
+            x1 = self.M_1
+            if self.N == utils.Defaults.no_of_annuli:
+
+                sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant")
+
+            else:
+
+                sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant", rtol = 2e-1)
+
+            ax.plot(scenario.x, scenario.y, label = f"{self.N}", linestyle = '', marker = '.')
+
+        # loop over all blade rows
+        for blade_row in self.blade_rows:
+
+            # run subroutine to determine blade metal angles and pitch-to-chord
+            blade_row.empirical_design()
+
+        ax.grid()
+        ax.legend()
 
         # create cycle of colours
         self.colour_cycle = iter(plt.cm.tab10.colors)
@@ -104,7 +166,7 @@ class Engine:
             if index == 0:
 
                 # set first stage to default inlet conditions
-                rotor.set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl)
+                rotor.set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl, self.N)
 
             # handle final stage
             #elif index == len(self.stages) - 1:
@@ -230,14 +292,6 @@ class Engine:
 
         # determine factor to scale Mach triangles by
         scaling = 1 / (5 * self.M_1)
-
-        # set title
-        """ax.title.set_text(
-            f"Flight Mach number: {self.M_flight:.3g}\n"
-            f"Thrust coefficient: {self.C_th:.3g}\n"
-            f"Jet velocity ratio: {self.jet_velocity_ratio:.3g}\n"
-            f"Nozzle area ratio: {self.nozzle.area_ratio:.3g}"
-        )"""    
 
         # initialise array of spanwise position indices to plot
         spanwise_positions = [0]

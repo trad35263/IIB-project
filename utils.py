@@ -16,17 +16,17 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # define non-dimensional stage parameters
     flow_coefficient = 0.5
-    stage_loading_coefficient = 0.2
+    stage_loading_coefficient = 0.3
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = -0.5
+    vortex_exponent = 0
 
     # code iteration parameters
-    no_of_annuli = 3
+    no_of_annuli = 5
 
     # default dimensional values
     engine_diameter = 0.65
-    hub_tip_ratio = 0.2
+    hub_tip_ratio = 0.3
 
     # area change ratios
     blade_row_radius = 1
@@ -39,7 +39,7 @@ class Defaults:
     inlet_swirl = 0
 
     # specify maximum permissible diffusion factor
-    DF_limit = 0.45
+    DF_limit = 0.2
 
 # 0.3 compressible flow perfect gas relations
 

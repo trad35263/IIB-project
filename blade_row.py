@@ -32,14 +32,14 @@ class Blade_row:
     is_rotor : boolean
         Reference to whether or not to categorise the blade row as a rotor or a stator.
     """
-    def __init__(self, r_casing_inlet, Y_p, n, N, is_rotor=False):
+    def __init__(self, r_casing_inlet, Y_p, n, is_rotor=False):
         """Create instance of the Blade_row class."""
         # assign attributes
         self.r_casing_inlet = r_casing_inlet
         self.r_hub = utils.Defaults.hub_tip_ratio
         self.Y_p = Y_p
         self.n = n
-        self.N = N
+        #self.N = N
 
         # derive inlet and exit areas
         self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
@@ -88,11 +88,11 @@ class Blade_row:
             self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
             self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
     
-    def set_inlet_conditions(self, M, alpha):
+    def set_inlet_conditions(self, M, alpha, N):
         """Distributes the given inlet conditions across several annular streamtubes."""
         # create list of inlet streamtubes and iterate over each annulus of interest
         self.inlet = []
-        for index in range(self.N):
+        for index in range(N):
             
             # consider annulus nearest the hub
             if index == 0:
@@ -100,8 +100,8 @@ class Blade_row:
                 # find corresponding annulus radius and thickness
                 r = (
                     (utils.Defaults.hub_tip_ratio + np.sqrt(
-                        utils.Defaults.hub_tip_ratio**2 * (1 - 1 / self.N)
-                        + 1 / self.N
+                        utils.Defaults.hub_tip_ratio**2 * (1 - 1 / N)
+                        + 1 / N
                     )) / 2
                 )
                 dr = r - utils.Defaults.hub_tip_ratio
@@ -116,7 +116,7 @@ class Blade_row:
                 r = (
                     (self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
                         (self.inlet[index - 1].r + self.inlet[index - 1].dr)**2
-                        - (utils.Defaults.hub_tip_ratio**2 - 1) / self.N
+                        - (utils.Defaults.hub_tip_ratio**2 - 1) / N
                     )) / 2
                 )
                 dr = r - self.inlet[index - 1].r - self.inlet[index - 1].dr
@@ -666,13 +666,13 @@ class Blade_row:
     def diffusion_factor(self):
         """Calculate local diffusion factor across the blade span using Lieblein."""
         # initialise array of diffusion factors
-        self.DF = np.zeros(len(self.inlet))
+        #self.DF = np.zeros(len(self.inlet))
 
         # iterate over all inlet-exit pairs
         for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
             # calculate diffusion factor using Lieblein's correlation
-            self.DF[index] = (
+            exit.DF = (
                 1 - exit.flow_state.M / inlet.flow_state.M * np.sqrt(
                     exit.flow_state.T / inlet.flow_state.T
                 ) + 0.5 * np.abs(
@@ -681,18 +681,25 @@ class Blade_row:
                             exit.flow_state.T / inlet.flow_state.T
                         ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
                     ) / inlet.flow_state.M
-                ) * self.pitch_to_chord[index]
+                ) * exit.pitch_to_chord
             )
 
-    def deviation(self, angle):
+    def deviation(self):
         """Calculate local deviation across the blade span using Carter and Howell."""
-        # initialise array of deviations
-        self.exit_metal_angle = np.array(len(self.inlet))
+        # use relative angles for rotor
+        if "Rotor" in self.label:
+
+            angle = "beta"
+
+        # use absolute angles for stator
+        else:
+
+            angle = "alpha"
 
         # iterate over all inlet-exit pairs
         for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
-            # store inlet and exit angle in degrees
+            # store inlet and exit angle in degrees for convenience
             inlet_angle = utils.rad_to_deg(getattr(inlet.flow_state, angle))
             exit_angle = utils.rad_to_deg(getattr(exit.flow_state, angle))
 
@@ -700,43 +707,51 @@ class Blade_row:
             m = 0.23 + exit_angle / 500
 
             # calculate exit metal angle using Carter's correlation
-            self.exit_metal_angle = (
+            exit.metal_angle = (
                 utils.deg_to_rad(
-                    exit_angle + m * inlet_angle * np.sqrt(self.pitch_to_chord[index])
-                    / (1 + m * np.sqrt(self.pitch_to_chord[index]))
+                    exit_angle + m * inlet_angle * np.sqrt(exit.pitch_to_chord)
+                    / (1 + m * np.sqrt(exit.pitch_to_chord))
                 )
             )
+
+    def empirical_design(self):
+        """Applies empirical relations to design pitch-to-chord and deviation distributions."""
+        # use relative angles for rotor
+        if "Rotor" in self.label:
+
+            angle = "beta"
+
+        # use absolute angles for stator
+        else:
+
+            angle = "alpha"
+
+        # loop over all inlet-exit pairs
+        for (inlet, exit) in zip(self.inlet, self.exit):
+
+            # calculate pitch-to-chord distribution to impose constant diffusion factor distribution
+            exit.DF = utils.Defaults.DF_limit
+            exit.pitch_to_chord = (
+                (
+                    exit.DF - 1 + exit.flow_state.M / inlet.flow_state.M
+                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
+                ) / (0.5 * np.abs(
+                    exit.flow_state.M / inlet.flow_state.M * np.sin(getattr(exit.flow_state, angle))
+                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
+                    - np.sin(getattr(inlet.flow_state, angle))
+                ))
+            )
+
+            print(f"exit.pitch_to_chord: {exit.pitch_to_chord}")
+
+        # calculate deviation and blade metal angles
+        self.deviation()
+
 
 # plotting functions ------------------------------------------------------------------------------
 
     def draw_blades(self):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
-        # this might not belong in this function!
-        # create array of radial positions to interpolate over
-        self.ss = np.linspace(0, 1, 100)
-        rr = self.ss * (self.r_casing_inlet - self.r_hub) + self.r_hub
-
-        # create spline interpolation between inlet blade angles and radial position
-        spline = make_interp_spline(
-            [inlet.r for inlet in self.inlet],
-            [inlet.metal_angle for inlet in self.inlet],
-            k = min(len(self.inlet) - 1, 2)
-        )
-
-        self.blade_angles_inlet = spline(rr)
-
-        rr = self.ss * (self.r_casing_exit - self.r_hub) + self.r_hub
-
-        # create spline interpolation between exit blade angles and radial position
-        spline = make_interp_spline(
-            [exit.r for exit in self.exit],
-            [exit.metal_angle for exit in self.exit],
-            k = min(len(self.inlet) - 1, 2)
-        )
-
-        self.blade_angles_exit = spline(rr)
-        # until here
-
         # initialise arrays to store blade shape data in
         self.xx = np.empty(len(self.inlet), dtype=object)
         self.yy = np.empty(len(self.inlet), dtype=object)
@@ -745,7 +760,7 @@ class Blade_row:
         for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
             # construct circular camber line
-            r = 1 / (exit.metal_angle - inlet.metal_angle)
+            r = 0.5 / (exit.metal_angle - inlet.metal_angle)
             x0 = -r * np.sin(inlet.metal_angle)
             y0 = r * np.cos(inlet.metal_angle)
             theta = np.linspace(inlet.metal_angle, exit.metal_angle, 100)

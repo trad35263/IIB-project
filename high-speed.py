@@ -79,52 +79,8 @@ def main():
 
         scenario.x = []
         scenario.y = []
-        
-        # set up function to solve for root of
-        def equations(var, N = utils.Defaults.no_of_annuli, n = utils.Defaults.vortex_exponent):
-            """"""
-            # unpack var in case it is passed as an array
-            var = float(np.squeeze(var))
 
-            # create engine and store in the given scenario
-            engine = Engine(no_of_stages, var, scenario, n, N)
-            scenario.engine = engine
-            scenario.x.append(var)
-            scenario.y.append(engine.C_th - scenario.C_th)
-            return engine.C_th - scenario.C_th
-
-        # perform analysis with N = 1 to obtain an estimate
-        print(f"{utils.Colours.CYAN}Performing precursory mean-line analysis...{utils.Colours.END}")
-        x0 = 1e-6
-        x1 = 0.5 * scenario.M + 1e-2
-        sol = root_scalar(
-            equations, x0 = x0, x1 = x1, method = "secant",
-            args = (1,)
-        )
-        fig, ax = plt.subplots()
-        ax.plot(scenario.x, scenario.y, linestyle = '', marker = '.', label = 'Mean-line')
-
-        # perform analysis with full number of streamtubes
-        print(
-            f"{utils.Colours.CYAN}Performing analysis with {utils.Defaults.no_of_annuli} "
-            f"streamtubes...{utils.Colours.END}"
-        )
-        x1 = scenario.engine.M_1
-        scenario.x = []
-        scenario.y = []
-        t1 = timer()
-        sol = root_scalar(equations, x0 = x0, x1 = x1, method = "secant")
-        t2 = timer()
-        print(
-            f"{utils.Colours.GREEN}Engine design found after {t2 - t1:.4f} seconds after "
-            f"{sol.iterations} iterations!{utils.Colours.END}"
-        )
-
-        ax.plot(scenario.x, scenario.y, linestyle = '', marker = '.', label = 'Full analysis')
-        ax.set_xlabel('Inlet Mach number')
-        ax.set_ylabel('Thrust coefficient residual')
-        ax.legend()
-        ax.grid()
+        scenario.engine = Engine(scenario)
 
         quantities = [
             ['M', 'Mach number'],

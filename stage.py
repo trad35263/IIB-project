@@ -19,11 +19,11 @@ class Stage:
     ----------
     None
     """
-    def __init__(self, n, N, i):
+    def __init__(self, n, i):
         """Create instance of the Stage class."""
         # store input parameters
         self.n = n
-        self.N = N
+        #self.N = N
 
         # create list of blade rows
         self.blade_rows = []
@@ -38,7 +38,7 @@ class Stage:
             Blade_row(
                 utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
-                self.n, self.N, True
+                self.n, True
             )
         )
 
@@ -47,7 +47,7 @@ class Stage:
             Blade_row(
                 utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
-                self.n, self.N, False
+                self.n, False
             )
         )
 
