@@ -54,7 +54,7 @@ def main():
             velocity = 0,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 100
+            thrust = 50
         ),
         Flight_scenario(
             label = "Take-off",
@@ -411,11 +411,21 @@ if __name__ == "__main__":
                 f"{utils.Colours.END}\n{error}"
             )
 
-    # user has not provided a number of stages and will be prompted later
-    else: 
+    if len(sys.argv) > 3:
 
-        # set number of stages to None for now
-        utils.Defaults.no_of_stages = None
+        if sys.argv[3] == "v":
+
+            # enter debug mode and switch off the loading bar
+            utils.Defaults.debug = True
+            utils.Defaults.loading_bar = False
+
+        else:
+
+            # explain error if user provides a non-integer input
+            print(
+                f"{utils.Colours.RED}Please provide the argument 'v' to enter debug mode!"
+                f"{utils.Colours.END}"
+            )
 
     # call main function
     main()

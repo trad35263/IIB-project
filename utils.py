@@ -23,6 +23,7 @@ class Defaults:
 
     # code iteration parameters
     no_of_annuli = 3
+    no_of_stages = None
 
     # default dimensional values
     engine_diameter = 0.65
@@ -41,6 +42,10 @@ class Defaults:
     # specify maximum permissible diffusion factor
     DF_limit = 0.45
     pitch_to_chord_limit = 1
+
+    # whether or not debug mode is active
+    debug = False
+    loading_bar = True
 
 # 0.3 compressible flow perfect gas relations
 
@@ -189,3 +194,11 @@ def rad_to_deg(x):
 def deg_to_rad(x):
     """Converts a float from degrees (°) into radians."""
     return np.pi * x / 180
+
+# 0.7 debugging function
+
+def debug(string):
+    """Prints a message to the terminal only if debug mode is activated."""
+    if Defaults.debug:
+
+        print(f"{string}")

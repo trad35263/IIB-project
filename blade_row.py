@@ -39,7 +39,6 @@ class Blade_row:
         self.r_hub = utils.Defaults.hub_tip_ratio
         self.Y_p = Y_p
         self.n = n
-        #self.N = N
 
         # derive inlet and exit areas
         self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
@@ -51,6 +50,10 @@ class Blade_row:
 
         # categorise blade row
         self.categorise(is_rotor)
+
+        # preallocate variables as None
+        self.inlet = None
+        self.exit = None
 
     def __str__(self):
         """Prints a string representation of the blade row."""
@@ -189,9 +192,7 @@ class Blade_row:
             inlet.flow_state.M_rel = np.linalg.norm(v3)
             inlet.flow_state.beta = np.arctan2(v3[1], v3[0])
 
-        self.exit = np.empty((len(self.inlet),), dtype = object)
-
-        def equations(vars):
+        def solve_rotor(vars):
             """Series of equations to solve the root of."""
             # reshape input variables for iteration and create empty solutions array
             vars = vars.reshape((len(self.inlet), 3))
@@ -378,7 +379,7 @@ class Blade_row:
                 * np.cos(inlet.flow_state.beta)
                 / utils.mass_flow_function(M_rel)
             )
-            
+
             return sin_beta**2 + cos_beta**2 - 1
 
         # debugging
@@ -387,7 +388,7 @@ class Blade_row:
         fig, ax = plt.subplots()
         ax.plot(xx, yy)
         plt.show()"""
-     
+
         # initialise array to store initial guess and loop over all inlet streamtubes
         x0 = np.zeros((len(self.inlet), 3))
         for index, inlet in enumerate(self.inlet):
@@ -402,7 +403,7 @@ class Blade_row:
                 args = (inlet,)
             )
             x0[index][0] = sol.root
-            
+
             # find the corresponding exit relative flow angle
             x0[index][1] = (
                 np.arcsin(
@@ -421,6 +422,20 @@ class Blade_row:
             # key assumption behind initial guess is that radius is constant
             x0[index][2] = inlet.r
 
+        # no previous guess is available
+        if type(self.exit) == type(None):
+
+            pass
+        
+        # exit conditions from a previous iteration are known
+        elif len(self.inlet) == len(self.exit):
+
+            for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+                x0[index] = [
+                    exit.flow_state.M_rel, exit.flow_state.beta, exit.r
+                ]
+
         # flatten initial guess array
         x0 = x0.ravel()
 
@@ -430,8 +445,22 @@ class Blade_row:
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 
+        # check for out of bounds error
+        for (x, low, up) in zip(x0, lower, upper):
+
+            if x < low or x > up:
+
+                print(f"{utils.Colours.RED}Out of bounds error occurred!{utils.Colours.END}")
+                print(f"x0: {x0}")
+                print(f"lower: {lower}")
+                print(f"upper: {upper}")
+
+        # empty list of exit streamtubes
+        self.exit = np.empty((len(self.inlet),), dtype = object)
+
         # solve for least squares solution
-        sol = least_squares(equations, x0, bounds = (lower, upper))
+        sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
+        utils.debug(sol.nfev)
 
         # set up residual function for finding pitch-to-chord ratio
         def max_diffusion(vars):
@@ -663,13 +692,13 @@ class Blade_row:
             inlet.M_blade = 0
             exit.M_blade = 0
 
-    def diffusion_factor(self):
+    #def diffusion_factor(self):
         """Calculate local diffusion factor across the blade span using Lieblein."""
         # initialise array of diffusion factors
         #self.DF = np.zeros(len(self.inlet))
 
         # iterate over all inlet-exit pairs
-        for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+        """for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
             # calculate diffusion factor using Lieblein's correlation
             exit.DF = (
@@ -682,7 +711,7 @@ class Blade_row:
                         ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
                     ) / inlet.flow_state.M
                 ) * exit.pitch_to_chord
-            )
+            )"""
 
     def deviation(self):
         """Calculate local deviation across the blade span using Carter and Howell."""
