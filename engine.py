@@ -7,6 +7,7 @@ import copy
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import root_scalar
 from time import perf_counter as timer
+import itertools
 
 from stage import Stage
 from nozzle import Nozzle
@@ -118,7 +119,7 @@ class Engine:
         ax.legend()
 
         # create cycle of colours
-        self.colour_cycle = iter(plt.cm.tab10.colors)
+        self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
 
     def __str__(self):
         """Prints a string representation of the stage."""
@@ -167,12 +168,6 @@ class Engine:
 
                 # set first stage to default inlet conditions
                 rotor.set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl, self.N)
-
-            # handle final stage
-            #elif index == len(self.stages) - 1:
-
-                # set stage inlet to previous stage exit conditions
-                #rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
 
             # handle all other stages
             else:
@@ -291,7 +286,7 @@ class Engine:
         fig, ax = plt.subplots(figsize = (10, 6))
 
         # determine factor to scale Mach triangles by
-        scaling = 1 / (5 * self.M_1)
+        scaling = 1 / (4 * self.M_1)
 
         # initialise array of spanwise position indices to plot
         spanwise_positions = [0]
@@ -577,7 +572,40 @@ class Engine:
     def plot_spanwise_variations(self, quantities):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
         # separate input list into pairs of values
-        q_label_pairs = np.reshape(quantities, (int(len(quantities) / 2), 2))
+        q_label_bools = [quantities[i:i + 3] for i in range(0, len(quantities), 3)]
+
+        # helper function to retrieve values from appropriate place and with correct units
+        def get_attribute(in_out, q, label, bool):
+            """"""
+            # when value to be retrieved is a flow value
+            if bool:
+
+                # read attribute
+                x = getattr(in_out.flow_state, q)
+
+            # when value to be retrieved is not a flow value
+            else:
+
+                # read attribute
+                x = getattr(in_out, q)
+
+            # check if x is None
+            if x == None:
+
+                # return NoneType
+                return x
+
+            # if attribute is an angle
+            elif "angle" in label or "Angle" in label:
+
+                # convert to degrees and return
+                return utils.rad_to_deg(x)
+            
+            # for all other attributes
+            else:
+
+                # return as is
+                return x
 
         # helper function to convert angles when needed
         def convert_angle(x, label):
@@ -599,11 +627,12 @@ class Engine:
         x_max = -1e12
         
         # iterate over all pairs of quantity and label
-        for q_label_pair in q_label_pairs:
+        for q_label_bool in q_label_bools:
 
-            # separate into quantity and label for convenience
-            q = q_label_pair[0]
-            label = q_label_pair[1]
+            # separate into quantity, label and boolean value for convenience
+            q = q_label_bool[0]
+            label = q_label_bool[1]
+            bool = q_label_bool[2]
 
             # set colour
             colour = next(self.colour_cycle)
@@ -621,7 +650,7 @@ class Engine:
                 for index, inlet_outlet in enumerate([blade_row.inlet, blade_row.exit]):
 
                     # store array of attributes separately for convenience
-                    qq = [getattr(in_out.flow_state, q) for in_out in inlet_outlet]
+                    qq = [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
 
                     # if attribute is None, skip block of code
                     if None in qq:
@@ -632,7 +661,7 @@ class Engine:
                     if len(blade_row.inlet) == 1:
 
                         # plot a constant value everywhere
-                        ax[index].plot(rr, np.full_like(rr, [getattr(in_out.flow_state, q) for in_out in inlet_outlet]))
+                        ax[index].plot(rr, np.full_like(rr, [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]))
 
                     # if more than one inlet/exit datapoint exists, fit spline
                     else:
@@ -640,26 +669,26 @@ class Engine:
                         # fit spline and store corresponding outputs
                         spline = make_interp_spline(
                             [in_out.r for in_out in inlet_outlet],
-                            [getattr(in_out.flow_state, q) for in_out in inlet_outlet],
+                            [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
                             k = min(2, len(blade_row.inlet) - 1)
                         )
 
                         # plot spline
-                        ax[index].plot([convert_angle(y, label) for y in spline(rr)], rr, alpha = 0.5, linewidth = 3, color = colour)
+                        ax[index].plot(spline(rr), rr, alpha = 0.5, linewidth = 3, color = colour)
 
                         # plot inlet conditions
                         ax[index].plot(
-                            [convert_angle(getattr(in_out.flow_state, q), label) for in_out in inlet_outlet],
+                            [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
                             [in_out.r for in_out in inlet_outlet],
                             linestyle = '', marker = '.', markersize = 8, color = colour
                         )
 
                     # update x-axis limits
                     x_min = min(
-                        x_min, *[convert_angle(getattr(in_out.flow_state, q), label) for in_out in inlet_outlet]
+                        x_min, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
                     )
                     x_max = max(
-                        x_max, *[convert_angle(getattr(in_out.flow_state, q), label) for in_out in inlet_outlet]
+                        x_max, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
                     )
 
         # flatten axes and iterate
@@ -678,16 +707,8 @@ class Engine:
         axes[0].set_ylabel('Dimensionless radius')
         plt.tight_layout()
 
-        # set title
-        """plt.subplots_adjust(top = 0.9)
-        fig.text(
-            0.5, 0.95, f"Spanwise variation of {label}",
-            ha = 'center', va = 'center', fontsize = 12
-        )"""
-
         # set x-label
         plt.subplots_adjust(bottom = 0.16)
-        """fig.text(0.5, 0.03, label, ha = 'center', va = 'center')"""
 
         # create legend
         ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)

@@ -83,10 +83,30 @@ def main():
         scenario.engine = Engine(scenario)
 
         quantities = [
-            ['M', 'Mach number'],
-            #['p', 'Static pressure', 'T', 'Static temperature'],
-            #['p_0', 'Stagnation pressure', 'T_0', 'Stagnation temperature'],
-            ['alpha', 'Flow angle (°)', 'beta', 'Relative flow angle (°)']
+            [
+                'M', 'Mach number', True,
+                'M_rel', 'Relative Mach number', True
+            ],
+            ['p', 'Static pressure', True, 'p_0', 'Stagnation pressure', True],
+            ['T', 'Static temperature', True, 'T_0', 'Stagnation temperature', True],
+            [
+                'alpha', 'Flow angle (°)', True,
+                'beta', 'Relative flow angle (°)', True,
+                'metal_angle', 'Metal angle (°)', False
+            ],
+            [
+                'DF', 'Diffusion factor', False
+            ],
+            [
+                'pitch_to_chord', 'Pitch-to-chord ratio', False,
+                's', 'Pitch', False,
+                'c', 'Chord', False
+            ],
+            [
+                'phi', 'Flow coefficient', False,
+                'psi', 'Stage loading coefficient', False,
+                'reaction', 'Reaction', False
+            ]
         ]
 
         print(scenario.engine.nozzle.A_exit)
@@ -373,6 +393,21 @@ if __name__ == "__main__":
             # explain error if user provides a non-integer input
             print(
                 f"{utils.Colours.RED}Please provide an integer argument for the number of stages!"
+                f"{utils.Colours.END}\n{error}"
+            )
+
+    if len(sys.argv) > 2:
+
+        try:
+
+            # store number of annuli and attempt to convert to integer
+            utils.Defaults.no_of_annuli = int(sys.argv[2])
+
+        except Exception as error:
+
+            # explain error if user provides a non-integer input
+            print(
+                f"{utils.Colours.RED}Please provide an integer argument for the number of annuli!"
                 f"{utils.Colours.END}\n{error}"
             )
 

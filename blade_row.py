@@ -706,25 +706,26 @@ class Blade_row:
             # calculate deviation coefficient using Howell's correlation for a circular camber line
             m = 0.23 + exit_angle / 500
 
-            # calculate exit metal angle using Carter's correlation
+            # calculate exit metal angle using Carter's correlation - CHECK SIGNS HERE
             exit.metal_angle = (
                 utils.deg_to_rad(
-                    exit_angle + m * inlet_angle * np.sqrt(exit.pitch_to_chord)
+                    exit_angle - m * inlet_angle * np.sqrt(exit.pitch_to_chord)
                     / (1 + m * np.sqrt(exit.pitch_to_chord))
                 )
             )
+            exit.deviation = getattr(exit.flow_state, angle) - exit.metal_angle
 
     def empirical_design(self):
         """Applies empirical relations to design pitch-to-chord and deviation distributions."""
-        # use relative angles for rotor
+        # use relative Mach numbers for rotor
         if "Rotor" in self.label:
 
-            angle = "beta"
+            M = "M_rel"
 
-        # use absolute angles for stator
+        # use absolute Mach numbers for stator
         else:
 
-            angle = "alpha"
+            M = "M"
 
         # loop over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -733,20 +734,36 @@ class Blade_row:
             exit.DF = utils.Defaults.DF_limit
             exit.pitch_to_chord = (
                 (
-                    exit.DF - 1 + exit.flow_state.M / inlet.flow_state.M
+                    exit.DF - 1 + getattr(exit.flow_state, M) / getattr(inlet.flow_state, M)
                     * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
-                ) / (0.5 * np.abs(
-                    exit.flow_state.M / inlet.flow_state.M * np.sin(getattr(exit.flow_state, angle))
+                ) * 2 * getattr(inlet.flow_state, M) / (
+                    exit.flow_state.M * np.sin(exit.flow_state.alpha)
                     * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
-                    - np.sin(getattr(inlet.flow_state, angle))
-                ))
+                    - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                )
             )
 
-            print(f"exit.pitch_to_chord: {exit.pitch_to_chord}")
+            # check if pitch to chord is unachievable
+            if exit.pitch_to_chord < 0:
+
+                # fix the pitch-to-chord and compute the new diffusion factor
+                exit.pitch_to_chord = utils.Defaults.pitch_to_chord_limit
+                exit.DF = (
+                    1 - getattr(exit.flow_state, M) / getattr(inlet.flow_state, M)
+                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T) + (
+                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                        * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
+                        - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                    ) * exit.pitch_to_chord / (2 * getattr(inlet.flow_state, M))
+                )
+
+            # calculate the dimensionless pitch and chord distributions
+            self.N = 5 # set for now
+            exit.s = 2 * np.pi * exit.r / self.N
+            exit.c = exit.s / exit.pitch_to_chord
 
         # calculate deviation and blade metal angles
         self.deviation()
-
 
 # plotting functions ------------------------------------------------------------------------------
 
@@ -760,7 +777,7 @@ class Blade_row:
         for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
             # construct circular camber line
-            r = 0.5 / (exit.metal_angle - inlet.metal_angle)
+            r = 1 / (exit.metal_angle - inlet.metal_angle)
             x0 = -r * np.sin(inlet.metal_angle)
             y0 = r * np.cos(inlet.metal_angle)
             theta = np.linspace(inlet.metal_angle, exit.metal_angle, 100)
@@ -769,12 +786,6 @@ class Blade_row:
 
             # determine cumulative length of chord line
             ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])
-            chord_length = ll_0[-1]
-            ll_0 *= 1 / chord_length
-
-            # normalise camber line to unit camber length
-            xx_0 = xx_0 / chord_length
-            yy_0 = yy_0 / chord_length
 
             # calculate derivatives in x and y with respect to l
             dx_dl = np.gradient(xx_0, ll_0)
@@ -814,6 +825,10 @@ class Blade_row:
             # combine upper and lower surfaces
             self.xx[index] = np.concatenate([xx_upper, xx_lower])
             self.yy[index] = np.concatenate([yy_upper, yy_lower])
+
+        # resize
+        self.xx = self.xx / 2
+        self.yy = self.yy / 2
 
     def plot_blade_row(self, ax, index, j, k, scaling = 1):
         """Plots a blade row onto a given axes at a specified spanwise position."""

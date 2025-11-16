@@ -19,10 +19,10 @@ class Defaults:
     stage_loading_coefficient = 0.3
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = 0
+    vortex_exponent = -0.5
 
     # code iteration parameters
-    no_of_annuli = 5
+    no_of_annuli = 3
 
     # default dimensional values
     engine_diameter = 0.65
@@ -39,7 +39,8 @@ class Defaults:
     inlet_swirl = 0
 
     # specify maximum permissible diffusion factor
-    DF_limit = 0.2
+    DF_limit = 0.45
+    pitch_to_chord_limit = 1
 
 # 0.3 compressible flow perfect gas relations
 

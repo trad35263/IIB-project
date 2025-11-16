@@ -23,7 +23,6 @@ class Stage:
         """Create instance of the Stage class."""
         # store input parameters
         self.n = n
-        #self.N = N
 
         # create list of blade rows
         self.blade_rows = []
@@ -343,3 +342,31 @@ class Stage:
             (utils.gamma - 1) * np.log(self.stator.exit.p_0 / self.rotor.inlet.p_0)
             / (utils.gamma * np.log(self.stator.exit.T_0 / self.rotor.inlet.T_0))
         )
+
+    def evaluate(self):
+        """Determines the distribution and mean values of non-dimensional stage parameters."""
+        # loop over inlet-exit pairs for the stage's rotor
+        for (inlet, exit) in zip(self.rotor.inlet, self.rotor.exit):
+
+            # determine local flow coefficient
+            inlet.phi = (
+                inlet.flow_state.M / inlet.M_blade
+            )
+
+            # determine local stage loading coefficient
+            inlet.psi = (
+                (
+                    exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
+                    - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                ) / (inlet.M_blade)
+            )
+
+        # loop over rotor inlet-exit and stator exit triples
+        for (inlet, rotor_exit, exit) in zip(self.rotor.inlet, self.rotor.exit, self.stator.exit):
+
+            # determine local reaction
+            exit.reaction = (
+                (rotor_exit.flow_state.T - inlet.flow_state.T)
+                / (exit.flow_state.T - inlet.flow_state.T)
+            )
