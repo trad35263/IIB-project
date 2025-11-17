@@ -60,6 +60,8 @@ class Nozzle:
 
         return string
 
+# design functions --------------------------------------------------------------------------------
+
     def nozzle_design(self, p):
         """Determines the nozzle area to satisfy the atmospheric pressure boundary condition."""
         # create empty array of exit streamtubes
@@ -351,18 +353,56 @@ class Nozzle:
                 print(f"{utils.Colours.RED}Nozzle is choked: {self}{utils.Colours.END}")
                 exit_M = 1
 
-        # determine exit flow coefficient via conservation of mass
-        #exit_phi = (
-        #    self.inlet.phi * utils.stagnation_density_ratio(self.inlet.M)
-        #    / utils.stagnation_density_ratio(exit_M)
-        #    / self.area_ratio
-        #)
-
         # return instance of Flow_state class corresponding to exit conditions
         self.exit = Flow_state(
             exit_M,
-            #exit_phi,
             exit_alpha,
             self.inlet.T_0,
             self.inlet.p_0
         )
+
+    def evaluate(self, M_1, M_flight):
+        """Determine key performance metrics local to the nozzle exit conditions."""
+        # find thrust coefficient
+        for exit in self.exit:
+
+            # determine local thrust coefficient
+            exit.C_th = (
+                utils.mass_flow_function(M_1) * np.sqrt(utils.gamma - 1) * (
+                    exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                    * np.sqrt(exit.flow_state.T)
+                    - M_flight * np.sqrt(utils.stagnation_temperature_ratio(M_flight))
+                )
+            )
+
+            # determine local propulsive efficiency
+            exit.eta_prop = (
+                2 * exit.C_th * M_flight / utils.mass_flow_function(M_1) * np.sqrt(
+                    utils.stagnation_temperature_ratio(M_flight) / (utils.gamma - 1)
+                ) / (
+                    exit.flow_state.M**2 * exit.flow_state.T
+                    - M_flight**2 * utils.stagnation_temperature_ratio(M_flight)
+                )
+            )
+
+            # determine local nozzle efficiency
+            exit.eta_nozz = (
+                (utils.gamma - 1) / 2 * (
+                    (
+                        exit.flow_state.M**2 * exit.flow_state.T
+                        - M_flight**2 * utils.stagnation_temperature_ratio(M_flight)
+                    ) / (np.power(exit.flow_state.p_0, 1 - 1 / utils.gamma) - 1)
+                )
+            )
+
+            # determine local compressor efficiency
+            exit.eta_comp = (
+                (np.power(exit.flow_state.p_0, 1 - 1 / utils.gamma) - 1)
+                / (exit.flow_state.T_0 - 1)
+            )
+
+            # determine local jet velocity ratio
+            exit.jet_velocity_ratio = (
+                M_flight / exit.flow_state.M
+                * np.sqrt(utils.stagnation_temperature_ratio(M_flight) / exit.flow_state.T)
+            )

@@ -33,7 +33,6 @@ class Engine:
     N : float
         Number of annular streamtubes through which to solve the flow.
     """
-    #def __init__(self, no_of_stages, M_1, scenario, n, N):
     def __init__(self, scenario):
         """Create instance of the Engine class."""
         # store input variables
@@ -194,10 +193,12 @@ class Engine:
 
         return string
 
+# design functions --------------------------------------------------------------------------------
+
     def design(self):
         """Determines appropriate values for blade metal angles for the given requirements."""
         # iterate over all stages
-        utils.debug(f"self.M_1: {self.M_1}")
+        utils.debug(f"\nself.M_1: {self.M_1}")
         for index, stage in enumerate(self.stages):
 
             # store rotor and stator as variables for convenience
@@ -325,6 +326,40 @@ class Engine:
             for blade_row in stage.blade_rows:
 
                 blade_row.colour = stage.colour
+
+    def evaluate(self):
+        """Determine key performance metrics for the engine system."""
+        # investigate nozzle performance
+        self.nozzle.evaluate(self.M_1, self.M_flight)
+
+        # iterate over all stages
+        for stage in self.stages:
+
+            # investigate stage performance
+            stage.evaluate()
+
+        # sum thrust coefficients
+        self.C_th = np.sum([exit.C_th for exit in self.nozzle.exit])
+
+        # find mass-averaged propulsive efficiency
+        self.eta_prop = np.mean([exit.eta_prop for exit in self.nozzle.exit])
+
+        # find mass-averaged nozzle efficiency
+        self.eta_nozz = np.mean([exit.eta_nozz for exit in self.nozzle.exit])
+
+        # find mass-averaged compressor (isentropic) efficiency
+        self.eta_comp = np.mean([exit.eta_comp for exit in self.nozzle.exit])
+
+        # take electric efficiency as 1 for now
+        self.eta_elec = 1
+        
+        # find mass-averaged jet velocity ratio
+        self.jet_velocity_ratio = np.mean([exit.jet_velocity_ratio for exit in self.nozzle.exit])
+
+        # store nozzle area ratio
+        self.nozzle_area_ratio = self.nozzle.A_exit
+
+# plotting functions ------------------------------------------------------------------------------
     
     def visualise_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
@@ -368,62 +403,6 @@ class Engine:
         ax.grid()
         ax.legend()
         plt.tight_layout()
-
-    def evaluate(self):
-        """Determine key performance metrics for the engine system."""
-        # find thrust coefficient
-        self.C_th = (
-            utils.mass_flow_function(self.M_1) * np.sqrt(utils.gamma - 1) * (
-                np.sum([
-                    exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                    * np.sqrt(exit.flow_state.T)
-                    - self.M_flight * np.sqrt(utils.stagnation_temperature_ratio(self.M_flight))
-                    for exit in self.nozzle.exit
-                ])
-            )
-        )
-
-        # find propulsive efficiency
-        self.eta_prop = (
-            2 * self.C_th / utils.mass_flow_function(self.M_1) * np.sqrt(
-                utils.stagnation_temperature_ratio(self.M_flight) / (utils.gamma - 1)
-            ) / np.sum([
-                exit.flow_state.M**2 * exit.flow_state.T
-                - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
-                for exit in self.nozzle.exit
-            ])
-        )
-
-        # find nozzle efficiency
-        self.eta_nozz = (
-            (utils.gamma - 1) / 2 * np.sum([
-                (
-                    exit.flow_state.M**2 * exit.flow_state.T
-                    - self.M_flight**2 * utils.stagnation_temperature_ratio(self.M_flight)
-                ) / (
-                    np.power(exit.flow_state.p_0, 1 - 1 / utils.gamma) - 1
-                )
-                for exit in self.nozzle.exit
-            ])
-        )
-
-        # find compressor efficiency
-        self.eta_comp = (
-            np.sum([
-                (np.power(exit.flow_state.p_0, 1 - 1 / utils.gamma) - 1)
-                / (exit.flow_state.T_0 - 1)
-                for exit in self.nozzle.exit
-            ])
-        )
-
-        self.nozzle_area_ratio = self.nozzle.A_exit
-
-        self.jet_velocity_ratio = 1
-
-        # iterate over all stages
-        for stage in self.stages:
-
-            stage.evaluate()
 
     def plot_contours(self):
         """Creates a plot of a section view of the engine with contours of a specified quantity."""
@@ -658,17 +637,6 @@ class Engine:
             else:
 
                 # return as is
-                return x
-
-        # helper function to convert angles when needed
-        def convert_angle(x, label):
-
-            if "angle" in label:
-
-                return utils.rad_to_deg(x)
-
-            else:
-
                 return x
 
         # create plot with an axis for each blade row inlet and exit and reshape axes
