@@ -27,7 +27,7 @@ class Nozzle:
     exit : object or None
         Exit flow state (to be defined externally).
     """
-    def __init__(self, x_inlet, x_exit, inlet=None):
+    def __init__(self, x_inlet, x_exit, inlet = None):
         """Create instance of the Nozzle class."""
         # store input variables
         self.x_inlet = x_inlet
@@ -65,14 +65,14 @@ class Nozzle:
         # create empty array of exit streamtubes
         self.exit = np.empty((len(self.inlet),), dtype = object)
 
-        def equations(vars):
+        def solve_nozzle(vars):
             """Series of equations to solve the root of."""
             # reshape input variables for iteration and create empty solutions array
             vars = vars.reshape((len(self.inlet), 3))
             solutions = np.zeros_like(vars)
 
             # iterate over all sets of input variables
-            for index, (inlet, var) in enumerate(zip(self.inlet, vars)):
+            for index, (var, inlet) in enumerate(zip(vars, self.inlet)):
 
                 # create a holder flow_state given that process is isentropic
                 flow_state = Flow_state(
@@ -96,7 +96,7 @@ class Nozzle:
                     r = (r1 + r2) / 2
                     dr = r - r1
 
-                # create streamtube and store at exit to the rotor
+                # create streamtube and store at exit to the nozzle
                 self.exit[index] = Streamtube(flow_state, r, dr)
 
             # repeat iteration with new values stored
@@ -210,7 +210,7 @@ class Nozzle:
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 
         # solve for least squares solution
-        sol = least_squares(equations, x0, bounds = (lower, upper))
+        sol = least_squares(solve_nozzle, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
     
     def define_nozzle_geometry(self, M_exit):
@@ -263,7 +263,6 @@ class Nozzle:
             self.inlet.T_0,
             self.inlet.p_0
         )
-
 
     def solve_nozzle(self):
         """Solve for conditions at outlet, given the inlet conditions, due to the area change."""

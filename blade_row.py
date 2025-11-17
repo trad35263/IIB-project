@@ -206,20 +206,26 @@ class Blade_row:
                     0, 0, 0, 0, 0, var[0], var[1]
                 )
 
-                # use hub radius for first streamtube
+                # handle inner streamtube
                 if index == 0:
 
                     # set thickness using hub radius
-                    dr = var[2] - utils.Defaults.hub_tip_ratio
+                    r1 = self.r_hub
+                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r = (r1 + r2) / 2
+                    dr = r - r1
 
                 # for all other streamtubes
                 else:
 
                     # set thickness using previous radius
-                    dr = var[2] - self.exit[index - 1].r - self.exit[index - 1].dr
+                    r1 = self.exit[index - 1].r + self.exit[index - 1].dr
+                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r = (r1 + r2) / 2
+                    dr = r - r1
 
                 # create streamtube and store at exit to the rotor
-                self.exit[index] = Streamtube(flow_state, var[2], dr)
+                self.exit[index] = Streamtube(flow_state, r, dr)
 
             # iterate over all inlet-exit pairs
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
@@ -420,7 +426,7 @@ class Blade_row:
             )
 
             # key assumption behind initial guess is that radius is constant
-            x0[index][2] = inlet.r
+            x0[index][2] = inlet.A
 
         # no previous guess is available
         if type(self.exit) == type(None):
@@ -433,15 +439,15 @@ class Blade_row:
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
                 x0[index] = [
-                    exit.flow_state.M_rel, exit.flow_state.beta, exit.r
+                    exit.flow_state.M_rel, exit.flow_state.beta, exit.A
                 ]
 
         # flatten initial guess array
         x0 = x0.ravel()
 
         # set lower and upper guess bounds and shape correctly
-        lower = [0, -np.pi / 2, utils.Defaults.hub_tip_ratio]
-        upper = [1, np.pi / 2, 1]
+        lower = [0, -np.pi / 2, 0]
+        upper = [1, np.pi / 2, np.pi]
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 
@@ -460,29 +466,7 @@ class Blade_row:
 
         # solve for least squares solution
         sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
-        utils.debug(sol.nfev)
-
-        # set up residual function for finding pitch-to-chord ratio
-        def max_diffusion(vars):
-            pass
-            """Determine residual for diffusion factor given a solidity distribution."""
-            """self.pitch_to_chord = [1 / var for var in vars]
-            self.diffusion_factor()
-            residuals = [DF - utils.Defaults.DF_limit for DF in self.DF]
-            return residuals
-
-        # set initial guesses for pitch-to-chord ratio distributions
-        x0 = np.full(len(self.inlet), 0.1)
-        x1 = np.full(len(self.inlet), 1)
-
-        # iterate over number of blades per row, starting with 2
-        blades = 2
-        while True:
-
-            sol = root_scalar(max_diffusion, x0 = x0, x1 = x1, method = "secant")
-            print(sol)
-            input()
-            blades += 1"""
+        utils.debug(f"Rotor solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
 
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -502,16 +486,21 @@ class Blade_row:
             inlet.metal_angle = inlet.flow_state.beta
             exit.metal_angle = exit.flow_state.beta
 
-    def stator_design(self, reaction, T_1, T_2, last_stage = False):
+    def stator_design(self, last_stage = False):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
         # for now treat every stage as last stage
         last_stage = True
 
-        # determine variation of several parameters across the blade span at inlet
+        # clean inlet of relative quantities
         for inlet in self.inlet:
 
-            # determine local reaction - need to work this out properly
-            inlet.reaction = reaction
+            inlet.flow_state.M_rel = None
+            inlet.flow_state.beta = None
+            inlet.flow_state.T_0_rel = None
+            inlet.flow_state.p_0_rel = None
+
+        # determine variation of several parameters across the blade span at inlet
+        for inlet in self.inlet:
 
             # determine relative stagnation pressure loss
             inlet.p_0_ratio = (
@@ -521,7 +510,7 @@ class Blade_row:
         # create empty array of exit streamtubes
         self.exit = np.empty((len(self.inlet),), dtype = object)
 
-        def equations(vars):
+        def solve_stator(vars):
             """Series of equations to solve the root of."""
             # reshape input variables for iteration and create empty solutions array
             vars = vars.reshape((len(self.inlet), 3))
@@ -535,20 +524,26 @@ class Blade_row:
                     var[0], var[1], 0, 0, 0
                 )
 
-                # use hub radius for first streamtube
+                # handle inner streamtube
                 if index == 0:
 
                     # set thickness using hub radius
-                    dr = var[2] - utils.Defaults.hub_tip_ratio
+                    r1 = self.r_hub
+                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r = (r1 + r2) / 2
+                    dr = r - r1
 
                 # for all other streamtubes
                 else:
 
                     # set thickness using previous radius
-                    dr = var[2] - self.exit[index - 1].r - self.exit[index - 1].dr
+                    r1 = self.exit[index - 1].r + self.exit[index - 1].dr
+                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r = (r1 + r2) / 2
+                    dr = r - r1
 
-                # create streamtube and store at exit to the rotor
-                self.exit[index] = Streamtube(flow_state, var[2], dr)
+                # create streamtube and store at exit to the stator
+                self.exit[index] = Streamtube(flow_state, r, dr)
 
             # iterate over all inlet-exit pairs
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
@@ -582,20 +577,8 @@ class Blade_row:
                     - utils.mass_flow_function(exit.flow_state.M)
                 )
 
-                # handle last stage scenario
-                if last_stage:
-
-                    # set residual to be the exit angle
-                    solutions[index][1] = exit.flow_state.alpha
-
-                # handle all other stages
-                else:
-
-                    # determine residual for specified reaction
-                    solutions[index][1] = (
-                        inlet.reaction - (T_2 / T_1 - 1)
-                        / (exit.flow_state.T / T_1 - 1)
-                    )
+                # set residual to be the exit angle
+                solutions[index][1] = exit.flow_state.alpha
 
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
@@ -641,16 +624,6 @@ class Blade_row:
                         term_1 + term_2 + term_3 + term_4
                     )
 
-                    # debugging
-                    """print("\n---------------------------")
-                    print(f"term_1: {term_1}")
-                    print(f"term_2: {term_2}")
-                    print(f"term_3: {term_3}")
-                    print(f"term_4: {term_4}")
-                    print(f"exit.flow_state.T_0: {exit.flow_state.T_0}")
-                    print(f"self.exit[index + 1].flow_state.T_0: {self.exit[index + 1].flow_state.T_0}")
-                    print(f"solutions[index][2]: {solutions[index][2]}")"""
-
             # final residual comes from constraint for all areas to sum to the exit area
             solutions[-1][-1] = (
                 np.sum([exit.A for exit in self.exit]) - self.area_exit
@@ -675,14 +648,25 @@ class Blade_row:
         x0 = x0.ravel()
 
         # set lower and upper guess bounds and shape correctly
-        lower = [0, -np.pi / 2, utils.Defaults.hub_tip_ratio]
-        upper = [1, np.pi / 2, 1]
+        lower = [0, -np.pi / 2, 0]
+        upper = [1, np.pi / 2, np.pi]
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 
+        # check for out of bounds error
+        for (x, low, up) in zip(x0, lower, upper):
+
+            if x < low or x > up:
+
+                print(f"{utils.Colours.RED}Out of bounds error occurred!{utils.Colours.END}")
+                print(f"x0: {x0}")
+                print(f"lower: {lower}")
+                print(f"upper: {upper}")
+
         # solve for least squares solution
-        sol = least_squares(equations, x0, bounds = (lower, upper))
-        
+        sol = least_squares(solve_stator, x0, bounds = (lower, upper))        
+        utils.debug(f"Stator solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
+
         # save blade angles in inlet and exit streamtubes
         for (inlet, exit) in zip(self.inlet, self.exit):
 
@@ -691,27 +675,6 @@ class Blade_row:
             exit.metal_angle = exit.flow_state.alpha
             inlet.M_blade = 0
             exit.M_blade = 0
-
-    #def diffusion_factor(self):
-        """Calculate local diffusion factor across the blade span using Lieblein."""
-        # initialise array of diffusion factors
-        #self.DF = np.zeros(len(self.inlet))
-
-        # iterate over all inlet-exit pairs
-        """for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
-
-            # calculate diffusion factor using Lieblein's correlation
-            exit.DF = (
-                1 - exit.flow_state.M / inlet.flow_state.M * np.sqrt(
-                    exit.flow_state.T / inlet.flow_state.T
-                ) + 0.5 * np.abs(
-                    (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha) * np.sqrt(
-                            exit.flow_state.T / inlet.flow_state.T
-                        ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                    ) / inlet.flow_state.M
-                ) * exit.pitch_to_chord
-            )"""
 
     def deviation(self):
         """Calculate local deviation across the blade span using Carter and Howell."""

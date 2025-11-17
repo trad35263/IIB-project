@@ -44,18 +44,14 @@ def main():
         no_of_stages = utils.Defaults.no_of_stages
 
     # user feedback
-    print(f"{utils.Colours.GREEN}{no_of_stages} stages selected!{utils.Colours.END}")
+    print(f"{utils.Colours.GREEN}{no_of_stages}{utils.Colours.END} stage(s) selected!")
+    print(
+        f"Analysing {utils.Colours.GREEN}{utils.Defaults.no_of_annuli}{utils.Colours.END} annular "
+        f"streamtube(s)!"
+    )
 
     # store list of conditions to design candidate engines for
     flight_scenarios = [
-        Flight_scenario(
-            label = "Static",
-            altitude = 0,
-            velocity = 0,
-            diameter = utils.Defaults.engine_diameter,
-            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 50
-        ),
         Flight_scenario(
             label = "Take-off",
             altitude = 0,
@@ -63,6 +59,14 @@ def main():
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
             thrust = 30
+        ),
+        Flight_scenario(
+            label = "Static",
+            altitude = 0,
+            velocity = 0,
+            diameter = utils.Defaults.engine_diameter,
+            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
+            thrust = 50
         ),
         Flight_scenario(
             label = "Cruise",
@@ -76,6 +80,8 @@ def main():
 
     # iterate over every flight scenario
     for scenario in flight_scenarios:
+
+        print(f"Designing for scenario:{scenario}")
 
         scenario.x = []
         scenario.y = []
@@ -108,8 +114,6 @@ def main():
                 'reaction', 'Reaction', False
             ]
         ]
-
-        print(scenario.engine.nozzle.A_exit)
 
         for quantity in quantities:
 
@@ -372,7 +376,6 @@ def main():
     ax_right.set_xlabel("Flow coefficient (ϕ)")
     ax_right.set_ylabel("Reaction (Δ)")
     ax_right.grid()
-    #ax_right.legend()
 
     plt.show()
 

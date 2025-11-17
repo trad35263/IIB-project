@@ -66,16 +66,15 @@ class Engine:
         # set up root-solving function for thrust coefficient
         def solve_thrust(var):
             """Iterates through engine designs until a given thrust is achieved."""
-            # unpack var in case it is passed as an array and use as inlet Mach number
-            var = float(np.squeeze(var))
-            self.M_1 = var
+            # unpack var and use as inlet Mach number, eliminating negative solutions
+            self.M_1 = np.abs(float(np.squeeze(var)))
 
             # draw loading bar
             if utils.Defaults.loading_bar and self.benchmark == None:
 
                 print("|" + "-" * 100 + "|")
 
-            # design engine and store in scenario
+            # design engine, store inside scenario and calculate residual
             self.design()
             scenario.engine = self
             residual = self.C_th - self.C_th_design
@@ -89,17 +88,13 @@ class Engine:
                 # set benchmark for loading bar
                 if self.benchmark == None:
 
+                    # benchmark for loading bar is the first residual
                     self.benchmark = self.C_th - self.C_th_design
 
-                new_progress = max(0.0, 100 * min(1.0, np.power(1 - residual / self.benchmark, 6)))
-
-                # Ensure progress never decreases
+                # calculate progress and print loading bar
+                new_progress = max(0.0, 100 * min(1.0, np.power(1 - residual / self.benchmark, 4)))
                 self.progress = max(self.progress, new_progress)
-
-                # Build bar
                 bar = f"{utils.Colours.GREEN}|" + "-" * int(self.progress) + f"|{utils.Colours.END}"
-
-                # Print in-place
                 print("\r" + bar, end = "", flush = True)
 
             # return thrust coefficient residual
@@ -109,7 +104,16 @@ class Engine:
 
         # increment number of annuli for analysis, starting with mean-line only
         t1 = timer()
-        for N in range(utils.Defaults.no_of_annuli):
+
+        NN = [1]
+        if utils.Defaults.no_of_annuli > 1:
+            NN.append(2)
+        if utils.Defaults.no_of_annuli > 2:
+            NN.append(3)
+        if utils.Defaults.no_of_annuli > 3:
+            NN.append(utils.Defaults.no_of_annuli)
+
+        for N in NN:
 
             # initialise variables for storing loading bar progress
             self.benchmark = None
@@ -117,7 +121,7 @@ class Engine:
 
             scenario.x = []
             scenario.y = []
-            self.N = N + 1
+            self.N = N
             print(
                 f"{utils.Colours.CYAN}Performing analysis with {self.N} streamtubes..."
                 f"{utils.Colours.END}"
@@ -139,7 +143,11 @@ class Engine:
             ax.plot(scenario.x, scenario.y, label = f"{self.N}", linestyle = '', marker = '.')
 
         t2 = timer()
-        utils.debug(f"{utils.Colours.GREEN}Engine design duration: {t2 - t1:.3g}s{utils.Colours.END}")
+        print(
+            f"Engine design completed after {utils.Colours.GREEN}{t2 - t1:.3g}s:"
+            f"{utils.Colours.END}"
+        )
+        print(self)
 
         # loop over all blade rows
         for blade_row in self.blade_rows:
@@ -212,17 +220,16 @@ class Engine:
             t1 = timer()
             rotor.rotor_design(stage.phi, stage.psi)
             t2 = timer()
-            utils.debug(f"{utils.Colours.GREEN}Rotor design duration: {t2 - t1:.4g}{utils.Colours.END}")
+            utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
             stator.inlet = copy.deepcopy(rotor.exit)
             t1 = timer()
-            stator.stator_design(
-                stage.reaction,
-                stage.blade_rows[0].inlet[0].flow_state.T,
-                stage.blade_rows[0].exit[0].flow_state.T,
-                index == len(self.stages) - 1
-            )
+            stator.stator_design(index == len(self.stages) - 1)
             t2 = timer()
-            utils.debug(f"{utils.Colours.GREEN}Stator design duration: {t2 - t1:.4g}{utils.Colours.END}")
+            utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
+            # store rotor and stator as such in stage for convenience
+            stage.rotor = rotor
+            stage.stator = stator
 
         # set nozzle inlet conditions
         self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
@@ -230,7 +237,7 @@ class Engine:
         # design nozzle to match atmospheric pressure in jet periphery
         p_atm = utils.stagnation_pressure_ratio(self.M_flight)
         self.nozzle.nozzle_design(p_atm)
-        self.performance_metrics()
+        self.evaluate()
 
     def analyse(self):
         """Analyses the entire engine system."""
@@ -362,7 +369,7 @@ class Engine:
         ax.legend()
         plt.tight_layout()
 
-    def performance_metrics(self):
+    def evaluate(self):
         """Determine key performance metrics for the engine system."""
         # find thrust coefficient
         self.C_th = (
@@ -409,7 +416,14 @@ class Engine:
             ])
         )
 
+        self.nozzle_area_ratio = self.nozzle.A_exit
+
         self.jet_velocity_ratio = 1
+
+        # iterate over all stages
+        for stage in self.stages:
+
+            stage.evaluate()
 
     def plot_contours(self):
         """Creates a plot of a section view of the engine with contours of a specified quantity."""

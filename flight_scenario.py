@@ -75,6 +75,8 @@ class Flight_scenario:
 
                     string += f"{name}: {utils.Colours.GREEN}{value:.4g}{utils.Colours.END}\n"
 
-        string += "\n"
+            if isinstance(value, str):
+
+                string += f"{name}: {utils.Colours.GREEN}{value}{utils.Colours.END}\n"
 
         return string

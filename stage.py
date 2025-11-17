@@ -366,7 +366,7 @@ class Stage:
         for (inlet, rotor_exit, exit) in zip(self.rotor.inlet, self.rotor.exit, self.stator.exit):
 
             # determine local reaction
-            exit.reaction = (
+            inlet.reaction = (
                 (rotor_exit.flow_state.T - inlet.flow_state.T)
                 / (exit.flow_state.T - inlet.flow_state.T)
             )
