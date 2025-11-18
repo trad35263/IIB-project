@@ -32,11 +32,13 @@ class Nozzle:
         # store input variables
         self.x_inlet = x_inlet
         self.x_exit = x_exit
-
-        # derived quantities
-        self.area_ratio = 1
         self.inlet = inlet
+
+        # preallocate properties
         self.exit = None
+        self.r_hub = 0
+
+        # set label and colour
         self.label = f"{utils.Colours.PURPLE}Nozzle{utils.Colours.END}"
         self.colour = 'k'
 

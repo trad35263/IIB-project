@@ -29,15 +29,6 @@ class Streamtube:
 
         # calculate annulus area
         self.A = 4 * np.pi * self.r * self.dr
-
-        # pre-allocate variables as None
-        self.DF = None
-        self.pitch_to_chord = None
-        self.s = None
-        self.c = None
-        self.phi = None
-        self.psi = None
-        self.reaction = None
         
     def __str__(self):
         """Prints a string representation of the streamtube."""

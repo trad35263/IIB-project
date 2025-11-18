@@ -55,10 +55,10 @@ def main():
         Flight_scenario(
             label = "Static",
             altitude = 0,
-            velocity = 0,
+            velocity = 50,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 50
+            thrust = 200
         ),
         Flight_scenario(
             label = "Take-off",
@@ -119,7 +119,7 @@ def main():
 
             scenario.engine.plot_spanwise_variations(quantity)
 
-        scenario.engine.visualise_velocity_triangles()
+        scenario.engine.plot_velocity_triangles()
         scenario.engine.plot_contours()
         plt.show()
 
@@ -281,10 +281,10 @@ def main():
     # analyse engine
     print(f"{utils.Colours.GREEN}Analysing engine...{utils.Colours.END}")
     engine.collect_flow_states()
-    engine.visualise_velocity_triangles()
+    engine.plot_velocity_triangles()
     engine.analyse()
     engine.collect_flow_states()
-    engine.visualise_velocity_triangles()
+    engine.plot_velocity_triangles()
     plt.show()
 
     # store nominal flow and stage loading coefficients for each stage

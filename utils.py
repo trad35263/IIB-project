@@ -189,6 +189,12 @@ class Colours:
 
 def rad_to_deg(x):
     """Converts a float from radians into degrees (°)."""
+    # handle case where None is passed
+    if x == None:
+
+        return None
+
+    # convert to degrees and return
     return 180 * x / np.pi
 
 def deg_to_rad(x):

@@ -361,7 +361,7 @@ class Engine:
 
 # plotting functions ------------------------------------------------------------------------------
     
-    def visualise_velocity_triangles(self):
+    def plot_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
         # create plot for displaying velocity triangles
         fig, ax = plt.subplots(figsize = (10, 6))
@@ -612,23 +612,27 @@ class Engine:
             # when value to be retrieved is a flow value
             if bool:
 
+                # return False if value does not exist
+                if not hasattr(in_out.flow_state, q):
+
+                    return False
+
                 # read attribute
                 x = getattr(in_out.flow_state, q)
 
             # when value to be retrieved is not a flow value
             else:
 
+                # return False if value does not exist
+                if not hasattr(in_out, q):
+
+                    return False
+
                 # read attribute
                 x = getattr(in_out, q)
 
-            # check if x is None
-            if x == None:
-
-                # return NoneType
-                return x
-
             # if attribute is an angle
-            elif "angle" in label or "Angle" in label:
+            if "angle" in label or "Angle" in label:
 
                 # convert to degrees and return
                 return utils.rad_to_deg(x)
@@ -640,15 +644,15 @@ class Engine:
                 return x
 
         # create plot with an axis for each blade row inlet and exit and reshape axes
-        fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows), figsize = (15, 6))
-        axes = np.reshape(axes, (len(self.blade_rows), 2))
+        fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows) + 2, figsize = (15, 7))
+        axes = np.reshape(axes, (len(self.blade_rows) + 1, 2))
 
         # assign values for capturing appropriate axis limits
         x_min = 1e12
         x_max = -1e12
         
         # iterate over all pairs of quantity and label
-        for q_label_bool in q_label_bools:
+        for i, q_label_bool in enumerate(q_label_bools):
 
             # separate into quantity, label and boolean value for convenience
             q = q_label_bool[0]
@@ -661,20 +665,24 @@ class Engine:
             # set legend entry in final axis
             axes[-1][1].plot([], [], color = colour, label = label)
 
-            # initialise array of r values for convenience
-            rr = np.linspace(utils.Defaults.hub_tip_ratio, 1, 100)
-
             # iterate over all axes:
-            for ax, blade_row in zip(axes, self.blade_rows):
+            for ax, blade_row in zip(axes, self.blade_rows + [self.nozzle]):
 
                 # proceed with inlet and outlet successively
                 for index, inlet_outlet in enumerate([blade_row.inlet, blade_row.exit]):
+
+                    # create array of radius values
+                    rr = np.linspace(
+                        inlet_outlet[0].r - inlet_outlet[0].dr, 
+                        inlet_outlet[-1].r + inlet_outlet[-1].dr,
+                        100
+                    )
 
                     # store array of attributes separately for convenience
                     qq = [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
 
                     # if attribute is None, skip block of code
-                    if None in qq:
+                    if False in qq or None in qq:
 
                         continue
 
@@ -704,6 +712,13 @@ class Engine:
                             linestyle = '', marker = '.', markersize = 8, color = colour
                         )
 
+                    # for first quantity only
+                    if i == 0:
+
+                        # shade areas corresponding to hub and casing
+                        ax[index].axhspan(0, rr[0], alpha=0.3, color='gray')
+                        ax[index].axhspan(rr[-1], 1, alpha=0.3, color='gray')
+
                     # update x-axis limits
                     x_min = min(
                         x_min, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
@@ -718,7 +733,7 @@ class Engine:
 
             # set axis x- and y-limits
             ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
-            ax.set_ylim(utils.Defaults.hub_tip_ratio, 1)
+            ax.set_ylim(0, 1)
 
             # set grid and maximum number pf x-ticks
             ax.grid()
