@@ -16,7 +16,7 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # define non-dimensional stage parameters
     flow_coefficient = 0.5
-    stage_loading_coefficient = 0.3
+    stage_loading_coefficient = 0.01
     reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
     vortex_exponent = -0.5
@@ -26,7 +26,7 @@ class Defaults:
     no_of_stages = None
 
     # default dimensional values
-    engine_diameter = 0.65
+    engine_diameter = 0.2
     hub_tip_ratio = 0.3
 
     # area change ratios
@@ -114,11 +114,11 @@ def invert(function, target, bracket = [1e-6, 1], method = "brentq"):
 
     except:
 
-        #print(f"Unable to invert: {target}")
-        return None
+        return np.nan
 
     if not sol.converged:
 
+        print(f"target: {target}")
         raise RuntimeError("Inversion failed to converge.")
     
     return sol.root

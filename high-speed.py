@@ -53,12 +53,20 @@ def main():
     # store list of conditions to design candidate engines for
     flight_scenarios = [
         Flight_scenario(
-            label = "Static",
-            altitude = 0,
-            velocity = 50,
+            label = "Cruise",
+            altitude = 3000,
+            velocity = 100,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 200
+            thrust = 20
+        ),
+        Flight_scenario(
+            label = "Static",
+            altitude =  0,
+            velocity = 0,
+            diameter = utils.Defaults.engine_diameter,
+            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
+            thrust = 50
         ),
         Flight_scenario(
             label = "Take-off",
@@ -67,14 +75,6 @@ def main():
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
             thrust = 30
-        ),
-        Flight_scenario(
-            label = "Cruise",
-            altitude = 3000,
-            velocity = 40,
-            diameter = utils.Defaults.engine_diameter,
-            hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 20
         )
     ]
 
