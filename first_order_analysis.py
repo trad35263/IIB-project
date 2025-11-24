@@ -2,9 +2,14 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.colors as colors
+from matplotlib.lines import Line2D
+
 import utils
+
 import ambiance
 import sys
+import itertools
 
 # create classes
 
@@ -14,9 +19,6 @@ class Vector:
     p = np.vectorize(
         lambda val: utils.stagnation_pressure_ratio(val)
     )
-    """p_invert = np.vectorize(
-        lambda val: utils.invert(utils.stagnation_pressure_ratio, val)
-    )"""
     p_invert = np.vectorize(
         lambda val: np.nan 
         if (val is np.ma.masked) or not np.isfinite(val)
@@ -89,6 +91,9 @@ class Analysis:
 
         # calculate target thrust coefficient
         self.C_th_target = Constants.thrust_target / (self.area * self.p_atm)
+        
+        # create cycle of colours
+        self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
 
     def __str__(self):
         """Prints a string representation of the flight scenario."""
@@ -120,10 +125,6 @@ class Analysis:
                 Constants.gamma * Constants.R * Vector.T(self.M_1) * self.T_atm / Vector.T(self.M_flight)
             ) / (self.omega * self.r_mean)
         )
-        mask = self.phi > 2
-        self.phi[mask] = np.nan
-        self.M_flight[mask] = np.nan
-        self.M_1[mask] = np.nan
 
         # find mass flow rate
         p_0_1 = self.p_atm / Vector.p(self.M_flight)
@@ -133,13 +134,9 @@ class Analysis:
 
         # find stage loading coefficient
         self.psi = self.power / (self.m_dot * self.omega**2 * self.r_mean**2)
-        mask = self.psi > 1
-        self.psi[mask] = np.nan
-        self.M_flight[mask] = np.nan
-        self.M_1[mask] = np.nan
 
         # find stagnation temperature ratio
-        T_03_T_01 = 1 + self.N_stages * self.psi / self.phi * Vector.v_cpT0(self.M_1)**2
+        T_03_T_01 = 1 + self.N_stages * self.psi * Vector.v_cpT0(self.M_1)**2 / self.phi**2
 
         # find compressor exit Mach number
         m_cpT0_Ap0_3 = (
@@ -170,7 +167,7 @@ class Analysis:
         # find nozzle area ratio
         self.sigma = m_cpT0_Ap0_3 / Vector.m(self.M_j)
 
-    def plot(self, label, xx = None, yy = None, levels = 30):
+    def plot(self, label, max = 1, xx = None, yy = None, N_levels = 30):
         """Creates a contour plot of a given parameter."""
         # default x- and y- axes
         if xx is None:
@@ -185,21 +182,20 @@ class Analysis:
         zz = getattr(self, label)
 
         # mask invalid data
-        """mask = self.C_th > 2 * self.C_th_target
-        #xx[mask] = np.nan
-        yy[mask] = 2 * self.C_th_target
-        zz[mask] = np.nan"""
         xx = np.nan_to_num(xx)
         yy = np.nan_to_num(yy)
         zz = np.ma.masked_invalid(zz)
 
         # create contour plot
         fig, ax = plt.subplots(figsize = (10, 6))
-        contour = ax.contourf(xx, yy, zz, levels = levels)
+        norm = colors.Normalize(vmin = 0, vmax = max)
+        levels = np.linspace(0, max, N_levels)
+        contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
         colour_bar.set_label(f"{label}")
+        #colour_bar.set_clim(0, max)
         ax.plot([], [], linestyle = '', label = label)
         ax.set_xlabel("M_flight")
         ax.set_ylabel("C_th")
@@ -217,6 +213,94 @@ class Analysis:
             fontsize = 12
         )
         plt.tight_layout()
+
+        return fig, ax
+
+    def line(self, axis, label, value, linestyle = '-', xx = None, yy = None):
+        """Plot a constant value line on a given axis."""
+        # determine colour
+        colour = next(self.colour_cycle)
+
+        # default x- and y- axes
+        if xx is None:
+
+            xx = self.M_flight
+
+        if yy is None:
+
+            yy = self.C_th
+
+        # get attribute
+        zz = getattr(self, label)
+
+        # plot line
+        contour = axis.contour(
+            xx,
+            yy,
+            zz,
+            levels=[value],
+            colors=[colour],
+            linestyles=linestyle,
+            linewidths=1.5,
+        )
+
+        # add legend entry
+        axis.plot([], [], color = colour, label = f"{label} = {value}")
+        axis.legend()
+
+    def shade(self, axis, label_1, value_1, label_2, value_2, xx = None, yy = None):
+        """Plots a shaded area on a given axis bounded by two contours."""
+        # determine colour
+        colour = next(self.colour_cycle)
+
+        # default x- and y- axes
+        if xx is None:
+
+            xx = self.M_flight
+
+        if yy is None:
+
+            yy = self.C_th
+
+        # get attributes
+        zz_1 = getattr(self, label_1)
+        zz_2 = getattr(self, label_2)
+
+        # find contours
+        contour_1 = axis.contour(xx, yy, zz_1, levels = [value_1])
+        contour_2 = axis.contour(xx, yy, zz_2, levels = [value_2])
+
+        # get contour paths
+        paths_1 = contour_1.collections[0].get_paths()
+        paths_2 = contour_2.collections[0].get_paths()
+
+        # get contour coordinates
+        coords_1 = paths_1[0].vertices
+        coords_2 = paths_2[0].vertices
+
+        # convert to (x, y) values
+        x1, y1 = coords_1[:,0], coords_1[:,1]
+        x2, y2 = coords_2[:,0], coords_2[:,1]
+
+        # plot on common x-axis
+        x_common = np.linspace(
+            max(x1.min(), x2.min()),
+            min(x1.max(), x2.max()),
+            400
+        )
+
+        # interpolate y-values
+        y1i = np.interp(x_common, x1, y1)
+        y2i = np.interp(x_common, x2, y2)
+
+        # fill bounded region
+        axis.fill_between(
+            x_common,
+            y1i,
+            y2i,
+            alpha=0.3,
+            color="orange"
+        )
 
 def main():
     """Main function to run on script execution."""
@@ -254,12 +338,18 @@ def main():
         # analyse and create plots
         print(analysis)
         analysis.analyse()
-        analysis.plot('phi')
-        analysis.plot('psi')
-        analysis.plot('M_3')
-        analysis.plot('sigma')
+        _, ax = analysis.plot('M_j', 1)
+        """analysis.line(ax, 'phi', 0.5)
+        analysis.line(ax, 'phi', 1)
+        analysis.line(ax, 'psi', 0.2)
+        analysis.line(ax, 'psi', 1)
+        analysis.line(ax, 'M_1', 1)
+        analysis.line(ax, 'M_3', 1)
+        analysis.line(ax, 'M_j', 1)"""
+        analysis.shade(ax, 'psi', 0.05, 'psi', 0.25)
 
     # show plots
+    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
