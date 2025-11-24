@@ -30,7 +30,7 @@ class Stage:
         # store non-dimensional stage parameters
         self.phi = utils.Defaults.flow_coefficient
         self.psi = utils.Defaults.stage_loading_coefficient
-        self.reaction = utils.Defaults.reaction
+        #self.reaction = utils.Defaults.reaction
 
         # create rotor
         self.blade_rows.append(
@@ -350,17 +350,31 @@ class Stage:
 
             # determine local flow coefficient
             inlet.phi = (
-                inlet.flow_state.M / inlet.M_blade
+                inlet.flow_state.M * np.cos(inlet.flow_state.alpha) / inlet.M_blade
             )
 
             # determine local stage loading coefficient
             inlet.psi = (
                 (
                     exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
-                    - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                ) / (inlet.M_blade)
+                    * exit.r / inlet.r * np.sqrt(
+                        exit.flow_state.T / inlet.flow_state.T
+                    ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                ) / inlet.M_blade
             )
+
+            # store non-dimensional mass flow rate
+            inlet.m = (
+                inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+                * np.sqrt(inlet.flow_state.T) * inlet.A
+            )
+            exit.m = (
+                exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                * np.sqrt(exit.flow_state.T) * exit.A
+            )
+
+            inlet.M_x = inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+            exit.M_x = exit.flow_state.M * np.cos(exit.flow_state.alpha)
 
         # loop over rotor inlet-exit and stator exit triples
         for (inlet, rotor_exit, exit) in zip(self.rotor.inlet, self.rotor.exit, self.stator.exit):
@@ -370,3 +384,9 @@ class Stage:
                 (rotor_exit.flow_state.T - inlet.flow_state.T)
                 / (exit.flow_state.T - inlet.flow_state.T)
             )
+            exit.m = (
+                exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                * np.sqrt(exit.flow_state.T) * exit.A
+            )
+            
+            exit.M_x = exit.flow_state.M * np.cos(exit.flow_state.alpha)

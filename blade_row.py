@@ -42,7 +42,7 @@ class Blade_row:
 
         # derive inlet and exit areas
         self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
-        self.area_inlet = np.pi *  (self.r_casing_inlet**2 - self.r_hub**2)
+        self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
         self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
 
         # assign the default colour of black
@@ -140,11 +140,21 @@ class Blade_row:
 
         # establish quantities of interest and interpolate
         quantities = ["M", "alpha", "T_0", "p_0", "s"]
-        interp_values = {
-            q: np.interp(r_mean, rr, [getattr(st.flow_state, q) for st in self.inlet])
-            for q in quantities
-        }
-        M_mean, alpha_mean, T_0_mean, p_0_mean, s_mean = [interp_values[q] for q in quantities]
+        mean_values = []
+
+        # loop over all quantities of interest
+        for q in quantities:
+
+            # fit spline and get corresponding mean value
+            spline = make_interp_spline(
+                [inlet.r for inlet in self.inlet],
+                [getattr(st.flow_state, q) for st in self.inlet],
+                k = min(2, len(self.inlet) - 1)
+            )
+            mean_values.append(spline(r_mean))
+
+        # store mean values
+        M_mean, alpha_mean, T_0_mean, p_0_mean, s_mean = mean_values
 
         # create Flow_state of interpolated mean-line quantities and store as a Streamtube
         flow_state = Flow_state(
@@ -155,6 +165,10 @@ class Blade_row:
         )
 
 # design functions --------------------------------------------------------------------------------
+
+    def analyse(self):
+        """Determines the rotor exit conditions given defined geometry."""
+        pass
 
     def rotor_design(self, phi, psi):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
@@ -248,6 +262,7 @@ class Blade_row:
                     inlet.M_blade * np.sqrt(
                         utils.stagnation_temperature_ratio(inlet.flow_state.M_rel)
                         / utils.stagnation_temperature_ratio(exit.flow_state.M_rel)
+                        * inlet.T_0_rel_ratio
                     )
                     * exit.r / inlet.r
                 )
@@ -259,7 +274,7 @@ class Blade_row:
                 exit.flow_state.M = np.linalg.norm(v3)
                 exit.flow_state.alpha = np.arctan2(v3[1], v3[0])
 
-                # find local stagnation temperature ratio
+                # find exit stagnation temperature
                 exit.flow_state.T_0 = (
                     1 + (utils.gamma - 1) * inlet.psi * inlet.M_blade**2
                     * utils.stagnation_temperature_ratio(inlet.flow_state.M)
@@ -640,8 +655,8 @@ class Blade_row:
             # assume solution is close to the inlet conditions
             x0[index] = [
                 0.9 * inlet.flow_state.M,
-                0.9 * inlet.flow_state.alpha,
-                inlet.r
+                0,
+                inlet.A
             ]
 
         # flatten initial guess array

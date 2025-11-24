@@ -61,3 +61,4 @@ class Flow_state:
         # calculate static quantities
         self.T = self.T_0 * utils.stagnation_temperature_ratio(self.M)
         self.p = self.p_0 * utils.stagnation_pressure_ratio(self.M)
+        self.rho = self.p / self.T

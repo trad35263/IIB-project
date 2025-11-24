@@ -6,8 +6,6 @@ from time import perf_counter as timer
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import numpy as np
-from scipy.optimize import least_squares
-from scipy.optimize import root_scalar
 
 from engine import Engine
 from flow_state import Flow_state
@@ -54,11 +52,11 @@ def main():
     flight_scenarios = [
         Flight_scenario(
             label = "Cruise",
-            altitude = 3000,
-            velocity = 100,
+            altitude = 0,
+            velocity = 5,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 20
+            thrust = 10
         ),
         Flight_scenario(
             label = "Static",
@@ -93,7 +91,6 @@ def main():
                 'M', 'Mach number', True,
                 'M_rel', 'Relative Mach number', True
             ],
-            ['p', 'Static pressure', True, 'p_0', 'Stagnation pressure', True],
             ['T', 'Static temperature', True, 'T_0', 'Stagnation temperature', True],
             [
                 'alpha', 'Flow angle (°)', True,
@@ -101,13 +98,19 @@ def main():
                 'metal_angle', 'Metal angle (°)', False
             ],
             [
-                'DF', 'Diffusion factor', False
+                'rho', 'Density', True
             ],
             [
-                'pitch_to_chord', 'Pitch-to-chord ratio', False,
-                's', 'Pitch', False,
-                'c', 'Chord', False
+                'm', 'Mass flow', False
             ],
+            [
+                'M_x', 'Axial Mach number', False
+            ],
+            #[
+            #    'pitch_to_chord', 'Pitch-to-chord ratio', False,
+            #    's', 'Pitch', False,
+            #    'c', 'Chord', False
+            #],
             [
                 'phi', 'Flow coefficient', False,
                 'psi', 'Stage loading coefficient', False,
@@ -123,8 +126,7 @@ def main():
         scenario.engine.plot_contours()
         plt.show()
 
-        input()
-
+    return
 
     # plot key parameters of the candidate engines
     fig, ax = plt.subplots()

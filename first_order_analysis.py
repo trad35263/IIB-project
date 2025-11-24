@@ -176,7 +176,7 @@ class Analysis:
 
         if yy is None:
 
-            yy = self.C_th
+            yy = self.sigma
 
         # get attribute
         zz = getattr(self, label)
@@ -198,9 +198,9 @@ class Analysis:
         #colour_bar.set_clim(0, max)
         ax.plot([], [], linestyle = '', label = label)
         ax.set_xlabel("M_flight")
-        ax.set_ylabel("C_th")
+        ax.set_ylabel("Sigma")
         ax.set_xlim(0, 1)
-        ax.set_ylim(0, self.C_th_target)
+        ax.set_ylim(0, 2)
         ax.grid()
         ax.legend()
         ax.text(
@@ -228,7 +228,7 @@ class Analysis:
 
         if yy is None:
 
-            yy = self.C_th
+            yy = self.sigma
 
         # get attribute
         zz = getattr(self, label)
@@ -260,15 +260,18 @@ class Analysis:
 
         if yy is None:
 
-            yy = self.C_th
+            yy = self.sigma
 
         # get attributes
         zz_1 = getattr(self, label_1)
         zz_2 = getattr(self, label_2)
 
         # find contours
-        contour_1 = axis.contour(xx, yy, zz_1, levels = [value_1])
-        contour_2 = axis.contour(xx, yy, zz_2, levels = [value_2])
+        contour_1 = axis.contour(xx, yy, zz_1, levels = [value_1], colors = [colour])
+        contour_2 = axis.contour(xx, yy, zz_2, levels = [value_2], colors = [colour])
+
+        # add legend entries
+        axis.plot([], [], label = f"{label_1} > {value_1} / {label_2} < {value_2}", color = colour)
 
         # get contour paths
         paths_1 = contour_1.collections[0].get_paths()
@@ -293,14 +296,16 @@ class Analysis:
         y1i = np.interp(x_common, x1, y1)
         y2i = np.interp(x_common, x2, y2)
 
+        axis.legend()
+
         # fill bounded region
-        axis.fill_between(
+        """axis.fill_between(
             x_common,
             y1i,
             y2i,
             alpha=0.3,
             color="orange"
-        )
+        )"""
 
 def main():
     """Main function to run on script execution."""
@@ -338,15 +343,12 @@ def main():
         # analyse and create plots
         print(analysis)
         analysis.analyse()
-        _, ax = analysis.plot('M_j', 1)
-        """analysis.line(ax, 'phi', 0.5)
-        analysis.line(ax, 'phi', 1)
-        analysis.line(ax, 'psi', 0.2)
-        analysis.line(ax, 'psi', 1)
-        analysis.line(ax, 'M_1', 1)
-        analysis.line(ax, 'M_3', 1)
-        analysis.line(ax, 'M_j', 1)"""
+        _, ax = analysis.plot('C_th', analysis.C_th_target)
         analysis.shade(ax, 'psi', 0.05, 'psi', 0.25)
+        analysis.shade(ax, 'phi', 0.2, 'phi', 1)
+        _, ax = analysis.plot('M_j', 1)
+        analysis.shade(ax, 'psi', 0.05, 'psi', 0.25)
+        analysis.shade(ax, 'phi', 0.2, 'phi', 1)
 
     # show plots
     plt.tight_layout()

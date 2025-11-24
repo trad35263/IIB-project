@@ -22,16 +22,8 @@ class Engine:
     
     Parameters
     ----------
-    no_of_stages : int
-        Number of rotor-stator compressor stages to add to the engine.
-    M_1 : float
-        Inlet Mach number used as input to solve through the engine.
     scenario : class
         Instance of the Flight_scenario class for which this engine is designed.
-    n : float
-        Vortex exponent.
-    N : float
-        Number of annular streamtubes through which to solve the flow.
     """
     def __init__(self, scenario):
         """Create instance of the Engine class."""
@@ -357,7 +349,7 @@ class Engine:
         self.jet_velocity_ratio = np.mean([exit.jet_velocity_ratio for exit in self.nozzle.exit])
 
         # store nozzle area ratio
-        self.nozzle_area_ratio = self.nozzle.A_exit
+        self.nozzle_area_ratio = self.nozzle.A_exit / np.sum(inlet.A for inlet in self.blade_rows[0].inlet)
 
 # plotting functions ------------------------------------------------------------------------------
     
@@ -677,6 +669,7 @@ class Engine:
                         inlet_outlet[-1].r + inlet_outlet[-1].dr,
                         100
                     )
+                    span = (rr - rr[0]) / (rr[-1] - rr[0])
 
                     # store array of attributes separately for convenience
                     qq = [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
@@ -703,21 +696,22 @@ class Engine:
                         )
 
                         # plot spline
-                        ax[index].plot(spline(rr), rr, alpha = 0.5, linewidth = 3, color = colour)
+                        ax[index].plot(spline(rr), span, alpha = 0.5, linewidth = 3, color = colour)
 
                         # plot inlet conditions
                         ax[index].plot(
                             [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
-                            [in_out.r for in_out in inlet_outlet],
+                            (np.array([in_out.r for in_out in inlet_outlet]) - rr[0])
+                            / (rr[-1] - rr[0]),
                             linestyle = '', marker = '.', markersize = 8, color = colour
                         )
 
                     # for first quantity only
-                    if i == 0:
+                    """if i == 0:
 
                         # shade areas corresponding to hub and casing
                         ax[index].axhspan(0, rr[0], alpha=0.3, color='gray')
-                        ax[index].axhspan(rr[-1], 1, alpha=0.3, color='gray')
+                        ax[index].axhspan(rr[-1], 1, alpha=0.3, color='gray')"""
 
                     # update x-axis limits
                     x_min = min(
