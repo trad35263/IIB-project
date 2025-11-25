@@ -35,12 +35,12 @@ def xml_exporter(data, label = False):
     c = Colours()
 
     # adjust data
-    D = distance.pdist(data)
+    """D = distance.pdist(data)
     min_index = np.argmin(D)
     i, j = np.triu_indices(len(data), 1)
     closest_pair = (i[min_index], j[min_index])
-    data -= data[closest_pair[0]]
-    data *= 320 / (np.max(data[:, 0]) - np.min(data[:, 0]))
+    data -= data[closest_pair[0]]"""
+    #data *= 320 / (np.max(data[:, 0]) - np.min(data[:, 0]))
 
     # store current data and time and determine a name for the file
     date_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
@@ -57,8 +57,8 @@ def xml_exporter(data, label = False):
                 <mxCell id="1" parent="0"/>
                 <mxCell id="2" style="edgeStyle=none;endArrow=none;strokeColor=#0000ff;strokeWidth=2;" edge="1" parent="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="0" y="0" as="sourcePoint"/>
-                        <mxPoint x="0" y="0" as="targetPoint"/>
+                        <mxPoint x="{data[0][0]}" y="{data[0][1]}" as="sourcePoint"/>
+                        <mxPoint x="{data[0][0]}" y="{data[0][1]}" as="targetPoint"/>
                         <Array as="points">
 """
     
@@ -67,7 +67,7 @@ def xml_exporter(data, label = False):
 
         # append x-y datapoint to xml file
         xml += f"""
-                            <mxPoint x="{x}" y="{y}"/>"""
+                            <mxPoint x="{x}" y="{-y}"/>"""
 
     # close all necessary brackets in xml file
     xml += f"""

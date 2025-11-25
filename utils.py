@@ -19,7 +19,7 @@ class Defaults:
     stage_loading_coefficient = 0.5
     #reaction = 0.8
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = 0.5
+    vortex_exponent = -1
 
     # code iteration parameters
     no_of_annuli = 3
@@ -28,10 +28,6 @@ class Defaults:
     # default dimensional values
     engine_diameter = 0.07
     hub_tip_ratio = 0.3077
-
-    # area change ratios
-    blade_row_radius = 1
-    blade_row_radius_ratio = 1
 
     # placeholder for now
     blade_row_axial_depth = 0.5

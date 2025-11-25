@@ -17,7 +17,10 @@ class Stage:
     
     Parameters
     ----------
-    None
+    n : float
+        Vortex exponent.
+    i : integer
+        Stage number.
     """
     def __init__(self, n, i):
         """Create instance of the Stage class."""
@@ -30,12 +33,10 @@ class Stage:
         # store non-dimensional stage parameters
         self.phi = utils.Defaults.flow_coefficient
         self.psi = utils.Defaults.stage_loading_coefficient
-        #self.reaction = utils.Defaults.reaction
 
         # create rotor
         self.blade_rows.append(
             Blade_row(
-                utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
                 self.n, True
             )
@@ -44,7 +45,6 @@ class Stage:
         # create stator
         self.blade_rows.append(
             Blade_row(
-                utils.Defaults.blade_row_radius,
                 utils.Defaults.stagnation_pressure_loss_coefficient,
                 self.n, False
             )

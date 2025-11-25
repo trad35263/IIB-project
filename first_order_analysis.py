@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-from matplotlib.lines import Line2D
+from scipy.interpolate import interp1d
 
 import utils
 
@@ -152,14 +152,15 @@ class Analysis:
             )
         )
 
+        # find jet velocity ratio
+        self.epsilon = self.M_flight / self.M_j
+
         # find thrust coefficient
         self.C_th = (
             m_cpT0_Ap0_1 * (self.M_j - self.M_flight) * self.N_engines
             * np.sqrt((Constants.gamma - 1) * Vector.T(self.M_flight))
         )
-
-        # find jet velocity ratio
-        self.epsilon = self.M_flight / self.M_j
+        #self.C_th = 1 - self.epsilon        # Sam's definition
 
         # find propulsive efficiency
         self.eta_prop = 2 / (1 + 1 / self.epsilon)
@@ -188,19 +189,17 @@ class Analysis:
 
         # create contour plot
         fig, ax = plt.subplots(figsize = (10, 6))
-        norm = colors.Normalize(vmin = 0, vmax = max)
         levels = np.linspace(0, max, N_levels)
         contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
         colour_bar.set_label(f"{label}")
-        #colour_bar.set_clim(0, max)
         ax.plot([], [], linestyle = '', label = label)
         ax.set_xlabel("M_flight")
         ax.set_ylabel("Sigma")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 2)
+        ax.set_xlim(0, 0.8)
+        ax.set_ylim(0, 1.2)
         ax.grid()
         ax.legend()
         ax.text(
@@ -248,7 +247,7 @@ class Analysis:
         axis.plot([], [], color = colour, label = f"{label} = {value}")
         axis.legend()
 
-    def shade(self, axis, label_1, value_1, label_2, value_2, xx = None, yy = None):
+    def shade(self, axis, label, value, lower_bound = True, xx = None, yy = None):
         """Plots a shaded area on a given axis bounded by two contours."""
         # determine colour
         colour = next(self.colour_cycle)
@@ -262,50 +261,52 @@ class Analysis:
 
             yy = self.sigma
 
+        if lower_bound:
+
+            symbol = "<"
+
+        else:
+
+            symbol = ">"
+
         # get attributes
-        zz_1 = getattr(self, label_1)
-        zz_2 = getattr(self, label_2)
+        zz = getattr(self, label)
 
         # find contours
-        contour_1 = axis.contour(xx, yy, zz_1, levels = [value_1], colors = [colour])
-        contour_2 = axis.contour(xx, yy, zz_2, levels = [value_2], colors = [colour])
+        contour = axis.contour(xx, yy, zz, levels = [value], colors = [colour])
+        fig = plt.figure()
+        test = plt.contour(xx, yy, zz, levels=[value + 1e-6])
+        plt.close(fig)
+
+        for (collectionA, collectionB) in zip(contour.collections, test.collections):
+
+            for (pathA, pathB) in zip(collectionA.get_paths(), collectionB.get_paths()):
+
+                # store vertices from contour and fill region above or below
+                vA = pathA.vertices
+                xA = vA[:, 0]
+                yA = vA[:, 1]
+                vB = pathB.vertices
+                xB = vB[:, 0]
+                yB = vB[:, 1]
+
+                fB = interp1d(xB, yB)
+                index = int(len(xA) / 2)
+                greater = fB(xA[index]) > yA[index]
+
+                if (greater and lower_bound) or ((not greater) and (not lower_bound)):
+
+                    y_lim = 0
+
+                else:
+
+                    y_lim = 2
+
+                axis.fill_between(xA, yB, y_lim, color = colour, alpha = 0.2)
 
         # add legend entries
-        axis.plot([], [], label = f"{label_1} > {value_1} / {label_2} < {value_2}", color = colour)
-
-        # get contour paths
-        paths_1 = contour_1.collections[0].get_paths()
-        paths_2 = contour_2.collections[0].get_paths()
-
-        # get contour coordinates
-        coords_1 = paths_1[0].vertices
-        coords_2 = paths_2[0].vertices
-
-        # convert to (x, y) values
-        x1, y1 = coords_1[:,0], coords_1[:,1]
-        x2, y2 = coords_2[:,0], coords_2[:,1]
-
-        # plot on common x-axis
-        x_common = np.linspace(
-            max(x1.min(), x2.min()),
-            min(x1.max(), x2.max()),
-            400
-        )
-
-        # interpolate y-values
-        y1i = np.interp(x_common, x1, y1)
-        y2i = np.interp(x_common, x2, y2)
-
+        axis.plot([], [], label = f"{label} {symbol} {value}", color = colour)
         axis.legend()
-
-        # fill bounded region
-        """axis.fill_between(
-            x_common,
-            y1i,
-            y2i,
-            alpha=0.3,
-            color="orange"
-        )"""
 
 def main():
     """Main function to run on script execution."""
@@ -344,11 +345,9 @@ def main():
         print(analysis)
         analysis.analyse()
         _, ax = analysis.plot('C_th', analysis.C_th_target)
-        analysis.shade(ax, 'psi', 0.05, 'psi', 0.25)
-        analysis.shade(ax, 'phi', 0.2, 'phi', 1)
-        _, ax = analysis.plot('M_j', 1)
-        analysis.shade(ax, 'psi', 0.05, 'psi', 0.25)
-        analysis.shade(ax, 'phi', 0.2, 'phi', 1)
+        analysis.shade(ax, 'psi', 0.2, False)
+        analysis.shade(ax, 'phi', 0.4)
+        analysis.shade(ax, 'phi', 0.9, False)
 
     # show plots
     plt.tight_layout()

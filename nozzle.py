@@ -3,6 +3,7 @@
 import numpy as np
 from scipy.optimize import root_scalar
 from scipy.optimize import least_squares
+from scipy.interpolate import make_interp_spline
 
 from streamtube import Streamtube
 from flow_state import Flow_state
@@ -76,7 +77,7 @@ class Nozzle:
             solutions = np.zeros_like(vars)
 
             # iterate over all sets of input variables
-            for index, (var, inlet) in enumerate(zip(vars, self.inlet)):
+            for index, (var, inlet, exit) in enumerate(zip(vars, self.inlet, self.exit)):
 
                 # create a holder flow_state given that process is isentropic
                 flow_state = Flow_state(
@@ -87,9 +88,11 @@ class Nozzle:
                 # handle inner streamtube
                 if index == 0:
 
-                    # set thickness given that there is no hub
-                    r = np.sqrt(var[2] / np.pi) / 2
-                    dr = r
+                    # effective hub radius is zero
+                    r1 = 0
+                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r = (r1 + r2) / 2
+                    dr = r - r1
 
                 # for all other streamtubes
                 else:
@@ -102,6 +105,55 @@ class Nozzle:
 
                 # create streamtube and store at exit to the nozzle
                 self.exit[index] = Streamtube(flow_state, r, dr)
+
+            # iterate over all inlet-exit pairs
+            for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+                # find non-dimensional velocity components for radial equilibrium
+                exit.flow_state.v_x = (
+                    exit.flow_state.M * np.sqrt(exit.flow_state.T) * np.cos(exit.flow_state.alpha)
+                )
+                exit.flow_state.v_theta = (
+                    exit.flow_state.M * np.sqrt(exit.flow_state.T) * np.sin(exit.flow_state.alpha)
+                )
+
+            # only compute splines for radial equilibrium if more than one streamtube exists
+            if len(self.inlet) > 1:
+
+                # fit spline for static temperature
+                T_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.T for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for entropy term
+                s_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.s for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_x term
+                v_x_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_x for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_theta term
+                v_theta_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_theta for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for T_0 term
+                T_0_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.T_0 for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
 
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
@@ -125,49 +177,33 @@ class Nozzle:
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
 
+                    # choose point to evaluate radial equilibrium at
+                    r = (exit.r + self.exit[index + 1].r) / 2
+
                     # find residual corresponding to thermal/entropy term
-                    term_1 = (
-                        exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.s - exit.flow_state.s
-                        )
-                    )
+                    term_1 = T_spline(r) * s_spline.derivative()(r)
 
                     # find residual corresponding to axial velocity term
-                    term_2 = (
-                        exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                        * exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.M
-                            * np.cos(self.exit[index + 1].flow_state.alpha) * np.sqrt(
-                                self.exit[index + 1].flow_state.T / exit.flow_state.T
-                            ) - exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                        )
-                    )
+                    term_2 = v_x_spline(r) * v_x_spline.derivative()(r)
 
                     # find residual corresponding to tangential velocity term
                     term_3 = (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        * exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.M
-                            * np.sin(self.exit[index + 1].flow_state.alpha) * np.sqrt(
-                                self.exit[index + 1].flow_state.T / exit.flow_state.T
-                            ) * self.exit[index + 1].r / exit.r
-                            - exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        )
+                        v_theta_spline(r) / r
+                        * (v_theta_spline(r) + r * v_theta_spline.derivative()(r))
                     )
 
                     # find residual corresponding to stagnation enthalpy term
-                    term_4 = (
-                        (1 - self.exit[index + 1].flow_state.T_0 / exit.flow_state.T_0)
-                        / (utils.gamma - 1)
-                    )
+                    term_4 = -1 / (utils.gamma - 1) * T_0_spline.derivative()(r)
 
                     # sum all terms together to get overall residual
                     solutions[index][2] = (
                         term_1 + term_2 + term_3 + term_4
                     )
 
-                    # residual for zero pressure gradient
-                    #solutions[index][2] = exit.flow_state.p - self.exit[index + 1].flow_state.p
+                    # sum all terms together to get overall residual
+                    solutions[index][2] = (
+                        term_1 + term_2 + term_3 + term_4
+                    )
 
                     # debugging
                     """print("\n---------------------------")

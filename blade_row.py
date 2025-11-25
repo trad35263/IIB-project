@@ -32,18 +32,18 @@ class Blade_row:
     is_rotor : boolean
         Reference to whether or not to categorise the blade row as a rotor or a stator.
     """
-    def __init__(self, r_casing_inlet, Y_p, n, is_rotor=False):
+    def __init__(self, Y_p, n, is_rotor = False):
         """Create instance of the Blade_row class."""
         # assign attributes
-        self.r_casing_inlet = r_casing_inlet
+        #self.r_casing_inlet = r_casing_inlet
         self.r_hub = utils.Defaults.hub_tip_ratio
         self.Y_p = Y_p
         self.n = n
 
         # derive inlet and exit areas
-        self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
-        self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
-        self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
+        #self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
+        #self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
+        #self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
 
         # assign the default colour of black
         self.colour = 'k'
@@ -135,7 +135,7 @@ class Blade_row:
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
         # determine mean radius and array of radii over which to interpolate
-        r_mean = (self.r_casing_inlet + utils.Defaults.hub_tip_ratio) / 2
+        r_mean = (self.inlet[-1].r + self.inlet[-1].dr + self.r_hub) / 2
         rr = [inlet.r for inlet in self.inlet]
 
         # establish quantities of interest and interpolate
@@ -276,8 +276,10 @@ class Blade_row:
 
                 # find exit stagnation temperature
                 exit.flow_state.T_0 = (
-                    1 + (utils.gamma - 1) * inlet.psi * inlet.M_blade**2
-                    * utils.stagnation_temperature_ratio(inlet.flow_state.M)
+                    inlet.flow_state.T_0 * (
+                        1 + (utils.gamma - 1) * inlet.psi * inlet.M_blade**2
+                        * utils.stagnation_temperature_ratio(inlet.flow_state.M)
+                    )
                 )
                 exit.flow_state.static_quantities()
 
@@ -291,6 +293,52 @@ class Blade_row:
                         / utils.stagnation_pressure_ratio(inlet.flow_state.M_rel)
                         * inlet.p_0_rel_ratio
                     ) / utils.gamma
+                )
+
+                # find non-dimensional velocity components for radial equilibrium
+                exit.flow_state.v_x = (
+                    exit.flow_state.M * np.sqrt(exit.flow_state.T) * np.cos(exit.flow_state.alpha)
+                )
+                exit.flow_state.v_theta = (
+                    exit.flow_state.M * np.sqrt(exit.flow_state.T) * np.sin(exit.flow_state.alpha)
+                )
+
+            # only compute splines for radial equilibrium if more than one streamtube exists
+            if len(self.inlet) > 1:
+
+                # fit spline for static temperature
+                T_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.T for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for entropy term
+                s_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.s for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_x term
+                v_x_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_x for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_theta term
+                v_theta_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_theta for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for T_0 term
+                T_0_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.T_0 for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
                 )
 
             # repeat iteration with new values stored
@@ -319,60 +367,43 @@ class Blade_row:
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
 
+                    # choose point to evaluate radial equilibrium at
+                    r = (exit.r + self.exit[index + 1].r) / 2
+
                     # find residual corresponding to thermal/entropy term
-                    term_1 = (
-                        exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.s - exit.flow_state.s
-                        )
-                    )
+                    term_1 = T_spline(r) * s_spline.derivative()(r)
 
                     # find residual corresponding to axial velocity term
-                    term_2 = (
-                        exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                        * exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.M
-                            * np.cos(self.exit[index + 1].flow_state.alpha) * np.sqrt(
-                                self.exit[index + 1].flow_state.T / exit.flow_state.T
-                            ) - exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                        )
-                    )
+                    term_2 = v_x_spline(r) * v_x_spline.derivative()(r)
 
                     # find residual corresponding to tangential velocity term
                     term_3 = (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        * exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.M
-                            * np.sin(self.exit[index + 1].flow_state.alpha) * np.sqrt(
-                                self.exit[index + 1].flow_state.T / exit.flow_state.T
-                            ) * self.exit[index + 1].r / exit.r
-                            - exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        )
+                        v_theta_spline(r) / r
+                        * (v_theta_spline(r) + r * v_theta_spline.derivative()(r))
                     )
 
                     # find residual corresponding to stagnation enthalpy term
-                    term_4 = (
-                        (1 - self.exit[index + 1].flow_state.T_0 / exit.flow_state.T_0)
-                        / (utils.gamma - 1)
-                    )
+                    term_4 = -1 / (utils.gamma - 1) * T_0_spline.derivative()(r)
 
                     # sum all terms together to get overall residual
                     solutions[index][2] = (
                         term_1 + term_2 + term_3 + term_4
                     )
 
-                    # debugging
-                    """print("\n---------------------------")
-                    print(f"term_1: {term_1}")
-                    print(f"term_2: {term_2}")
-                    print(f"term_3: {term_3}")
-                    print(f"term_4: {term_4}")
-                    print(f"exit.flow_state.T_0: {exit.flow_state.T_0}")
-                    print(f"self.exit[index + 1].flow_state.T_0: {self.exit[index + 1].flow_state.T_0}")
-                    print(f"solutions[index][2]: {solutions[index][2]}")"""
-
             # final residual comes from constraint for all areas to sum to the exit area
-            solutions[-1][-1] = (
+            """solutions[-1][-1] = (
                 np.sum([exit.A for exit in self.exit]) - self.area_exit
+            )"""
+            # alternatively, final residual is constant mean axial velocity
+            solutions[-1][-1] = (
+                np.mean([
+                    inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+                    * np.sqrt(inlet.flow_state.T) for inlet in self.inlet
+                ])
+                - np.mean([
+                    exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                    * np.sqrt(inlet.flow_state.T) for exit in self.exit
+                ])
             )
 
             # flatten solutions matrix and return
@@ -481,6 +512,7 @@ class Blade_row:
 
         # solve for least squares solution
         sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
+        self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"Rotor solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
 
         # iterate over all inlet-exit pairs
@@ -580,6 +612,59 @@ class Blade_row:
                     ) / utils.gamma
                 )
 
+                # find non-dimensional velocity components for radial equilibrium
+                exit.flow_state.v_x = (
+                    exit.flow_state.M * np.sqrt(exit.flow_state.T) * np.cos(exit.flow_state.alpha)
+                )
+                exit.flow_state.v_theta = (
+                    exit.flow_state.M * np.sqrt(exit.flow_state.T) * np.sin(exit.flow_state.alpha)
+                )
+
+            # only compute splines for radial equilibrium if more than one streamtube exists
+            if len(self.inlet) > 1:
+
+                # fit spline for static temperature
+                T_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.T for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for entropy term
+                s_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.s for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_x term
+                v_x_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_x for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_theta term
+                v_theta_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_theta for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for v_theta * r term
+                v_theta_r_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.v_theta * exit.r for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
+                # fit spline for T_0 term
+                T_0_spline = make_interp_spline(
+                    [exit.r for exit in self.exit],
+                    [exit.flow_state.T_0 for exit in self.exit],
+                    k = min(len(self.inlet) - 1, 2)
+                )
+
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
@@ -598,41 +683,23 @@ class Blade_row:
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
 
+                    # choose point to evaluate radial equilibrium at
+                    r = (exit.r + self.exit[index + 1].r) / 2
+
                     # find residual corresponding to thermal/entropy term
-                    term_1 = (
-                        exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.s - exit.flow_state.s
-                        )
-                    )
+                    term_1 = T_spline(r) * s_spline.derivative()(r)
 
                     # find residual corresponding to axial velocity term
-                    term_2 = (
-                        exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                        * exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.M
-                            * np.cos(self.exit[index + 1].flow_state.alpha) * np.sqrt(
-                                self.exit[index + 1].flow_state.T / exit.flow_state.T
-                            ) - exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                        )
-                    )
+                    term_2 = v_x_spline(r) * v_x_spline.derivative()(r)
 
                     # find residual corresponding to tangential velocity term
                     term_3 = (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        * exit.flow_state.T / exit.flow_state.T_0 * (
-                            self.exit[index + 1].flow_state.M
-                            * np.sin(self.exit[index + 1].flow_state.alpha) * np.sqrt(
-                                self.exit[index + 1].flow_state.T / exit.flow_state.T
-                            ) * self.exit[index + 1].r / exit.r
-                            - exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                        )
+                        v_theta_spline(r) / r
+                        * (v_theta_spline(r) + r * v_theta_spline.derivative()(r))
                     )
 
                     # find residual corresponding to stagnation enthalpy term
-                    term_4 = (
-                        (1 - self.exit[index + 1].flow_state.T_0 / exit.flow_state.T_0)
-                        / (utils.gamma - 1)
-                    )
+                    term_4 = -1 / (utils.gamma - 1) * T_0_spline.derivative()(r)
 
                     # sum all terms together to get overall residual
                     solutions[index][2] = (
@@ -640,8 +707,19 @@ class Blade_row:
                     )
 
             # final residual comes from constraint for all areas to sum to the exit area
-            solutions[-1][-1] = (
+            """solutions[-1][-1] = (
                 np.sum([exit.A for exit in self.exit]) - self.area_exit
+            )"""
+            # alternatively, final residual is constant mean axial velocity
+            solutions[-1][-1] = (
+                np.mean([
+                    inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+                    * np.sqrt(inlet.flow_state.T) for inlet in self.inlet
+                ])
+                - np.mean([
+                    exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                    * np.sqrt(inlet.flow_state.T) for exit in self.exit
+                ])
             )
 
             # flatten solutions matrix and return
@@ -679,7 +757,8 @@ class Blade_row:
                 print(f"upper: {upper}")
 
         # solve for least squares solution
-        sol = least_squares(solve_stator, x0, bounds = (lower, upper))        
+        sol = least_squares(solve_stator, x0, bounds = (lower, upper))
+        self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"Stator solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
 
         # save blade angles in inlet and exit streamtubes
