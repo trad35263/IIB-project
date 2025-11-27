@@ -91,9 +91,6 @@ class Analysis:
 
         # calculate target thrust coefficient
         self.C_th_target = Constants.thrust_target / (self.area * self.p_atm)
-        
-        # create cycle of colours
-        self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
 
     def __str__(self):
         """Prints a string representation of the flight scenario."""
@@ -160,7 +157,7 @@ class Analysis:
             m_cpT0_Ap0_1 * (self.M_j - self.M_flight) * self.N_engines
             * np.sqrt((Constants.gamma - 1) * Vector.T(self.M_flight))
         )
-        #self.C_th = 1 - self.epsilon        # Sam's definition
+        #self.C_th = self.N_engines * (1 - self.epsilon)        # Sam's definition
 
         # find propulsive efficiency
         self.eta_prop = 2 / (1 + 1 / self.epsilon)
@@ -168,8 +165,14 @@ class Analysis:
         # find nozzle area ratio
         self.sigma = m_cpT0_Ap0_3 / Vector.m(self.M_j)
 
-    def plot(self, label, max = 1, xx = None, yy = None, N_levels = 30):
+        # find (dimensional) thrust
+        self.thrust = self.m_dot * (self.M_j - self.M_flight) * self.a_atm
+
+    def plot(self, label, max = 1, xx = None, yy = None, N_levels = 31):
         """Creates a contour plot of a given parameter."""
+        # refresh cycle of colours
+        self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
+
         # default x- and y- axes
         if xx is None:
 
@@ -192,16 +195,18 @@ class Analysis:
         levels = np.linspace(0, max, N_levels)
         contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
 
+        # ensure proper colour bar label
+        if label == "thrust":
+
+            label = "Thrust (N)"
+
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
         colour_bar.set_label(f"{label}")
-        ax.plot([], [], linestyle = '', label = label)
         ax.set_xlabel("M_flight")
         ax.set_ylabel("Sigma")
         ax.set_xlim(0, 0.8)
         ax.set_ylim(0, 1.2)
-        ax.grid()
-        ax.legend()
         ax.text(
             0.5, 1.02,
             f"Motor power: {self.power}W / Motor speed: {self.rpm}rpm / Area: {self.area}m^2 / "
@@ -302,7 +307,7 @@ class Analysis:
 
                     y_lim = 2
 
-                axis.fill_between(xA, yB, y_lim, color = colour, alpha = 0.2)
+                axis.fill_between(xA, yB, y_lim, color = colour, alpha = 0.3)
 
         # add legend entries
         axis.plot([], [], label = f"{label} {symbol} {value}", color = colour)
@@ -335,6 +340,14 @@ def main():
             altitude = 0,
             N_stages = 3,
             N_engines = 1
+        ),
+        Analysis(
+            power = 9000,
+            rpm = 12000,
+            area = 0.03,
+            altitude = 0,
+            N_stages = 1,
+            N_engines = 1
         )
     ]
 
@@ -344,7 +357,21 @@ def main():
         # analyse and create plots
         print(analysis)
         analysis.analyse()
-        _, ax = analysis.plot('C_th', analysis.C_th_target)
+
+        # create un-annotated plot
+        _, ax = analysis.plot('thrust', 100)
+
+        # create plot with 1 annotation
+        _, ax = analysis.plot('thrust', 100)
+        analysis.shade(ax, 'psi', 0.2, False)
+
+        # create plot with 2 annotations
+        _, ax = analysis.plot('thrust', 100)
+        analysis.shade(ax, 'psi', 0.2, False)
+        analysis.shade(ax, 'phi', 0.4)
+        
+        # create plot with 3 annotations
+        _, ax = analysis.plot('thrust', 100)
         analysis.shade(ax, 'psi', 0.2, False)
         analysis.shade(ax, 'phi', 0.4)
         analysis.shade(ax, 'phi', 0.9, False)

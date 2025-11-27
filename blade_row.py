@@ -35,15 +35,15 @@ class Blade_row:
     def __init__(self, Y_p, n, is_rotor = False):
         """Create instance of the Blade_row class."""
         # assign attributes
-        #self.r_casing_inlet = r_casing_inlet
+        self.r_casing_inlet = 1
         self.r_hub = utils.Defaults.hub_tip_ratio
         self.Y_p = Y_p
         self.n = n
 
         # derive inlet and exit areas
-        #self.r_casing_exit = self.r_casing_inlet * utils.Defaults.blade_row_radius_ratio
-        #self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
-        #self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
+        self.r_casing_exit = 1
+        self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
+        self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
 
         # assign the default colour of black
         self.colour = 'k'
@@ -391,11 +391,11 @@ class Blade_row:
                     )
 
             # final residual comes from constraint for all areas to sum to the exit area
-            """solutions[-1][-1] = (
-                np.sum([exit.A for exit in self.exit]) - self.area_exit
-            )"""
-            # alternatively, final residual is constant mean axial velocity
             solutions[-1][-1] = (
+                np.sum([exit.A for exit in self.exit]) - self.area_exit
+            )
+            # alternatively, final residual is constant mean axial velocity
+            """solutions[-1][-1] = (
                 np.mean([
                     inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for inlet in self.inlet
@@ -404,7 +404,7 @@ class Blade_row:
                     exit.flow_state.M * np.cos(exit.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for exit in self.exit
                 ])
-            )
+            )"""
 
             # flatten solutions matrix and return
             solutions = solutions.ravel()
@@ -707,11 +707,11 @@ class Blade_row:
                     )
 
             # final residual comes from constraint for all areas to sum to the exit area
-            """solutions[-1][-1] = (
-                np.sum([exit.A for exit in self.exit]) - self.area_exit
-            )"""
-            # alternatively, final residual is constant mean axial velocity
             solutions[-1][-1] = (
+                np.sum([exit.A for exit in self.exit]) - self.area_exit
+            )
+            # alternatively, final residual is constant mean axial velocity
+            """solutions[-1][-1] = (
                 np.mean([
                     inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for inlet in self.inlet
@@ -720,7 +720,7 @@ class Blade_row:
                     exit.flow_state.M * np.cos(exit.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for exit in self.exit
                 ])
-            )
+            )"""
 
             # flatten solutions matrix and return
             solutions = solutions.ravel()

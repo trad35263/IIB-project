@@ -18,6 +18,7 @@ class Defaults:
     label = False
     verbose = False
     fill = False
+    theta = 0
     N = 40
 
 def main():
@@ -50,6 +51,13 @@ def main():
     # store data as x-y pairs
     data = np.transpose([xx, yy])
 
+    # rotate data
+    R = np.array([
+        [np.cos(Defaults.theta), -np.sin(Defaults.theta)],
+        [np.sin(Defaults.theta),  np.cos(Defaults.theta)]
+    ])
+    data = data @ R.T
+
     # scale data
     data *= Defaults.length
 
@@ -73,6 +81,29 @@ if __name__ == "__main__":
     # try to read input arguments
     try:
 
+        if 'v' in sys.argv:
+
+            # set verbose to True
+            Defaults.verbose = True
+
+        if 'fill' in sys.argv:
+
+            # set fill to True
+            Defaults.fill = True
+
+        if 'help' in sys.argv:
+
+            # print help message and terminate script
+            print(
+                f"{xml.Colours.RED}Please use the following syntax:{xml.Colours.END}\n"
+                f"python aerofoils.py NACA-[{xml.Colours.CYAN}xxxx{xml.Colours.END}] "
+                f"[{xml.Colours.CYAN}length{xml.Colours.END}] "
+                f"[{xml.Colours.CYAN}label{xml.Colours.END}] "
+                f"[{xml.Colours.CYAN}theta{xml.Colours.END}] "
+                f"({xml.Colours.CYAN}v{xml.Colours.END} | {xml.Colours.CYAN}help{xml.Colours.END})"
+            )
+            sys.exit(1)
+
         if len(sys.argv) > 1:
 
             # read name
@@ -88,15 +119,10 @@ if __name__ == "__main__":
             # read label
             Defaults.label = str(sys.argv[3])
 
-        if 'v' in sys.argv:
+        if len(sys.argv) > 4:
 
-            # set verbose to True
-            Defaults.verbose = True
-
-        if 'fill' in sys.argv:
-
-            # set fill to True
-            Defaults.fill = True
+            # set angle to rotate aerofoil by
+            Defaults.theta = np.pi * float(sys.argv[4]) / 180
 
     # report error
     except Exception as error:
