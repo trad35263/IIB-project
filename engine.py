@@ -435,16 +435,31 @@ class Engine:
             stator = stage.blade_rows[1]
 
             # determine array of rotor x-values to plot
-            x = np.linspace(
+            """x = np.linspace(
                 rotor.x_inlet + (rotor.x_exit - rotor.x_inlet) * 0.05,
                 rotor.x_exit - (rotor.x_exit - rotor.x_inlet) * 0.05, 100
             )
+"""
+            x_hub = np.linspace(
+                rotor.x - 0.25 * min(rotor.exit[0].c, 1),
+                rotor.x + 0.25 * min(rotor.exit[0].c, 1), 100
+            )
+
+            x_tip = np.linspace(
+                rotor.x - 0.25 * min(rotor.exit[-1].c, 1),
+                rotor.x + 0.25 * min(rotor.exit[-1].c, 1), 100
+            )
+
+            vertices = np.column_stack([
+                np.concatenate([x_tip, x_hub[::-1]]),
+                np.concatenate([rotor_tip_span * spline(x_tip), np.full_like(x_hub, rotor.r_hub)])
+            ])
 
             # create array of rotor vertex positions
-            vertices = np.column_stack([
+            """vertices = np.column_stack([
                 np.concatenate([x, x[::-1]]),
                 np.concatenate([rotor_tip_span * spline(x), np.full_like(x, rotor.r_hub)])
-            ])
+            ])"""
 
             # create rotor polygon and add
             poly = Polygon(
@@ -456,20 +471,35 @@ class Engine:
             ax.add_patch(poly)
 
             # draw x-shape over rotor
-            ax.plot([x[0], x[-1]], [rotor.r_hub, rotor_tip_span * spline(x[-1])], color = 'C3')
-            ax.plot([x[0], x[-1]], [rotor_tip_span * spline(x[0]), rotor.r_hub], color = 'C3')
+            ax.plot([x_hub[0], x_tip[-1]], [rotor.r_hub, rotor_tip_span * spline(x_tip[-1])], color = 'C3')
+            ax.plot([x_tip[0], x_hub[-1]], [rotor_tip_span * spline(x_tip[0]), rotor.r_hub], color = 'C3')
 
             # determine array of stator x-values to plot
-            x = np.linspace(
+            """x = np.linspace(
                 stator.x_inlet + (stator.x_exit - stator.x_inlet) * 0.05,
                 stator.x_exit - (stator.x_exit - stator.x_inlet) * 0.05, 100
+            )"""
+
+            x_hub = np.linspace(
+                stator.x - 0.25 * min(stator.exit[0].c, 1),
+                stator.x + 0.25 * min(stator.exit[0].c, 1), 100
             )
 
-            # create array of stator vertex positions
+            x_tip = np.linspace(
+                stator.x - 0.25 * min(stator.exit[-1].c, 1),
+                stator.x + 0.25 * min(stator.exit[-1].c, 1), 100
+            )
+
             vertices = np.column_stack([
+                np.concatenate([x_tip, x_hub[::-1]]),
+                np.concatenate([spline(x_tip), np.full_like(x_hub, rotor.r_hub)])
+            ])
+
+            # create array of stator vertex positions
+            """vertices = np.column_stack([
                 np.concatenate([x, x[::-1]]),
                 np.concatenate([spline(x), np.full_like(x, stator.r_hub)])
-            ])
+            ])"""
 
             # create stator polygon and add
             poly = Polygon(
@@ -481,8 +511,8 @@ class Engine:
             ax.add_patch(poly)
 
             # draw x-shape over stator
-            ax.plot([x[0], x[-1]], [stator.r_hub, spline(x[-1])], color = 'C0')
-            ax.plot([x[0], x[-1]], [spline(x[0]), stator.r_hub], color = 'C0')
+            ax.plot([x_hub[0], x_tip[-1]], [stator.r_hub, spline(x_tip[-1])], color = 'C0')
+            ax.plot([x_tip[0], x_hub[-1]], [spline(x_tip[0]), stator.r_hub], color = 'C0')
 
             # annotate rotor rows
             ax.annotate(
@@ -590,8 +620,9 @@ class Engine:
             # plot spline
             ax.plot(yy, spline(yy), color = 'k')
 
-        # add grid
-        ax.grid()
+        # add axis labels
+        ax.set_xlabel('Dimensionless axial position')
+        ax.set_ylabel('Dimensionless radius')
 
     def plot_spanwise_variations(self, quantities):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
@@ -706,13 +737,6 @@ class Engine:
                             linestyle = '', marker = '.', markersize = 8, color = colour
                         )
 
-                    # for first quantity only
-                    """if i == 0:
-
-                        # shade areas corresponding to hub and casing
-                        ax[index].axhspan(0, rr[0], alpha=0.3, color='gray')
-                        ax[index].axhspan(rr[-1], 1, alpha=0.3, color='gray')"""
-
                     # update x-axis limits
                     x_min = min(
                         x_min, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
@@ -734,7 +758,7 @@ class Engine:
             ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
 
         # set y-label and tight layout
-        axes[0].set_ylabel('Dimensionless radius')
+        axes[0].set_ylabel('Dimensionless span')
         plt.tight_layout()
 
         # set x-label

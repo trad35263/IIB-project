@@ -38,6 +38,7 @@ class Defaults:
     # specify maximum permissible diffusion factor
     DF_limit = 0.4
     pitch_to_chord_limit = 1
+    AR_target = 2.5
 
     # whether or not debug mode is active
     debug = False

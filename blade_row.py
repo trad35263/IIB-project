@@ -803,15 +803,17 @@ class Blade_row:
 
     def empirical_design(self):
         """Applies empirical relations to design pitch-to-chord and deviation distributions."""
-        # use relative Mach numbers for rotor
+        # use relative quantities for rotor
         if "Rotor" in self.label:
 
             M = "M_rel"
+            angle = "beta"
 
-        # use absolute Mach numbers for stator
+        # use absolute quantities for stator
         else:
 
             M = "M"
+            angle = "alpha"
 
         # loop over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -819,34 +821,56 @@ class Blade_row:
             # calculate pitch-to-chord distribution to impose constant diffusion factor distribution
             exit.DF = utils.Defaults.DF_limit
             exit.pitch_to_chord = (
-                (
+                2 * (
                     exit.DF - 1 + getattr(exit.flow_state, M) / getattr(inlet.flow_state, M)
                     * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
-                ) * 2 * getattr(inlet.flow_state, M) / (
-                    exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                ) / (
+                    np.sin(getattr(inlet.flow_state, angle))
+                    - getattr(exit.flow_state, M) / getattr(inlet.flow_state, M)
                     * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
-                    - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                    * np.sin(getattr(exit.flow_state, angle))
                 )
             )
 
             # check if pitch to chord is unachievable
-            if exit.pitch_to_chord < 0:
+            if exit.pitch_to_chord < utils.Defaults.pitch_to_chord_limit:
 
                 # fix the pitch-to-chord and compute the new diffusion factor
                 exit.pitch_to_chord = utils.Defaults.pitch_to_chord_limit
                 exit.DF = (
                     1 - getattr(exit.flow_state, M) / getattr(inlet.flow_state, M)
-                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T) + (
-                        exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                    * np.sqrt(exit.flow_state.T / inlet.flow_state.T) + 0.5 * (
+                        np.sin(getattr(inlet.flow_state, angle))
+                        - getattr(exit.flow_state, M) / getattr(inlet.flow_state, M)
                         * np.sqrt(exit.flow_state.T / inlet.flow_state.T)
-                        - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                    ) * exit.pitch_to_chord / (2 * getattr(inlet.flow_state, M))
+                        * np.sin(getattr(exit.flow_state, angle))
+                    ) * exit.pitch_to_chord
                 )
+            
+        # set blade aspect ratio and calculate minimum number of blades
+        self.N = 2
+        while True:
 
             # calculate the dimensionless pitch and chord distributions
-            self.N = 5 # set for now
-            exit.s = 2 * np.pi * exit.r / self.N
-            exit.c = exit.s / exit.pitch_to_chord
+            for exit in self.exit:
+                exit.s = 2 * np.pi * exit.r / self.N
+                exit.c = exit.s / exit.pitch_to_chord
+            r_mean = 0.5 * (self.r_casing_exit + self.r_hub)
+            c_mean = np.interp(
+                r_mean,
+                [exit.r for exit in self.exit],
+                [exit.c for exit in self.exit]
+            )
+            self.AR = (self.r_casing_exit - self.r_hub) / c_mean
+            if self.AR > utils.Defaults.AR_target or self.N > 20:
+
+                break
+
+            self.N += 1
+
+        for exit in self.exit:
+
+            exit.AR = (self.r_casing_exit - self.r_hub) / exit.c
 
         # calculate deviation and blade metal angles
         self.deviation()

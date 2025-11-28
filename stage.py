@@ -35,20 +35,22 @@ class Stage:
         self.psi = utils.Defaults.stage_loading_coefficient
 
         # create rotor
-        self.blade_rows.append(
-            Blade_row(
-                utils.Defaults.stagnation_pressure_loss_coefficient,
-                self.n, True
-            )
+        rotor = Blade_row(
+            utils.Defaults.stagnation_pressure_loss_coefficient,
+            self.n, True
         )
+        self.blade_rows.append(rotor)
 
         # create stator
-        self.blade_rows.append(
-            Blade_row(
-                utils.Defaults.stagnation_pressure_loss_coefficient,
-                self.n, False
-            )
+        stator = Blade_row(
+            utils.Defaults.stagnation_pressure_loss_coefficient,
+            self.n, False
         )
+        self.blade_rows.append(stator)
+
+        # set centred axial position for rotor and stator
+        rotor.x = 2 * i + 0.25
+        stator.x = 2 * i + 1.25
 
         # set axial position for rotor and stator
         self.blade_rows[0].x_inlet = 2 * i

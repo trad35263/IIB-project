@@ -106,15 +106,18 @@ def main():
             [
                 'M_x', 'Axial Mach number', False
             ],
-            #[
-            #    'pitch_to_chord', 'Pitch-to-chord ratio', False,
-            #    's', 'Pitch', False,
-            #    'c', 'Chord', False
-            #],
+            [
+                'pitch_to_chord', 'Pitch-to-chord ratio', False,
+                's', 'Pitch', False,
+                'c', 'Chord', False
+            ],
             [
                 'phi', 'Flow coefficient', False,
                 'psi', 'Stage loading coefficient', False,
                 'reaction', 'Reaction', False
+            ],
+            [
+                'DF', 'Diffusion factor', False
             ]
         ]
 
