@@ -53,7 +53,7 @@ def main():
         Flight_scenario(
             label = "Cruise",
             altitude = 0,
-            velocity = 5,
+            velocity = 10,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
             thrust = 10

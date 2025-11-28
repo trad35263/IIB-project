@@ -91,26 +91,30 @@ class Blade_row:
             self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
             self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
     
-    def set_inlet_conditions(self, M, alpha, N):
+    def set_inlet_conditions(self, M, alpha, N, edge = True):
         """Distributes the given inlet conditions across several annular streamtubes."""
-        # create list of inlet streamtubes and iterate over each annulus of interest
+        # create list of inlet streamtubes
         self.inlet = []
+
+        # set some infinitesimal streamtube thickness
+        delta = utils.Defaults.delta
+
+        # for case where edge streamtubes are desired
+        if edge:
+
+            # marginally close annulus temporarily
+            self.r_hub += delta
+            self.r_casing_inlet -= delta
+
+        # loop over each annulus of interest
         for index in range(N):
             
             # consider annulus nearest the hub
             if index == 0:
 
                 # find corresponding annulus radius and thickness
-                r = (
-                    (utils.Defaults.hub_tip_ratio + np.sqrt(
-                        utils.Defaults.hub_tip_ratio**2 * (1 - 1 / N)
-                        + 1 / N
-                    )) / 2
-                )
-                dr = r - utils.Defaults.hub_tip_ratio
-                flow_state = Flow_state(
-                    M, alpha, 1, 1, 0
-                )
+                r = (self.r_hub + np.sqrt(self.r_hub**2 * (1 - 1 / N) + 1 / N)) / 2
+                dr = r - self.r_hub
 
             # consider all other annuli
             else:
@@ -119,18 +123,32 @@ class Blade_row:
                 r = (
                     (self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
                         (self.inlet[index - 1].r + self.inlet[index - 1].dr)**2
-                        - (utils.Defaults.hub_tip_ratio**2 - 1) / N
+                        - (self.r_hub**2 - 1) / N
                     )) / 2
                 )
                 dr = r - self.inlet[index - 1].r - self.inlet[index - 1].dr
-                flow_state = Flow_state(
-                    M, alpha, 1, 1, 0
-                )
 
             # store instance of the streamtube class as an inlet condition
+            flow_state = Flow_state(M, alpha, 1, 1, 0)
             self.inlet.append(Streamtube(flow_state, r, dr))
 
-        #self.mean_line()
+        # for case where edge streamtubes are desired
+        if edge:
+
+            # undo closing of annulus
+            self.r_hub -= delta
+            self.r_casing_inlet += delta
+
+            # create infinitesimal streamtube at hub
+            dr = delta / 2
+            r = self.r_hub + dr
+            flow_state = Flow_state(M, alpha, 1, 1, 0)
+            self.inlet = [Streamtube(flow_state, r, dr)] + self.inlet
+
+            # create infinitesimal streamtube at tip
+            r = self.r_casing_inlet - dr
+            flow_state = Flow_state(M, alpha, 1, 1, 0)
+            self.inlet.append(Streamtube(flow_state, r, dr))
 
     def mean_line(self):
         """Determines the mean line inlet conditions from a series of annular streamtubes."""
@@ -514,6 +532,7 @@ class Blade_row:
         sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"Rotor solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
+        #utils.debug(f"{sol}")
 
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -562,6 +581,8 @@ class Blade_row:
             # reshape input variables for iteration and create empty solutions array
             vars = vars.reshape((len(self.inlet), 3))
             solutions = np.zeros_like(vars)
+
+            utils.debug(f"vars: {vars}")
 
             # iterate over all sets of input variables
             for index, var in enumerate(vars):
@@ -651,13 +672,6 @@ class Blade_row:
                     k = min(len(self.inlet) - 1, 2)
                 )
 
-                # fit spline for v_theta * r term
-                v_theta_r_spline = make_interp_spline(
-                    [exit.r for exit in self.exit],
-                    [exit.flow_state.v_theta * exit.r for exit in self.exit],
-                    k = min(len(self.inlet) - 1, 2)
-                )
-
                 # fit spline for T_0 term
                 T_0_spline = make_interp_spline(
                     [exit.r for exit in self.exit],
@@ -685,6 +699,9 @@ class Blade_row:
 
                     # choose point to evaluate radial equilibrium at
                     r = (exit.r + self.exit[index + 1].r) / 2
+                    r = self.r_hub + (self.r_casing_exit - self.r_hub) * index / (len(self.inlet) - 2)
+                    utils.debug(f"r: {r}")
+                    #r = np.linspace(self.exit[0].r, self.exit[-1].r, 100)
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)
@@ -700,6 +717,14 @@ class Blade_row:
 
                     # find residual corresponding to stagnation enthalpy term
                     term_4 = -1 / (utils.gamma - 1) * T_0_spline.derivative()(r)
+
+                    """fig, ax = plt.subplots()
+                    ax.plot(r, term_1, label = "term_1")
+                    ax.plot(r, term_2, label = "term_2")
+                    ax.plot(r, term_3, label = "term_3")
+                    ax.plot(r, term_4, label = "term_4")
+                    ax.legend()
+                    plt.show()"""
 
                     # sum all terms together to get overall residual
                     solutions[index][2] = (
@@ -723,6 +748,7 @@ class Blade_row:
             )"""
 
             # flatten solutions matrix and return
+            utils.debug(f"solutions: {solutions}")
             solutions = solutions.ravel()
             return solutions
         
@@ -760,6 +786,7 @@ class Blade_row:
         sol = least_squares(solve_stator, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"Stator solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
+        utils.debug(f"{sol}")
 
         # save blade angles in inlet and exit streamtubes
         for (inlet, exit) in zip(self.inlet, self.exit):

@@ -331,22 +331,22 @@ class Engine:
             stage.evaluate()
 
         # sum thrust coefficients
-        self.C_th = np.sum([exit.C_th for exit in self.nozzle.exit])
+        self.C_th = np.sum([exit.C_th * exit.m for exit in self.nozzle.exit])
 
         # find mass-averaged propulsive efficiency
-        self.eta_prop = np.mean([exit.eta_prop for exit in self.nozzle.exit])
+        self.eta_prop = np.sum([exit.eta_prop * exit.m for exit in self.nozzle.exit])
 
         # find mass-averaged nozzle efficiency
-        self.eta_nozz = np.mean([exit.eta_nozz for exit in self.nozzle.exit])
+        self.eta_nozz = np.sum([exit.eta_nozz * exit.m for exit in self.nozzle.exit])
 
         # find mass-averaged compressor (isentropic) efficiency
-        self.eta_comp = np.mean([exit.eta_comp for exit in self.nozzle.exit])
+        self.eta_comp = np.sum([exit.eta_comp * exit.m for exit in self.nozzle.exit])
 
         # take electric efficiency as 1 for now
         self.eta_elec = 1
         
         # find mass-averaged jet velocity ratio
-        self.jet_velocity_ratio = np.mean([exit.jet_velocity_ratio for exit in self.nozzle.exit])
+        self.jet_velocity_ratio = np.sum([exit.jet_velocity_ratio * exit.m for exit in self.nozzle.exit])
 
         # store nozzle area ratio
         self.nozzle_area_ratio = self.nozzle.A_exit / np.sum(inlet.A for inlet in self.blade_rows[0].inlet)
@@ -365,13 +365,13 @@ class Engine:
         spanwise_positions = [0]
 
         # if more than 2 streamtubes exist
-        if self.N > 2:
+        if len(self.blade_rows[0].inlet) > 2:
 
             # plot central streamtube
-            spanwise_positions.append(int(np.floor(self.N / 2)))
+            spanwise_positions.append(int(np.floor(len(self.blade_rows[0].inlet) / 2)))
 
         # if more than 1 streamtubes exist
-        if self.N > 1:
+        if len(self.blade_rows[0].inlet) > 1:
 
             # plot outer-most streamtube
             spanwise_positions.append(-1)
@@ -567,7 +567,7 @@ class Engine:
         ax.plot(yy, spline(yy), color = 'k')
         
         # iterate over all radial positions, apart from outer streamtube
-        for index in range(self.N):
+        for index in range(len(self.blade_rows[0].inlet)):
 
             # create spline for lower bound of streamtube
             spline = make_interp_spline(
