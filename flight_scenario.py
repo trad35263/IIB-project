@@ -49,7 +49,7 @@ class Flight_scenario:
 
         # calculate derived non-dimensional quantities
         self.M = self.velocity / self.a
-        self.A = (np.pi / 4) * self.diameter**2
+        self.A = (np.pi / 4) * self.diameter**2 * (1 - self.hub_tip_ratio**2)
         self.p_0 = self.p / utils.stagnation_pressure_ratio(self.M)
         self.C_th = self.thrust / (self.A * self.p_0)
 

@@ -35,15 +35,15 @@ class Blade_row:
     def __init__(self, Y_p, n, is_rotor = False):
         """Create instance of the Blade_row class."""
         # assign attributes
-        self.r_casing_inlet = 1
+        #self.r_casing_inlet = 1
         self.r_hub = utils.Defaults.hub_tip_ratio
         self.Y_p = Y_p
         self.n = n
 
         # derive inlet and exit areas
-        self.r_casing_exit = 1
-        self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
-        self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
+        #self.r_casing_exit = 1
+        #self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
+        #self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
 
         # assign the default colour of black
         self.colour = 'k'
@@ -91,16 +91,19 @@ class Blade_row:
             self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
             self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
     
-    def set_inlet_conditions(self, M, alpha, N, edge = True):
+    def set_inlet_conditions(self, M, alpha, N, edge = False):
         """Distributes the given inlet conditions across several annular streamtubes."""
+        # set casing radius
+        self.r_casing_inlet = 1
+
         # create list of inlet streamtubes
         self.inlet = []
 
-        # set some infinitesimal streamtube thickness
-        delta = utils.Defaults.delta
-
         # for case where edge streamtubes are desired
         if edge:
+
+            # set some infinitesimal streamtube thickness
+            delta = utils.Defaults.delta
 
             # marginally close annulus temporarily
             self.r_hub += delta
@@ -114,6 +117,15 @@ class Blade_row:
 
                 # find corresponding annulus radius and thickness
                 r = (self.r_hub + np.sqrt(self.r_hub**2 * (1 - 1 / N) + 1 / N)) / 2
+                utils.debug(f"r: {r}")
+                r = (
+                    0.5 * (
+                        self.r_hub + np.sqrt(
+                            self.r_hub**2 * (1 - 1 / N) + self.r_casing_inlet**2 / N
+                        )
+                    )
+                )
+                utils.debug(f"r: {r}")
                 dr = r - self.r_hub
 
             # consider all other annuli
@@ -126,6 +138,16 @@ class Blade_row:
                         - (self.r_hub**2 - 1) / N
                     )) / 2
                 )
+                utils.debug(f"r: {r}")
+                r = (
+                    0.5 * (
+                        self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
+                            (self.inlet[index - 1].r + self.inlet[index - 1].dr)**2
+                            + (self.r_casing_inlet**2 - self.r_hub**2) / N
+                        )
+                    )
+                )
+                utils.debug(f"r: {r}")
                 dr = r - self.inlet[index - 1].r - self.inlet[index - 1].dr
 
             # store instance of the streamtube class as an inlet condition
@@ -387,6 +409,14 @@ class Blade_row:
 
                     # choose point to evaluate radial equilibrium at
                     r = (exit.r + self.exit[index + 1].r) / 2
+                    """r = (
+                        self.exit[0].r - self.exit[0].dr
+                        + (self.exit[-1].r + self.exit[-1].dr - (self.exit[0].r - self.exit[0].dr))
+                        * index / (len(self.inlet) - 2)
+                    )"""
+                    utils.debug(f"exit.r: {exit.r}")
+                    utils.debug(f"self.exit[index + 1].r: {self.exit[index + 1].r}")
+                    utils.debug(f"r: {r}")
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)
@@ -409,11 +439,12 @@ class Blade_row:
                     )
 
             # final residual comes from constraint for all areas to sum to the exit area
-            solutions[-1][-1] = (
-                np.sum([exit.A for exit in self.exit]) - self.area_exit
-            )
-            # alternatively, final residual is constant mean axial velocity
             """solutions[-1][-1] = (
+                np.sum([exit.A for exit in self.exit]) - np.sum([inlet.A for inlet in self.inlet])
+            )"""
+
+            # alternatively, final residual is constant mean axial velocity
+            solutions[-1][-1] = (
                 np.mean([
                     inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for inlet in self.inlet
@@ -422,7 +453,9 @@ class Blade_row:
                     exit.flow_state.M * np.cos(exit.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for exit in self.exit
                 ])
-            )"""
+            )
+
+            utils.debug(f"solutions: {solutions}")
 
             # flatten solutions matrix and return
             solutions = solutions.ravel()
@@ -532,7 +565,7 @@ class Blade_row:
         sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"Rotor solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
-        #utils.debug(f"{sol}")
+        utils.debug(f"{sol}")
 
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -581,8 +614,6 @@ class Blade_row:
             # reshape input variables for iteration and create empty solutions array
             vars = vars.reshape((len(self.inlet), 3))
             solutions = np.zeros_like(vars)
-
-            utils.debug(f"vars: {vars}")
 
             # iterate over all sets of input variables
             for index, var in enumerate(vars):
@@ -699,9 +730,12 @@ class Blade_row:
 
                     # choose point to evaluate radial equilibrium at
                     r = (exit.r + self.exit[index + 1].r) / 2
-                    r = self.r_hub + (self.r_casing_exit - self.r_hub) * index / (len(self.inlet) - 2)
+                    """r = (
+                        self.exit[0].r - self.exit[0].dr
+                        + (self.exit[-1].r + self.exit[-1].dr - (self.exit[0].r - self.exit[0].dr))
+                        * index / (len(self.inlet) - 2)
+                    )"""
                     utils.debug(f"r: {r}")
-                    #r = np.linspace(self.exit[0].r, self.exit[-1].r, 100)
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)
@@ -732,11 +766,12 @@ class Blade_row:
                     )
 
             # final residual comes from constraint for all areas to sum to the exit area
-            solutions[-1][-1] = (
-                np.sum([exit.A for exit in self.exit]) - self.area_exit
-            )
-            # alternatively, final residual is constant mean axial velocity
             """solutions[-1][-1] = (
+                np.sum([exit.A for exit in self.exit]) - np.sum([inlet.A for inlet in self.inlet])
+            )"""
+
+            # alternatively, final residual is constant mean axial velocity
+            solutions[-1][-1] = (
                 np.mean([
                     inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for inlet in self.inlet
@@ -745,7 +780,7 @@ class Blade_row:
                     exit.flow_state.M * np.cos(exit.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T) for exit in self.exit
                 ])
-            )"""
+            )
 
             # flatten solutions matrix and return
             utils.debug(f"solutions: {solutions}")
@@ -830,6 +865,8 @@ class Blade_row:
 
     def empirical_design(self):
         """Applies empirical relations to design pitch-to-chord and deviation distributions."""
+        # remove references to r_casing_inlet!!!
+
         # use relative quantities for rotor
         if "Rotor" in self.label:
 
@@ -882,13 +919,13 @@ class Blade_row:
             for exit in self.exit:
                 exit.s = 2 * np.pi * exit.r / self.N
                 exit.c = exit.s / exit.pitch_to_chord
-            r_mean = 0.5 * (self.r_casing_exit + self.r_hub)
+            r_mean = 0.5 * (self.exit[-1].r + self.exit[-1].dr + self.r_hub)
             c_mean = np.interp(
                 r_mean,
                 [exit.r for exit in self.exit],
                 [exit.c for exit in self.exit]
             )
-            self.AR = (self.r_casing_exit - self.r_hub) / c_mean
+            self.AR = (self.exit[-1].r + self.exit[-1].dr - self.r_hub) / c_mean
             if self.AR > utils.Defaults.AR_target or self.N > 20:
 
                 break
@@ -897,7 +934,7 @@ class Blade_row:
 
         for exit in self.exit:
 
-            exit.AR = (self.r_casing_exit - self.r_hub) / exit.c
+            exit.AR = (self.exit[-1].r + self.exit[-1].dr - self.r_hub) / exit.c
 
         # calculate deviation and blade metal angles
         self.deviation()

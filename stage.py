@@ -59,10 +59,10 @@ class Stage:
         self.blade_rows[1].x_exit = 2 * i + 1 + utils.Defaults.blade_row_axial_depth
 
         # set radius information for rotor and stator
-        self.blade_rows[0].r_inlet = 1
-        self.blade_rows[0].r_hub = utils.Defaults.hub_tip_ratio
-        self.blade_rows[1].r_inlet = 1
-        self.blade_rows[1].r_hub = utils.Defaults.hub_tip_ratio
+        #self.blade_rows[0].r_inlet = 1
+        #self.blade_rows[0].r_hub = utils.Defaults.hub_tip_ratio
+        #self.blade_rows[1].r_inlet = 1
+        #self.blade_rows[1].r_hub = utils.Defaults.hub_tip_ratio
 
     def __str__(self):
         """Prints a string representation of the stage."""

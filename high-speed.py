@@ -53,10 +53,10 @@ def main():
         Flight_scenario(
             label = "Cruise",
             altitude = 0,
-            velocity = 10,
+            velocity = 100,
             diameter = utils.Defaults.engine_diameter,
             hub_tip_ratio = utils.Defaults.hub_tip_ratio,
-            thrust = 10
+            thrust = 30
         ),
         Flight_scenario(
             label = "Static",
@@ -91,21 +91,15 @@ def main():
                 'M', 'Mach number', True,
                 'M_rel', 'Relative Mach number', True
             ],
-            ['T', 'Static temperature', True, 'T_0', 'Stagnation temperature', True],
+            #['T', 'Static temperature', True, 'T_0', 'Stagnation temperature', True],
             [
                 'alpha', 'Flow angle (°)', True,
                 'beta', 'Relative flow angle (°)', True,
                 'metal_angle', 'Metal angle (°)', False
             ],
-            [
-                'rho', 'Density', True
-            ],
-            [
-                'm', 'Mass flow', False
-            ],
-            [
-                'M_x', 'Axial Mach number', False
-            ],
+            #['rho', 'Density', True],
+            #['m', 'Mass flow', False],
+            ['M_x', 'Axial Mach number', False],
             [
                 'pitch_to_chord', 'Pitch-to-chord ratio', False,
                 's', 'Pitch', False,

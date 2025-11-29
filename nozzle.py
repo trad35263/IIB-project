@@ -179,6 +179,12 @@ class Nozzle:
 
                     # choose point to evaluate radial equilibrium at
                     r = (exit.r + self.exit[index + 1].r) / 2
+                    """r = (
+                        self.exit[0].r - self.exit[0].dr + 1e-3
+                        + (self.exit[-1].r + self.exit[-1].dr - (self.exit[0].r - self.exit[0].dr))
+                        * index / (len(self.inlet) - 2)
+                    )"""
+                    utils.debug(f"r: {r}")
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)

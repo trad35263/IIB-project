@@ -7,8 +7,11 @@ from scipy.interpolate import interp1d
 
 import utils
 
-import ambiance
 import sys
+import inspect
+import os
+
+import ambiance
 import itertools
 
 # create classes
@@ -56,7 +59,7 @@ class Constants:
 
 class Analysis:
     """Contains grids of values used for analysis."""
-    def __init__(self, power, rpm, area, altitude, N_stages = 1, N_engines = 1):
+    def __init__(self, power, rpm, area, altitude, N_stages = 1, N_engines = 1, label = ""):
         """Creates instance of Analysis class."""
         # store input variables
         self.power = power
@@ -65,6 +68,7 @@ class Analysis:
         self.altitude = altitude
         self.N_stages = N_stages
         self.N_engines = N_engines
+        self.label = label
 
         # create arrays of Mach numbers
         x = np.linspace(0, 1, Constants.N)
@@ -190,19 +194,24 @@ class Analysis:
         yy = np.nan_to_num(yy)
         zz = np.ma.masked_invalid(zz)
 
-        # create contour plot
+        # create dummy contour plot
         fig, ax = plt.subplots(figsize = (10, 6))
         levels = np.linspace(0, max, N_levels)
+
+        # fill dummy plot with contours to determine colour bar range
         contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
 
         # ensure proper colour bar label
         if label == "thrust":
 
-            label = "Thrust (N)"
+            label_unit = "Thrust (N)"
+
+        # create contour plot
+        fig, ax = plt.subplots(figsize = (10, 6))
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
-        colour_bar.set_label(f"{label}")
+        colour_bar.set_label(f"{label_unit}")
         ax.set_xlabel("M_flight")
         ax.set_ylabel("Sigma")
         ax.set_xlim(0, 0.8)
@@ -217,6 +226,20 @@ class Analysis:
             fontsize = 12
         )
         plt.tight_layout()
+        
+        # remove the contour plot from axes
+        for coll in contour.collections:
+
+            coll.remove()
+
+        # save fig
+        directory = "figures"
+        filename = f"{self.label}_{label}"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
+
+        # add contour again
+        contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
 
         return fig, ax
 
@@ -323,7 +346,8 @@ def main():
             area = 0.03,
             altitude = 0,
             N_stages = 1,
-            N_engines = 1
+            N_engines = 1,
+            label = "base_case"
         ),
         Analysis(
             power = 3000,
@@ -331,7 +355,8 @@ def main():
             area = 0.03,
             altitude = 0,
             N_stages = 1,
-            N_engines = 3
+            N_engines = 3,
+            label = "3_engine"
         ),
         Analysis(
             power = 3000,
@@ -339,7 +364,8 @@ def main():
             area = 0.03,
             altitude = 0,
             N_stages = 3,
-            N_engines = 1
+            N_engines = 1,
+            label = "3_stage"
         ),
         Analysis(
             power = 9000,
@@ -347,7 +373,8 @@ def main():
             area = 0.03,
             altitude = 0,
             N_stages = 1,
-            N_engines = 1
+            N_engines = 1,
+            label = "3_motor"
         )
     ]
 
@@ -359,25 +386,49 @@ def main():
         analysis.analyse()
 
         # create un-annotated plot
-        _, ax = analysis.plot('thrust', 100)
+        label = 'thrust'
+        _, ax = analysis.plot(label, 100)
+
+        # save fig
+        directory = "figures"
+        filename = f"{analysis.label}_{label}_0"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
 
         # create plot with 1 annotation
-        _, ax = analysis.plot('thrust', 100)
+        #_, ax = analysis.plot('thrust', 100)
         analysis.shade(ax, 'psi', 0.2, False)
+
+        # save fig
+        directory = "figures"
+        filename = f"{analysis.label}_{label}_1"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
 
         # create plot with 2 annotations
-        _, ax = analysis.plot('thrust', 100)
-        analysis.shade(ax, 'psi', 0.2, False)
+        #_, ax = analysis.plot('thrust', 100)
+        #analysis.shade(ax, 'psi', 0.2, False)
         analysis.shade(ax, 'phi', 0.4)
+
+        # save fig
+        directory = "figures"
+        filename = f"{analysis.label}_{label}_2"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
         
         # create plot with 3 annotations
-        _, ax = analysis.plot('thrust', 100)
-        analysis.shade(ax, 'psi', 0.2, False)
-        analysis.shade(ax, 'phi', 0.4)
+        #_, ax = analysis.plot('thrust', 100)
+        #analysis.shade(ax, 'psi', 0.2, False)
+        #analysis.shade(ax, 'phi', 0.4)
         analysis.shade(ax, 'phi', 0.9, False)
 
+        # save fig
+        directory = "figures"
+        filename = f"{analysis.label}_{label}_3"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
+
     # show plots
-    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":

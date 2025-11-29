@@ -1,18 +1,26 @@
 # import modules
 
+import numpy as np
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
-import numpy as np
+from matplotlib.path import Path
+import matplotlib.patches as patches
+
 import copy
+import inspect
+import os
+
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import root_scalar
+
 from time import perf_counter as timer
 import itertools
 
 from stage import Stage
 from nozzle import Nozzle
-import utils
 from flow_state import Flow_state
+import utils
 
 # 1.0 define Engine class
 
@@ -355,11 +363,36 @@ class Engine:
     
     def plot_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
-        # create plot for displaying velocity triangles
-        fig, ax = plt.subplots(figsize = (10, 6))
-
         # determine factor to scale Mach triangles by
         scaling = 1 / (4 * self.M_1)
+
+        # coordinates for a brace
+        verts = [
+            (-0.15, -0.30),
+            (-0.05, -0.30),
+            (-0.05, -0.125),
+            (-0.05, 0.00),
+            (0.00, 0.00),
+            (-0.05, 0.00),
+            (-0.05, 0.125),
+            (-0.05, 0.30),
+            (-0.15, 0.30)
+        ]
+
+        codes = [
+            Path.MOVETO,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3
+        ]
+
+        # labels for plotting
+        labels = ["HUB", "MID-SPAN", "TIP"]
 
         # initialise array of spanwise position indices to plot
         spanwise_positions = [0]
@@ -376,14 +409,8 @@ class Engine:
             # plot outer-most streamtube
             spanwise_positions.append(-1)
 
-        # iterate over all blade rows
-        for index, blade_row in enumerate(self.blade_rows):
-
-            # iterate over all inlet and exit streamtubes chosen for plotting
-            for j, k in enumerate(spanwise_positions):
-
-                # plot blade row at chosen spanwise positions
-                blade_row.plot_blade_row(ax, index, j, k, scaling)
+        # create plot for displaying velocity triangles
+        fig, ax = plt.subplots(figsize = (10, 6))
 
         # set legend labels
         ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
@@ -392,9 +419,51 @@ class Engine:
 
         # configure plot
         ax.set_aspect('equal')
-        ax.grid()
         ax.legend()
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # set axis limits
+        ax.set_xlim(-0.4, len(self.blade_rows) + 0.6)
+        ax.set_ylim(-0.8, len(spanwise_positions) - 0.2)
+
+        # tight layout
         plt.tight_layout()
+
+        # save figure
+        directory = "figures"
+        filename = f"{inspect.currentframe().f_code.co_name}"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
+
+        # iterate over all inlet and exit streamtubes chosen for plotting
+        for j, k in enumerate(spanwise_positions):
+                
+            # iterate over all blade rows
+            for index, blade_row in enumerate(self.blade_rows):
+
+                # plot blade row at chosen spanwise positions
+                blade_row.plot_blade_row(ax, index, j, k, scaling)
+
+                # add brace to plot
+                dx = 2 * len(self.stages)
+                dy = j - 0.1
+                brace = patches.PathPatch(
+                    Path([(x + dx, y + dy) for x, y in verts], codes),
+                    fill = False, linewidth = 1
+                )
+                ax.add_patch(brace)
+                ax.text(
+                    dx + 0.15, dy,
+                    f"{labels[j]}",
+                    ha = "left", va = "center"
+                )
+
+            # save figure
+            directory = "figures"
+            filename = f"{inspect.currentframe().f_code.co_name}_{j}"
+            path = os.path.join(directory, filename)
+            plt.savefig(path, dpi = 300)
 
     def plot_contours(self):
         """Creates a plot of a section view of the engine with contours of a specified quantity."""
@@ -405,12 +474,31 @@ class Engine:
         # create a plot
         fig, ax = plt.subplots(figsize = (10, 6))
 
+        # add axis labels
+        ax.set_xlabel('Axial position')
+        ax.set_ylabel('Dimensionless radius')
+
+        # remove x-ticks
+        ax.set_xticks([])
+
+        # set axis limits and aspect ratio
+        margin = 0.1
+        ax.set_xlim(-margin, len(self.blade_rows) + 0.5 + margin)
+        ax.set_ylim(-margin, 1 + margin)
+        ax.set_aspect('equal')
+
+        # tight layout
+        plt.tight_layout()
+
+        # save figure
+        directory = "figures"
+        filename = f"{inspect.currentframe().f_code.co_name}"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
+
         # initialise fine array of x-values
         xx = np.linspace(0, len(self.blade_rows) - 0.5, 200)
         yy = np.linspace(xx[-1], xx[-1] + 1, 50)
-
-        # draw centreline
-        ax.plot(np.linspace(xx[0], yy[-1], 100), np.full(100, 0), linestyle = '--', color = 'k')
 
         # create spline for upper boundary of outer streamtube
         spline = make_interp_spline(
@@ -434,81 +522,59 @@ class Engine:
             rotor = stage.blade_rows[0]
             stator = stage.blade_rows[1]
 
-            # determine array of rotor x-values to plot
-            """x = np.linspace(
-                rotor.x_inlet + (rotor.x_exit - rotor.x_inlet) * 0.05,
-                rotor.x_exit - (rotor.x_exit - rotor.x_inlet) * 0.05, 100
-            )
-"""
+            # get list of rotor hub and tip x-coordinates
             x_hub = np.linspace(
                 rotor.x - 0.25 * min(rotor.exit[0].c, 1),
                 rotor.x + 0.25 * min(rotor.exit[0].c, 1), 100
             )
-
             x_tip = np.linspace(
                 rotor.x - 0.25 * min(rotor.exit[-1].c, 1),
                 rotor.x + 0.25 * min(rotor.exit[-1].c, 1), 100
             )
 
+            # create array of rotor vertex positions
             vertices = np.column_stack([
                 np.concatenate([x_tip, x_hub[::-1]]),
                 np.concatenate([rotor_tip_span * spline(x_tip), np.full_like(x_hub, rotor.r_hub)])
             ])
 
-            # create array of rotor vertex positions
-            """vertices = np.column_stack([
-                np.concatenate([x, x[::-1]]),
-                np.concatenate([rotor_tip_span * spline(x), np.full_like(x, rotor.r_hub)])
-            ])"""
-
             # create rotor polygon and add
-            poly = Polygon(
+            polygon = Polygon(
                 vertices, closed = True,
                 facecolor = (0.8392, 0.1529, 0.1569, alpha),
                 edgecolor = (0.8392, 0.1529, 0.1569),
                 linewidth = 2
             )
-            ax.add_patch(poly)
+            ax.add_patch(polygon)
 
             # draw x-shape over rotor
             ax.plot([x_hub[0], x_tip[-1]], [rotor.r_hub, rotor_tip_span * spline(x_tip[-1])], color = 'C3')
             ax.plot([x_tip[0], x_hub[-1]], [rotor_tip_span * spline(x_tip[0]), rotor.r_hub], color = 'C3')
 
-            # determine array of stator x-values to plot
-            """x = np.linspace(
-                stator.x_inlet + (stator.x_exit - stator.x_inlet) * 0.05,
-                stator.x_exit - (stator.x_exit - stator.x_inlet) * 0.05, 100
-            )"""
-
+            # get list of stator hub and tip x-coordinates
             x_hub = np.linspace(
                 stator.x - 0.25 * min(stator.exit[0].c, 1),
                 stator.x + 0.25 * min(stator.exit[0].c, 1), 100
             )
-
             x_tip = np.linspace(
                 stator.x - 0.25 * min(stator.exit[-1].c, 1),
                 stator.x + 0.25 * min(stator.exit[-1].c, 1), 100
             )
 
+            # create array of stator vertex positions
             vertices = np.column_stack([
                 np.concatenate([x_tip, x_hub[::-1]]),
                 np.concatenate([spline(x_tip), np.full_like(x_hub, rotor.r_hub)])
             ])
 
-            # create array of stator vertex positions
-            """vertices = np.column_stack([
-                np.concatenate([x, x[::-1]]),
-                np.concatenate([spline(x), np.full_like(x, stator.r_hub)])
-            ])"""
-
             # create stator polygon and add
-            poly = Polygon(
+            polygon = Polygon(
                 vertices, closed = True,
                 facecolor = (0.1216, 0.4667, 0.7059, alpha),
                 edgecolor = (0.1216, 0.4667, 0.7059),
                 linewidth = 2
             )
-            ax.add_patch(poly)
+            ax.add_patch(polygon)
 
             # draw x-shape over stator
             ax.plot([x_hub[0], x_tip[-1]], [stator.r_hub, spline(x_tip[-1])], color = 'C0')
@@ -620,9 +686,61 @@ class Engine:
             # plot spline
             ax.plot(yy, spline(yy), color = 'k')
 
-        # add axis labels
-        ax.set_xlabel('Dimensionless axial position')
-        ax.set_ylabel('Dimensionless radius')
+            # save figure with lower bound of hub streamtube plotted only
+            if index == 0:
+
+                # save figure
+                directory = "figures"
+                filename = f"{inspect.currentframe().f_code.co_name}_0"
+                path = os.path.join(directory, filename)
+                plt.savefig(path, dpi = 300)
+
+                # draw centreline
+                ax.axhline(y = 0, linestyle = '--', color = 'k')
+                ax.text(
+                    x = len(self.stages) + 0.25, y = 0.03, s = "Centreline",
+                    ha = 'center', va = 'center'
+                )
+
+                # save figure
+                directory = "figures"
+                filename = f"{inspect.currentframe().f_code.co_name}_1"
+                path = os.path.join(directory, filename)
+                plt.savefig(path, dpi = 300)
+
+                # draw inlet plane
+                ax.axvline(x = 0, linestyle = '--', color = 'C1')
+                ax.text(
+                    x = 0.03, y = self.blade_rows[0].r_hub / 4,
+                    s = "Compressor inlet plane", color = 'C1',
+                    ha = 'left', va = 'center'
+                )
+
+                # save figure
+                directory = "figures"
+                filename = f"{inspect.currentframe().f_code.co_name}_2"
+                path = os.path.join(directory, filename)
+                plt.savefig(path, dpi = 300)
+
+                # draw exit plane
+                ax.axvline(x = len(self.blade_rows) + 0.5, linestyle = '--', color = 'C1')
+                ax.text(
+                    x = len(self.blade_rows) + 0.5 - 0.03, y = 1,
+                    s = "Nozzle exit plane", color = 'C1',
+                    ha = 'right', va = 'center'
+                )
+
+                # save figure
+                directory = "figures"
+                filename = f"{inspect.currentframe().f_code.co_name}_3"
+                path = os.path.join(directory, filename)
+                plt.savefig(path, dpi = 300)
+
+        # save figure
+        directory = "figures"
+        filename = f"{inspect.currentframe().f_code.co_name}_4"
+        path = os.path.join(directory, filename)
+        plt.savefig(path, dpi = 300)
 
     def plot_spanwise_variations(self, quantities):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
