@@ -392,7 +392,7 @@ class Engine:
         ]
 
         # labels for plotting
-        labels = ["HUB", "MID-SPAN", "TIP"]
+        labels = ["MID-SPAN"]
 
         # initialise array of spanwise position indices to plot
         spanwise_positions = [0]
@@ -402,12 +402,14 @@ class Engine:
 
             # plot central streamtube
             spanwise_positions.append(int(np.floor(len(self.blade_rows[0].inlet) / 2)))
+            labels = ["HUB"] + labels
 
         # if more than 1 streamtubes exist
         if len(self.blade_rows[0].inlet) > 1:
 
             # plot outer-most streamtube
             spanwise_positions.append(-1)
+            labels.append("TIP")
 
         # create plot for displaying velocity triangles
         fig, ax = plt.subplots(figsize = (10, 6))
@@ -424,8 +426,19 @@ class Engine:
         ax.set_yticks([])
 
         # set axis limits
-        ax.set_xlim(-0.4, len(self.blade_rows) + 0.6)
-        ax.set_ylim(-0.8, len(spanwise_positions) - 0.2)
+        ax.set_xlim(-0.4, len(self.blade_rows) + 0.7)
+        ax.set_ylim(-0.7, len(spanwise_positions) - 0.2)
+
+        # set title
+        ax.text(
+            0.5, 1.02,
+            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.n:.3g}",
+            transform = ax.transAxes,
+            ha = 'center',
+            va = 'bottom',
+            fontsize = 12
+        )
 
         # tight layout
         plt.tight_layout()
@@ -475,7 +488,7 @@ class Engine:
         fig, ax = plt.subplots(figsize = (10, 6))
 
         # add axis labels
-        ax.set_xlabel('Axial position')
+        #ax.set_xlabel('Axial position')
         ax.set_ylabel('Dimensionless radius')
 
         # remove x-ticks
@@ -486,6 +499,17 @@ class Engine:
         ax.set_xlim(-margin, len(self.blade_rows) + 0.5 + margin)
         ax.set_ylim(-margin, 1 + margin)
         ax.set_aspect('equal')
+
+        # set title
+        ax.text(
+            0.5, 1.02,
+            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.n:.3g}",
+            transform = ax.transAxes,
+            ha = 'center',
+            va = 'bottom',
+            fontsize = 12
+        )
 
         # tight layout
         plt.tight_layout()

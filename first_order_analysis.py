@@ -194,20 +194,17 @@ class Analysis:
         yy = np.nan_to_num(yy)
         zz = np.ma.masked_invalid(zz)
 
-        # create dummy contour plot
+        # create contour plot
         fig, ax = plt.subplots(figsize = (10, 6))
         levels = np.linspace(0, max, N_levels)
 
-        # fill dummy plot with contours to determine colour bar range
+        # fill plot with contours to determine colour bar range
         contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
 
         # ensure proper colour bar label
         if label == "thrust":
 
             label_unit = "Thrust (N)"
-
-        # create contour plot
-        fig, ax = plt.subplots(figsize = (10, 6))
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
@@ -218,7 +215,7 @@ class Analysis:
         ax.set_ylim(0, 1.2)
         ax.text(
             0.5, 1.02,
-            f"Motor power: {self.power}W / Motor speed: {self.rpm}rpm / Area: {self.area}m^2 / "
+            f"Motor power: {self.power}W / Motor speed: {self.rpm}rpm / Area: {self.area}m$ ^2 $ / "
             f"Stages: {self.N_stages} / Engines: {self.N_engines}",
             transform = ax.transAxes,
             ha = 'center',
@@ -396,7 +393,6 @@ def main():
         plt.savefig(path, dpi = 300)
 
         # create plot with 1 annotation
-        #_, ax = analysis.plot('thrust', 100)
         analysis.shade(ax, 'psi', 0.2, False)
 
         # save fig
@@ -406,8 +402,6 @@ def main():
         plt.savefig(path, dpi = 300)
 
         # create plot with 2 annotations
-        #_, ax = analysis.plot('thrust', 100)
-        #analysis.shade(ax, 'psi', 0.2, False)
         analysis.shade(ax, 'phi', 0.4)
 
         # save fig
@@ -417,9 +411,6 @@ def main():
         plt.savefig(path, dpi = 300)
         
         # create plot with 3 annotations
-        #_, ax = analysis.plot('thrust', 100)
-        #analysis.shade(ax, 'psi', 0.2, False)
-        #analysis.shade(ax, 'phi', 0.4)
         analysis.shade(ax, 'phi', 0.9, False)
 
         # save fig

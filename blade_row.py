@@ -91,7 +91,7 @@ class Blade_row:
             self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
             self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
     
-    def set_inlet_conditions(self, M, alpha, N, edge = False):
+    def set_inlet_conditions(self, M, alpha, N, edge = True):
         """Distributes the given inlet conditions across several annular streamtubes."""
         # set casing radius
         self.r_casing_inlet = 1
@@ -116,8 +116,6 @@ class Blade_row:
             if index == 0:
 
                 # find corresponding annulus radius and thickness
-                r = (self.r_hub + np.sqrt(self.r_hub**2 * (1 - 1 / N) + 1 / N)) / 2
-                utils.debug(f"r: {r}")
                 r = (
                     0.5 * (
                         self.r_hub + np.sqrt(
@@ -125,20 +123,12 @@ class Blade_row:
                         )
                     )
                 )
-                utils.debug(f"r: {r}")
                 dr = r - self.r_hub
 
             # consider all other annuli
             else:
 
                 # find corresponding annulus radius and thickness
-                r = (
-                    (self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
-                        (self.inlet[index - 1].r + self.inlet[index - 1].dr)**2
-                        - (self.r_hub**2 - 1) / N
-                    )) / 2
-                )
-                utils.debug(f"r: {r}")
                 r = (
                     0.5 * (
                         self.inlet[index - 1].r + self.inlet[index - 1].dr + np.sqrt(
@@ -147,7 +137,6 @@ class Blade_row:
                         )
                     )
                 )
-                utils.debug(f"r: {r}")
                 dr = r - self.inlet[index - 1].r - self.inlet[index - 1].dr
 
             # store instance of the streamtube class as an inlet condition
@@ -249,7 +238,7 @@ class Blade_row:
         def solve_rotor(vars):
             """Series of equations to solve the root of."""
             # reshape input variables for iteration and create empty solutions array
-            vars = vars.reshape((len(self.inlet), 3))
+            vars = vars.reshape((len(self.inlet), 2))
             solutions = np.zeros_like(vars)
 
             # iterate over all sets of input variables
@@ -257,7 +246,7 @@ class Blade_row:
 
                 # create a holder flow_state to be populated
                 flow_state = Flow_state(
-                    0, 0, 0, 0, 0, var[0], var[1]
+                    0, 0, 0, 0, 0, 0, var[0]
                 )
 
                 # handle inner streamtube
@@ -265,7 +254,7 @@ class Blade_row:
 
                     # set thickness using hub radius
                     r1 = self.r_hub
-                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r2 = np.sqrt(var[1] / np.pi + r1**2)
                     r = (r1 + r2) / 2
                     dr = r - r1
 
@@ -274,7 +263,7 @@ class Blade_row:
 
                     # set thickness using previous radius
                     r1 = self.exit[index - 1].r + self.exit[index - 1].dr
-                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r2 = np.sqrt(var[1] / np.pi + r1**2)
                     r = (r1 + r2) / 2
                     dr = r - r1
 
@@ -296,6 +285,23 @@ class Blade_row:
                     np.power(inlet.T_0_rel_ratio, utils.gamma / (utils.gamma - 1))
                     - self.Y_p * (1 - utils.stagnation_pressure_ratio(inlet.flow_state.M_rel))
                 )
+
+                # apply continuity to find relative Mach number
+                m_cpT0_Ap0 = (
+                    utils.mass_flow_function(inlet.flow_state.M_rel)
+                    * inlet.A / exit.A
+                    * np.cos(inlet.flow_state.beta) / np.cos(exit.flow_state.beta)
+                    / inlet.p_0_rel_ratio
+                    * np.sqrt(inlet.T_0_rel_ratio)
+                )
+
+                # check if mass flow function is valid
+                if m_cpT0_Ap0 > utils.mass_flow_function(1):
+
+                    return 1e9 * np.ones_like(vars).ravel()
+                
+                # calculate exit relative Mach number
+                exit.flow_state.M_rel = utils.invert(utils.mass_flow_function, m_cpT0_Ap0)
 
                 # find local blade Mach number at exit to the rotor row
                 exit.M_blade = (
@@ -384,18 +390,18 @@ class Blade_row:
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
-                # determine residual for continuity equation
-                solutions[index][0] = (
+                # determine residual for continuity equation - REMOVE ME
+                """solutions[index][0] = (
                     utils.mass_flow_function(inlet.flow_state.M_rel)
                     * np.sqrt(inlet.T_0_rel_ratio)
                     * inlet.A / exit.A
                     * np.cos(inlet.flow_state.beta) / np.cos(exit.flow_state.beta)
                     / inlet.p_0_rel_ratio
                     - utils.mass_flow_function(exit.flow_state.M_rel)
-                )
+                )"""
 
                 # determine residual for specified stage loading
-                solutions[index][1] = (
+                solutions[index][0] = (
                     inlet.psi - (
                         exit.flow_state.M * np.sin(exit.flow_state.alpha)
                         * exit.r / inlet.r * np.sqrt(
@@ -408,15 +414,7 @@ class Blade_row:
                 if index < len(self.inlet) - 1:
 
                     # choose point to evaluate radial equilibrium at
-                    r = (exit.r + self.exit[index + 1].r) / 2
-                    """r = (
-                        self.exit[0].r - self.exit[0].dr
-                        + (self.exit[-1].r + self.exit[-1].dr - (self.exit[0].r - self.exit[0].dr))
-                        * index / (len(self.inlet) - 2)
-                    )"""
-                    utils.debug(f"exit.r: {exit.r}")
-                    utils.debug(f"self.exit[index + 1].r: {self.exit[index + 1].r}")
-                    utils.debug(f"r: {r}")
+                    r = exit.r + exit.dr
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)
@@ -434,7 +432,7 @@ class Blade_row:
                     term_4 = -1 / (utils.gamma - 1) * T_0_spline.derivative()(r)
 
                     # sum all terms together to get overall residual
-                    solutions[index][2] = (
+                    solutions[index][1] = (
                         term_1 + term_2 + term_3 + term_4
                     )
 
@@ -454,8 +452,6 @@ class Blade_row:
                     * np.sqrt(inlet.flow_state.T) for exit in self.exit
                 ])
             )
-
-            utils.debug(f"solutions: {solutions}")
 
             # flatten solutions matrix and return
             solutions = solutions.ravel()
@@ -493,7 +489,7 @@ class Blade_row:
         plt.show()"""
 
         # initialise array to store initial guess and loop over all inlet streamtubes
-        x0 = np.zeros((len(self.inlet), 3))
+        """x0 = np.zeros((len(self.inlet), 3))
         for index, inlet in enumerate(self.inlet):
 
             # create initial guess
@@ -565,7 +561,28 @@ class Blade_row:
         sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"Rotor solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
-        utils.debug(f"{sol}")
+        utils.debug(f"{sol}")"""
+
+        # empty list of exit streamtubes - NECESSARY?
+        self.exit = np.empty((len(self.inlet),), dtype = object)
+
+        lower = [-np.pi / 2, 0]
+        upper = [np.pi / 2, np.pi]
+        lower = np.tile(lower, (len(self.inlet), 1)).ravel()
+        upper = np.tile(upper, (len(self.inlet), 1)).ravel()
+
+        x0 = np.zeros((len(self.inlet), 2))
+        for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+            x0[index][0] = inlet.flow_state.beta
+            x0[index][1] = inlet.A
+
+        x0 = x0.ravel()
+
+        sol = least_squares(solve_rotor, x0, bounds = (lower, upper))
+        utils.debug(f"Rotor solver iterations: {utils.Colours.GREEN}{sol.nfev}{utils.Colours.END}")
+        utils.debug(f"sol: {sol}")
+
 
         # iterate over all inlet-exit pairs
         for (inlet, exit) in zip(self.inlet, self.exit):
@@ -612,7 +629,7 @@ class Blade_row:
         def solve_stator(vars):
             """Series of equations to solve the root of."""
             # reshape input variables for iteration and create empty solutions array
-            vars = vars.reshape((len(self.inlet), 3))
+            vars = vars.reshape((len(self.inlet), 2))
             solutions = np.zeros_like(vars)
 
             # iterate over all sets of input variables
@@ -620,7 +637,7 @@ class Blade_row:
 
                 # create a holder flow_state to be populated
                 flow_state = Flow_state(
-                    var[0], var[1], 0, 0, 0
+                    0, var[0], 0, 0, 0
                 )
 
                 # handle inner streamtube
@@ -628,7 +645,7 @@ class Blade_row:
 
                     # set thickness using hub radius
                     r1 = self.r_hub
-                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r2 = np.sqrt(var[1] / np.pi + r1**2)
                     r = (r1 + r2) / 2
                     dr = r - r1
 
@@ -637,7 +654,7 @@ class Blade_row:
 
                     # set thickness using previous radius
                     r1 = self.exit[index - 1].r + self.exit[index - 1].dr
-                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r2 = np.sqrt(var[1] / np.pi + r1**2)
                     r = (r1 + r2) / 2
                     dr = r - r1
 
@@ -646,6 +663,22 @@ class Blade_row:
 
             # iterate over all inlet-exit pairs
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+                # apply continuity to find exit Mach number
+                m_cpT0_Ap0 = (
+                    utils.mass_flow_function(inlet.flow_state.M)
+                    * inlet.A / exit.A
+                    * np.cos(inlet.flow_state.alpha) / np.cos(exit.flow_state.alpha)
+                    / inlet.p_0_ratio
+                )
+
+                # check if mass flow function is valid
+                if m_cpT0_Ap0 > utils.mass_flow_function(1):
+
+                    return 1e9 * np.ones_like(vars).ravel()
+                
+                # calculate exit Mach number
+                exit.flow_state.M = utils.invert(utils.mass_flow_function, m_cpT0_Ap0)
 
                 # stagnation temperature is conserved
                 exit.flow_state.T_0 = inlet.flow_state.T_0
@@ -713,29 +746,23 @@ class Blade_row:
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
-                # determine residual for continuity equation
-                solutions[index][0] = (
+                # determine residual for continuity equation - REMOVE ME
+                """solutions[index][0] = (
                     utils.mass_flow_function(inlet.flow_state.M)
                     * inlet.A / exit.A
                     * np.cos(inlet.flow_state.alpha) / np.cos(exit.flow_state.alpha)
                     / inlet.p_0_ratio
                     - utils.mass_flow_function(exit.flow_state.M)
-                )
+                )"""
 
                 # set residual to be the exit angle
-                solutions[index][1] = exit.flow_state.alpha
+                solutions[index][0] = exit.flow_state.alpha
 
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
 
                     # choose point to evaluate radial equilibrium at
-                    r = (exit.r + self.exit[index + 1].r) / 2
-                    """r = (
-                        self.exit[0].r - self.exit[0].dr
-                        + (self.exit[-1].r + self.exit[-1].dr - (self.exit[0].r - self.exit[0].dr))
-                        * index / (len(self.inlet) - 2)
-                    )"""
-                    utils.debug(f"r: {r}")
+                    r = exit.r + exit.dr
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)
@@ -761,7 +788,7 @@ class Blade_row:
                     plt.show()"""
 
                     # sum all terms together to get overall residual
-                    solutions[index][2] = (
+                    solutions[index][1] = (
                         term_1 + term_2 + term_3 + term_4
                     )
 
@@ -783,17 +810,15 @@ class Blade_row:
             )
 
             # flatten solutions matrix and return
-            utils.debug(f"solutions: {solutions}")
             solutions = solutions.ravel()
+
             return solutions
-        
-        # initialise array to store initial guess and iterate
-        x0 = np.zeros((len(self.inlet), 3))
+
+        x0 = np.zeros((len(self.inlet), 2))
         for index, inlet in enumerate(self.inlet):
 
             # assume solution is close to the inlet conditions
             x0[index] = [
-                0.9 * inlet.flow_state.M,
                 0,
                 inlet.A
             ]
@@ -802,8 +827,8 @@ class Blade_row:
         x0 = x0.ravel()
 
         # set lower and upper guess bounds and shape correctly
-        lower = [0, -np.pi / 2, 0]
-        upper = [1, np.pi / 2, np.pi]
+        lower = [-np.pi / 2, 0]
+        upper = [np.pi / 2, np.pi]
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 

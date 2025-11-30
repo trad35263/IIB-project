@@ -73,7 +73,7 @@ class Nozzle:
         def solve_nozzle(vars):
             """Series of equations to solve the root of."""
             # reshape input variables for iteration and create empty solutions array
-            vars = vars.reshape((len(self.inlet), 3))
+            vars = vars.reshape((len(self.inlet), 2))
             solutions = np.zeros_like(vars)
 
             # iterate over all sets of input variables
@@ -81,16 +81,15 @@ class Nozzle:
 
                 # create a holder flow_state given that process is isentropic
                 flow_state = Flow_state(
-                    var[0], var[1], inlet.flow_state.T_0, inlet.flow_state.p_0, inlet.flow_state.s
+                    0, var[0], inlet.flow_state.T_0, inlet.flow_state.p_0, inlet.flow_state.s
                 )
-                flow_state.static_quantities()
 
                 # handle inner streamtube
                 if index == 0:
 
                     # effective hub radius is zero
                     r1 = 0
-                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r2 = np.sqrt(var[1] / np.pi + r1**2)
                     r = (r1 + r2) / 2
                     dr = r - r1
 
@@ -99,7 +98,7 @@ class Nozzle:
 
                     # set thickness using previous radius
                     r1 = self.exit[index - 1].r + self.exit[index - 1].dr
-                    r2 = np.sqrt(var[2] / np.pi + r1**2)
+                    r2 = np.sqrt(var[1] / np.pi + r1**2)
                     r = (r1 + r2) / 2
                     dr = r - r1
 
@@ -108,6 +107,24 @@ class Nozzle:
 
             # iterate over all inlet-exit pairs
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
+
+                # apply continuity to find exit Mach number
+                m_cpT0_Ap0 = (
+                    utils.mass_flow_function(inlet.flow_state.M)
+                    * inlet.A / exit.A
+                    * np.cos(inlet.flow_state.alpha) / np.cos(exit.flow_state.alpha)
+                )
+
+                # check if mass flow function is valid
+                if m_cpT0_Ap0 > utils.mass_flow_function(1):
+
+                    return 1e9 * np.ones_like(vars).ravel()
+
+                # calculate exit Mach number
+                exit.flow_state.M = utils.invert(utils.mass_flow_function, m_cpT0_Ap0)
+
+                # solve for static quantities
+                flow_state.static_quantities()
 
                 # find non-dimensional velocity components for radial equilibrium
                 exit.flow_state.v_x = (
@@ -158,16 +175,16 @@ class Nozzle:
             # repeat iteration with new values stored
             for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
 
-                # determine residual for continuity equation
-                solutions[index][0] = (
+                # determine residual for continuity equation - RMOEVE ME
+                """solutions[index][0] = (
                     utils.mass_flow_function(inlet.flow_state.M)
                     * inlet.A / exit.A
                     * np.cos(inlet.flow_state.alpha) / np.cos(exit.flow_state.alpha)
                     - utils.mass_flow_function(exit.flow_state.M)
-                )
+                )"""
 
                 # determine residual for conservation of angular momentum
-                solutions[index][1] = (
+                solutions[index][0] = (
                     inlet.r * inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
                     * np.sqrt(inlet.flow_state.T)
                     - exit.r * exit.flow_state.M * np.sin(exit.flow_state.alpha)
@@ -177,14 +194,8 @@ class Nozzle:
                 # determine residual for radial equilibrium equation
                 if index < len(self.inlet) - 1:
 
-                    # choose point to evaluate radial equilibrium at
-                    r = (exit.r + self.exit[index + 1].r) / 2
-                    """r = (
-                        self.exit[0].r - self.exit[0].dr + 1e-3
-                        + (self.exit[-1].r + self.exit[-1].dr - (self.exit[0].r - self.exit[0].dr))
-                        * index / (len(self.inlet) - 2)
-                    )"""
-                    utils.debug(f"r: {r}")
+                    # evaluate radial equilibrium at boundaries between streamtubes
+                    r = exit.r + exit.dr
 
                     # find residual corresponding to thermal/entropy term
                     term_1 = T_spline(r) * s_spline.derivative()(r)
@@ -202,24 +213,9 @@ class Nozzle:
                     term_4 = -1 / (utils.gamma - 1) * T_0_spline.derivative()(r)
 
                     # sum all terms together to get overall residual
-                    solutions[index][2] = (
+                    solutions[index][1] = (
                         term_1 + term_2 + term_3 + term_4
                     )
-
-                    # sum all terms together to get overall residual
-                    solutions[index][2] = (
-                        term_1 + term_2 + term_3 + term_4
-                    )
-
-                    # debugging
-                    """print("\n---------------------------")
-                    print(f"term_1: {term_1}")
-                    print(f"term_2: {term_2}")
-                    print(f"term_3: {term_3}")
-                    print(f"term_4: {term_4}")
-                    print(f"exit.flow_state.T_0: {exit.flow_state.T_0}")
-                    print(f"self.exit[index + 1].flow_state.T_0: {self.exit[index + 1].flow_state.T_0}")
-                    print(f"solutions[index][2]: {solutions[index][2]}")"""
 
             # final residual comes from atmospheric pressure boundary condition
             solutions[-1][-1] = p - self.exit[-1].flow_state.p
@@ -227,37 +223,31 @@ class Nozzle:
             # flatten solutions matrix
             solutions = solutions.ravel()
 
-            # extra residual comes from areas summing to nozzle area guess
-            #solutions = np.append(solutions, A - np.sum([np.abs(exit.A) for exit in self.exit]))
             return solutions
         
         # initialise array to store initial guess and iterate
-        x0 = np.zeros((len(self.inlet), 3))
+        x0 = np.zeros((len(self.inlet), 2))
         for index, inlet in enumerate(self.inlet):
 
             # assume solution is close to the inlet conditions
             x0[index] = [
-                utils.invert(utils.stagnation_pressure_ratio, p / inlet.flow_state.p_0),
-                1.5 * inlet.flow_state.alpha,
+                inlet.flow_state.alpha,
                 0.8 * inlet.A
             ]
 
-            # flatten initial guess array
-            if not np.isfinite(x0[index][0]):
-
-                x0[index][0] = 0
-
+        # flatten initial guess array
         x0 = x0.ravel()
 
         # set lower and upper guess bounds and shape correctly
-        lower = [0, -np.pi / 2, 0]
-        upper = [1, np.pi / 2, np.pi]
+        lower = [-np.pi / 2, 0]
+        upper = [np.pi / 2, np.pi]
         lower = np.tile(lower, (len(self.inlet), 1)).ravel()
         upper = np.tile(upper, (len(self.inlet), 1)).ravel()
 
         # solve for least squares solution
         sol = least_squares(solve_nozzle, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
+        utils.debug(f"sol: {sol}")
     
     def define_nozzle_geometry(self, M_exit):
         """Determine area ratio required to achieve specified thrust coefficient."""
