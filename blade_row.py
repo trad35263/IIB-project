@@ -91,7 +91,7 @@ class Blade_row:
             self.label = f"{utils.Colours.YELLOW}Stator{utils.Colours.END}"
             self.short_label = f"{utils.Colours.YELLOW}S{utils.Colours.END}"
     
-    def set_inlet_conditions(self, M, alpha, N, edge = True):
+    def set_inlet_conditions(self, M, alpha, N, edge = False):
         """Distributes the given inlet conditions across several annular streamtubes."""
         # set casing radius
         self.r_casing_inlet = 1

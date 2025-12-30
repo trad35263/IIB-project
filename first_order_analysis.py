@@ -59,16 +59,20 @@ class Constants:
 
 class Analysis:
     """Contains grids of values used for analysis."""
-    def __init__(self, power, rpm, area, altitude, N_stages = 1, N_engines = 1, label = ""):
+    def __init__(self, power, rpm, motor_diameter, altitude, N_stages = 1, N_engines = 1, label = ""):
         """Creates instance of Analysis class."""
         # store input variables
         self.power = power
         self.rpm = rpm
-        self.area = area
+        self.motor_diameter = motor_diameter
         self.altitude = altitude
         self.N_stages = N_stages
         self.N_engines = N_engines
         self.label = label
+
+        # calculate inlet area
+        self.hub_tip_ratio = Constants.hub_tip_ratio
+        self.area = np.pi * (self.motor_diameter**2 * (1 / self.hub_tip_ratio**2 - 1)) / 4
 
         # create arrays of Mach numbers
         x = np.linspace(0, 1, Constants.N)
@@ -195,7 +199,7 @@ class Analysis:
         zz = np.ma.masked_invalid(zz)
 
         # create contour plot
-        fig, ax = plt.subplots(figsize = (10, 6))
+        fig, ax = plt.subplots(figsize = (11, 6))
         levels = np.linspace(0, max, N_levels)
 
         # fill plot with contours to determine colour bar range
@@ -206,17 +210,22 @@ class Analysis:
 
             label_unit = "Thrust (N)"
 
+        # set title text
+        title_text = f"Motor power: {self.power} W / Motor speed: {self.rpm} rpm / HTR: {self.hub_tip_ratio}"
+        if self.N_stages > 1:
+
+            title_text = title_text + f" / Stages: {self.N_stages}"
+
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
         colour_bar.set_label(f"{label_unit}")
-        ax.set_xlabel("M_flight")
-        ax.set_ylabel("Sigma")
+        ax.set_xlabel("Flight Mach number, $ M_\\infty $")
+        ax.set_ylabel("Nozzle area ratio, $ \\sigma $")
         ax.set_xlim(0, 0.8)
         ax.set_ylim(0, 1.2)
         ax.text(
             0.5, 1.02,
-            f"Motor power: {self.power}W / Motor speed: {self.rpm}rpm / Area: {self.area}m$ ^2 $ / "
-            f"Stages: {self.N_stages} / Engines: {self.N_engines}",
+            title_text,
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',
@@ -234,6 +243,28 @@ class Analysis:
         filename = f"{self.label}_{label}"
         path = os.path.join(directory, filename)
         plt.savefig(path, dpi = 300)
+
+        # get target thrust contour
+        yellow = contour.collections[-1].get_facecolor()
+        contour = ax.contour(xx, yy, zz, levels = [max], colors = [yellow])
+        
+        # remove the contour plot from axes
+        for coll in contour.collections:
+
+            coll.remove()
+
+        # loop over saved contour collections
+        for collection in contour.collections:
+
+            for path in collection.get_paths():
+
+                # store vertices from contour and fill region above or below
+                v = path.vertices
+                x = v[:, 0]
+                y = v[:, 1]
+                y_lim = 2
+
+                ax.fill_between(x, y, y_lim, color = yellow)
 
         # add contour again
         contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
@@ -330,7 +361,7 @@ class Analysis:
                 axis.fill_between(xA, yB, y_lim, color = colour, alpha = 0.3)
 
         # add legend entries
-        axis.plot([], [], label = f"{label} {symbol} {value}", color = colour)
+        axis.plot([], [], label = f" $ \\{label} $ {symbol} {value}", color = colour)
         axis.legend()
 
 def main():
@@ -340,38 +371,29 @@ def main():
         Analysis(
             power = 3000,
             rpm = 12000,
-            area = 0.03,
+            motor_diameter = 60 * 1e-3,
             altitude = 0,
             N_stages = 1,
             N_engines = 1,
             label = "base_case"
         ),
         Analysis(
-            power = 3000,
-            rpm = 12000,
-            area = 0.03,
-            altitude = 0,
-            N_stages = 1,
-            N_engines = 3,
-            label = "3_engine"
-        ),
-        Analysis(
-            power = 3000,
-            rpm = 12000,
-            area = 0.03,
-            altitude = 0,
-            N_stages = 3,
-            N_engines = 1,
-            label = "3_stage"
-        ),
-        Analysis(
             power = 9000,
             rpm = 12000,
-            area = 0.03,
+            motor_diameter = 60 * 1e-3,
             altitude = 0,
             N_stages = 1,
             N_engines = 1,
             label = "3_motor"
+        ),
+        Analysis(
+            power = 3000,
+            rpm = 12000,
+            motor_diameter = 60 * 1e-3,
+            altitude = 0,
+            N_stages = 3,
+            N_engines = 1,
+            label = "3_stage"
         )
     ]
 
@@ -393,7 +415,7 @@ def main():
         plt.savefig(path, dpi = 300)
 
         # create plot with 1 annotation
-        analysis.shade(ax, 'psi', 0.2, False)
+        analysis.shade(ax, 'psi', 0.3, False)
 
         # save fig
         directory = "figures"
@@ -418,6 +440,34 @@ def main():
         filename = f"{analysis.label}_{label}_3"
         path = os.path.join(directory, filename)
         plt.savefig(path, dpi = 300)
+
+    # consider rim-driven separately
+    analysis = Analysis(
+        power = 200,
+        rpm = 10000,
+        motor_diameter = 70 * 1e-3 * Constants.hub_tip_ratio,
+        altitude = 0,
+        N_stages = 1,
+        N_engines = 1,
+        label = "rim_driven"
+    )
+    print(analysis)
+    analysis.analyse()
+
+    # create un-annotated plot
+    label = 'thrust'
+    _, ax = analysis.plot(label, 100)
+
+    # annotate plot
+    analysis.shade(ax, 'psi', 0.5, False)
+    analysis.shade(ax, 'phi', 0.4)
+    analysis.shade(ax, 'phi', 0.9, False)
+
+    # save fig
+    directory = "figures"
+    filename = f"{analysis.label}_{label}"
+    path = os.path.join(directory, filename)
+    plt.savefig(path, dpi = 300)
 
     # show plots
     plt.show()

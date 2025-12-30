@@ -43,6 +43,13 @@ class Defaults:
     debug = False
     loading_bar = True
 
+    # default flight scenarios
+    flight_scenarios = {
+        "Cruise": ["Cruise", 0, 60, engine_diameter, hub_tip_ratio, 30],
+        "Static": ["Static", 0, 0, engine_diameter, hub_tip_ratio, 50],
+        "Take-off": ["Take-off", 0, 20, engine_diameter, hub_tip_ratio, 30],
+    }
+
 # 0.3 compressible flow perfect gas relations
 
 def stagnation_pressure_ratio(M):

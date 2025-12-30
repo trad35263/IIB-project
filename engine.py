@@ -412,7 +412,7 @@ class Engine:
             labels.append("TIP")
 
         # create plot for displaying velocity triangles
-        fig, ax = plt.subplots(figsize = (10, 6))
+        fig, ax = plt.subplots(figsize = (11, 6))
 
         # set legend labels
         ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
@@ -485,10 +485,10 @@ class Engine:
         rotor_tip_span = 0.98
 
         # create a plot
-        fig, ax = plt.subplots(figsize = (10, 6))
+        fig, ax = plt.subplots(figsize = (11, 6))
 
         # add axis labels
-        #ax.set_xlabel('Axial position')
+        ax.set_xlabel('x-axis')
         ax.set_ylabel('Dimensionless radius')
 
         # remove x-ticks
