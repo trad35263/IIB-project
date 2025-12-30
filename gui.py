@@ -1,17 +1,27 @@
 # import modules
-
 import numpy as np
 import matplotlib.pyplot as plt
 import wx
 import utils
 
-# import custom class
-
+# import custom classes
 from flight_scenario import Flight_scenario
 from engine import Engine
 
 # mainframe class
 class MainFrame(wx.Frame):
+    """Used to create the primary container for the GUI."""
+    # create list of label-pairs to display on the grid
+    scenario_display_labels = [
+        ["Label", "label"],
+        ["Altitude (m)", "altitude"],
+        ["Velocity (m/s)", "velocity"],
+        ["Diameter (m)", "diameter"],
+        ["Hub-tip Ratio", "hub_tip_ratio"],
+        ["Thrust (N)", "thrust"],
+        ["Mach Number", "M"],
+        ["Thrust Coefficient", "C_th"]
+    ]
     def __init__(self):
         """Creates instance of the MainFrame class."""
         # create gui and specify title and size
@@ -33,28 +43,87 @@ class MainFrame(wx.Frame):
         # create panel
         panel = wx.Panel(self)
 
-        # create dropdown listing keys
-        self.dropdown = wx.ComboBox(
+        # create dropdown listing flight scenarios and bind to event function
+        self.scenario_dropdown = wx.ComboBox(
             panel,
-            choices = [str(v) for v in self.flight_scenarios.keys()],
+            choices = [str(key) for key in self.flight_scenarios.keys()],
+            style = wx.CB_READONLY,
+            value = str(next(iter(self.flight_scenarios)))
+        )
+        self.scenario_dropdown.Bind(wx.EVT_COMBOBOX, self.change_scenario)
+
+        # create dropdown listing associated engines and bind to event function
+        self.engine_dropdown = wx.ComboBox(
+            panel,
+            choices = [],
             style = wx.CB_READONLY
         )
+        self.engine_dropdown.Bind(wx.EVT_COMBOBOX, self.change_engine)
 
-        # button to create new entry
-        add_button = wx.Button(panel, label = "Add Flight Scenario")
-        add_button.Bind(wx.EVT_BUTTON, self.add_scenario)
+        # create button to add new flight scenarios and bind to event function
+        self.add_scenario_button = wx.Button(panel, label = "Add Flight Scenario")
+        self.add_scenario_button.Bind(wx.EVT_BUTTON, self.add_scenario)
+
+        # create button to add new engines and bind to event function
+        self.add_engine_button = wx.Button(panel, label = "Create Engine")
+        self.add_engine_button.Bind(wx.EVT_BUTTON, self.add_engine)
+
+        # create empty lists of text boxes with values to be edited
+        self.scenario_display_values = []
+        self.engine_display_values = []
+
+        # create a 2-column grid
+        self.scenario_grid = wx.FlexGridSizer(rows = len(self.scenario_display_labels), cols = 2, hgap = 10, vgap = 5)
+        self.label = self.scenario_dropdown.GetValue()
+
+        # loop over label-pairs
+        for (display, attribute) in self.scenario_display_labels:
+
+            # add text and store value
+            self.scenario_grid.Add(wx.StaticText(panel, label = display))
+            value = getattr(self.flight_scenarios[self.label], attribute)
+
+            # for string attributes
+            if isinstance(value, str):
+
+                # display as is
+                text = wx.StaticText(panel, label = f"{value}")
+
+            # for numeric attributes
+            else:
+
+                # display to 4 significant figures
+                text = wx.StaticText(panel, label = f"{value:.4g}")
+
+            # store text object and add to grid
+            self.scenario_display_values.append(text)
+            self.scenario_grid.Add(text)
 
         # create left-hand column
         left_column = wx.BoxSizer(wx.VERTICAL)
+        #left_column.AddStretchSpacer()
+
+        # assign button, dropdown and grid to left-hand column
+        left_column.Add(self.add_scenario_button, 0, wx.ALL | wx.CENTER, 8)
+        left_column.Add(self.scenario_dropdown, 0, wx.ALL | wx.EXPAND, 8)
+        left_column.Add(self.scenario_grid, 0, wx.ALL | wx.CENTER, 8)
         left_column.AddStretchSpacer()
-        left_column.Add(add_button, 0, wx.ALL | wx.CENTER, 8)
-        left_column.Add(self.dropdown, 0, wx.ALL | wx.EXPAND, 8)
-        left_column.AddStretchSpacer()
+
+        # create central column
+        centre_column = wx.BoxSizer(wx.VERTICAL)
+        #centre_column.AddStretchSpacer()
+
+        # assign button, dropdown and grid to centre column
+        centre_column.Add(self.add_engine_button, 0, wx.ALL | wx.CENTER, 8)
+        centre_column.Add(self.engine_dropdown, 0, wx.ALL | wx.EXPAND, 8)
+        #centre_column.Add(self.engine_grid, 0, wx.ALL | wx.CENTER, 8)
+        centre_column.AddStretchSpacer()
 
         # create root sizer
         root = wx.BoxSizer(wx.HORIZONTAL)
         root.Add(left_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
-        root.AddStretchSpacer(2)
+        root.Add(centre_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+        root.AddStretchSpacer(1)
         panel.SetSizer(root)
 
         # show gui
@@ -77,7 +146,7 @@ class MainFrame(wx.Frame):
                 self.flight_scenarios[label] = Flight_scenario(*arguments)
 
                 # refresh dropdown
-                self.dropdown.Append(label)
+                self.scenario_dropdown.Append(label)
 
             # catch non-numeric inputs
             except ValueError:
@@ -87,6 +156,29 @@ class MainFrame(wx.Frame):
 
         # close dialog box
         dialog.Destroy()
+
+    def change_scenario(self, event):
+        """Executes on each change of the dropdown menu."""
+        #
+        self.label = self.scenario_dropdown.GetValue()
+        for (display_label, display_value) in zip(self.scenario_display_labels, self.scenario_display_values):
+
+            value = getattr(self.flight_scenarios[self.label], display_label[1])
+            if isinstance(value, str):
+
+                display_value.SetLabel(f"{value}")
+
+            else:
+
+                display_value.SetLabel(f"{value:.4g}")
+
+    def add_engine(self, event):
+        """"""
+        pass
+
+    def change_engine(self, event):
+        """"""
+        pass
 
 # create ScenarioDialog class
 class AddScenarioDialog(wx.Dialog):
@@ -110,7 +202,7 @@ class AddScenarioDialog(wx.Dialog):
         self.thrust = wx.TextCtrl(panel)
 
         # layout in grid form
-        grid = wx.FlexGridSizer(rows=6, cols=2, hgap=10, vgap=8)
+        grid = wx.FlexGridSizer(rows = 6, cols = 2, hgap = 10, vgap = 8)
         grid.AddMany([
             (wx.StaticText(panel, label = "Label")),           (self.label),
             (wx.StaticText(panel, label = "Altitude")),        (self.altitude),
