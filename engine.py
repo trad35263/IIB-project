@@ -22,7 +22,7 @@ from nozzle import Nozzle
 from flow_state import Flow_state
 import utils
 
-# 1.0 define Engine class
+# define Engine class
 
 class Engine:
     """
@@ -33,16 +33,21 @@ class Engine:
     scenario : class
         Instance of the Flight_scenario class for which this engine is designed.
     """
-    def __init__(self, scenario):
+    def __init__(
+            self, scenario,
+            no_of_stages = utils.Defaults.no_of_stages,
+            vortex_exponent = utils.Defaults.vortex_exponent,
+            no_of_annuli = utils.Defaults.no_of_annuli
+        ):
         """Create instance of the Engine class."""
         # store input variables
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
 
         # store default engine parameters
-        self.no_of_stages = utils.Defaults.no_of_stages
-        self.n = utils.Defaults.vortex_exponent
-        self.N = utils.Defaults.no_of_annuli
+        self.no_of_stages = no_of_stages
+        self.vortex_exponent = vortex_exponent
+        self.no_of_annuli = no_of_annuli
 
         # preallocate variables as None
         self.C_th = None
@@ -56,7 +61,7 @@ class Engine:
         for i in range(self.no_of_stages):
 
             # create stage and blade rows and store in lists
-            self.stages.append(Stage(self.n, i))
+            self.stages.append(Stage(self.vortex_exponent, i))
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
         # create nozzle
@@ -105,12 +110,12 @@ class Engine:
         t1 = timer()
 
         NN = [1]
-        if utils.Defaults.no_of_annuli > 1:
+        if self.no_of_annuli > 1:
             NN.append(2)
-        if utils.Defaults.no_of_annuli > 2:
+        if self.no_of_annuli > 2:
             NN.append(3)
-        if utils.Defaults.no_of_annuli > 3:
-            NN.append(utils.Defaults.no_of_annuli)
+        if self.no_of_annuli > 3:
+            NN.append(self.no_of_annuli)
 
         for N in NN:
 
@@ -120,14 +125,14 @@ class Engine:
 
             scenario.x = []
             scenario.y = []
-            self.N = N
+            self.no_of_annuli = N
             print(
-                f"{utils.Colours.CYAN}Performing analysis with {self.N} streamtubes..."
+                f"{utils.Colours.CYAN}Performing analysis with {self.no_of_annuli} streamtubes..."
                 f"{utils.Colours.END}"
             )
             x0 = self.M_1
             x1 = 0.9 * self.M_1
-            if self.N == utils.Defaults.no_of_annuli:
+            if self.no_of_annuli == NN[-1]:
 
                 sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant")
 
@@ -139,7 +144,7 @@ class Engine:
 
                 print("\r" + "|" + "-" * 100 + "|\n", end = "", flush=True)
 
-            ax.plot(scenario.x, scenario.y, label = f"{self.N}", linestyle = '', marker = '.')
+            ax.plot(scenario.x, scenario.y, label = f"{self.no_of_annuli}", linestyle = '', marker = '.')
 
         t2 = timer()
         print(
@@ -209,7 +214,9 @@ class Engine:
             if index == 0:
 
                 # set first stage to default inlet conditions
-                rotor.set_inlet_conditions(self.M_1, utils.Defaults.inlet_swirl, self.N)
+                rotor.set_inlet_conditions(
+                    self.M_1, utils.Defaults.inlet_swirl, self.no_of_annuli
+                )
 
             # handle all other stages
             else:
@@ -433,7 +440,7 @@ class Engine:
         ax.text(
             0.5, 1.02,
             f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
-            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.n:.3g}",
+            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.vortex_exponent:.3g}",
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',
@@ -504,7 +511,7 @@ class Engine:
         ax.text(
             0.5, 1.02,
             f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
-            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.n:.3g}",
+            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.vortex_exponent:.3g}",
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',

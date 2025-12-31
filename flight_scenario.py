@@ -30,12 +30,12 @@ class Flight_scenario:
     """
     _color_cycle = iter(plt.cm.tab10.colors)
 
-    def __init__(self, label, altitude, velocity, diameter, hub_tip_ratio, thrust):
+    def __init__(self, label, altitude, flight_speed, diameter, hub_tip_ratio, thrust):
         """Create instance of the Flight_scenario class."""
         # save input parameters
         self.label = label
         self.altitude = altitude
-        self.velocity = velocity
+        self.flight_speed = flight_speed
         self.diameter = diameter
         self.hub_tip_ratio = hub_tip_ratio
         self.thrust = thrust
@@ -48,7 +48,7 @@ class Flight_scenario:
         self.a = self.atmosphere.speed_of_sound[0]
 
         # calculate derived non-dimensional quantities
-        self.M = self.velocity / self.a
+        self.M = self.flight_speed / self.a
         self.A = (np.pi / 4) * self.diameter**2 * (1 - self.hub_tip_ratio**2)
         self.p_0 = self.p / utils.stagnation_pressure_ratio(self.M)
         self.C_th = self.thrust / (self.A * self.p_0)

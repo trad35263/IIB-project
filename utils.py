@@ -17,16 +17,19 @@ class Defaults:
     flow_coefficient = 0.6
     stage_loading_coefficient = 0.18
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = -0.5
+    vortex_exponent = 0.5
 
     # code iteration parameters
-    no_of_annuli = 3
-    no_of_stages = None
+    no_of_annuli = 1
+    no_of_stages = 1
     delta = 1e-6
 
     # default dimensional values
-    engine_diameter = 0.14
+    diameter = 0.14
     hub_tip_ratio = 0.3077
+    altitude = 10000
+    flight_speed = 30
+    thrust = 20
 
     # placeholder for now
     blade_row_axial_depth = 0.5
@@ -45,9 +48,9 @@ class Defaults:
 
     # default flight scenarios
     flight_scenarios = {
-        "Cruise": ["Cruise", 0, 60, engine_diameter, hub_tip_ratio, 30],
-        "Static": ["Static", 0, 0, engine_diameter, hub_tip_ratio, 50],
-        "Take-off": ["Take-off", 0, 20, engine_diameter, hub_tip_ratio, 30],
+        "Cruise": ["Cruise", 0, 60, diameter, hub_tip_ratio, 30],
+        "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
+        "Take-off": ["Take-off", 0, 20, diameter, hub_tip_ratio, 30],
     }
 
 # 0.3 compressible flow perfect gas relations
