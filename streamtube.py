@@ -18,7 +18,7 @@ class Streamtube:
     
     Parameters
     ----------
-    None
+    ...
     """
     def __init__(self, flow_state, r, dr):
         """Creates an instance of the Streamtube class."""

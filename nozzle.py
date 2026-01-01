@@ -395,10 +395,20 @@ class Nozzle:
             self.inlet.p_0
         )
 
-    def evaluate(self, M_1, M_flight):
+    def evaluate(self, M_1, M_flight, A):
         """Determine key performance metrics local to the nozzle exit conditions."""
         # find thrust coefficient
         for exit in self.exit:
+
+            # find dimensionless local mass flow rate
+            exit.m = (
+                exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                * np.sqrt(exit.flow_state.T) * exit.A * exit.flow_state.rho
+                / (
+                    M_1 * np.sqrt(utils.stagnation_temperature_ratio(M_1))
+                    * utils.stagnation_density_ratio(M_1) * A
+                )
+            )
 
             # determine local thrust coefficient
             exit.C_th = (
@@ -440,18 +450,3 @@ class Nozzle:
                 M_flight / exit.flow_state.M
                 * np.sqrt(utils.stagnation_temperature_ratio(M_flight) / exit.flow_state.T)
             )
-
-            # find local mass flow rate
-            exit.m = (
-                exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                * np.sqrt(exit.flow_state.T) * exit.A * exit.flow_state.rho
-            )
-
-        # calculate total dimensionless mass flow rates
-        m_sum_exit = np.sum([exit.m for exit in self.exit])
-
-        # loop over rotor inlet-exit pairs
-        for exit in self.exit:
-
-            # normalise mass flow rates
-            exit.m /= m_sum_exit

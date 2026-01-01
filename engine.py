@@ -37,20 +37,22 @@ class Engine:
             self, scenario,
             no_of_stages = utils.Defaults.no_of_stages,
             vortex_exponent = utils.Defaults.vortex_exponent,
-            no_of_annuli = utils.Defaults.no_of_annuli
+            no_of_annuli = utils.Defaults.no_of_annuli,
+            hub_tip_ratio = utils.Defaults.hub_tip_ratio
         ):
         """Create instance of the Engine class."""
-        # store input variables
+        # store variables from input scenario
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
 
-        # store default engine parameters
+        # store input variables
         self.no_of_stages = no_of_stages
         self.vortex_exponent = vortex_exponent
         self.no_of_annuli = no_of_annuli
+        self.hub_tip_ratio = hub_tip_ratio
 
         # preallocate variables as None
-        self.C_th = None
+        #self.C_th = None
 
         # initial guess for inlet Mach number
         self.M_1 = 0.1
@@ -142,7 +144,7 @@ class Engine:
 
             if utils.Defaults.loading_bar:
 
-                print("\r" + "|" + "-" * 100 + "|\n", end = "", flush=True)
+                print("\r" + "|" + "-" * 100 + "|\n", end = "", flush = True)
 
             ax.plot(scenario.x, scenario.y, label = f"{self.no_of_annuli}", linestyle = '', marker = '.')
 
@@ -217,6 +219,7 @@ class Engine:
                 rotor.set_inlet_conditions(
                     self.M_1, utils.Defaults.inlet_swirl, self.no_of_annuli
                 )
+                self.A = np.sum([inlet.A for inlet in rotor.inlet])
 
             # handle all other stages
             else:
@@ -337,7 +340,7 @@ class Engine:
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
         # investigate nozzle performance
-        self.nozzle.evaluate(self.M_1, self.M_flight)
+        self.nozzle.evaluate(self.M_1, self.M_flight, self.A)
 
         # iterate over all stages
         for stage in self.stages:
@@ -363,8 +366,9 @@ class Engine:
         # find mass-averaged jet velocity ratio
         self.jet_velocity_ratio = np.sum([exit.jet_velocity_ratio * exit.m for exit in self.nozzle.exit])
 
-        # store nozzle area ratio
+        # store miscellaneous engine quantities
         self.nozzle_area_ratio = self.nozzle.A_exit / np.sum(inlet.A for inlet in self.blade_rows[0].inlet)
+        self.pressure_ratio = np.sum([exit.m * exit.flow_state.p_0 for exit in self.nozzle.exit])
 
 # plotting functions ------------------------------------------------------------------------------
     

@@ -27,6 +27,13 @@ class MainFrame(wx.Frame):
         ["No. of Stages", "no_of_stages"],
         ["Vortex Exponent", "vortex_exponent"],
         ["No. of Annuli", "no_of_annuli"],
+        ["Pressure Ratio", "pressure_ratio"],
+        ["Nozzle Area Ratio", "nozzle_area_ratio"],
+        ["Inlet Mach Number", "M_1"],
+        ["Compressor Efficiency", "eta_comp"],
+        ["Nozzle Efficiency", "eta_nozz"],
+        ["Propulsive Efficiency", "eta_prop"],
+        ["Jet Velocity Ratio", "jet_velocity_ratio"]
     ]
     def __init__(self):
         """Creates instance of the MainFrame class."""
@@ -95,7 +102,7 @@ class MainFrame(wx.Frame):
         self.engine_grid = wx.FlexGridSizer(
             rows = len(self.engine_display_labels), cols = 2, hgap = 10, vgap = 5
         )
-        self.engine_label = self.engine_dropdown.GetValue()
+        #self.engine_label = self.engine_dropdown.GetValue()
 
         # loop over label-pairs for scenarios
         for (display, attribute) in self.scenario_display_labels:
@@ -179,12 +186,15 @@ class MainFrame(wx.Frame):
             try:
 
                 # create and store new object
-                label = dialog.label.GetValue()
-                arguments = [label] + [float(arg.GetValue()) for arg in dialog.arguments]
-                self.flight_scenarios[label] = Flight_scenario(*arguments)
+                self.scenario_label = dialog.label.GetValue()
+                arguments = (
+                    [self.scenario_label]
+                    + [float(arg.GetValue()) for arg in dialog.arguments]
+                )
+                self.flight_scenarios[self.scenario_label] = Flight_scenario(*arguments)
 
                 # refresh dropdown
-                self.scenario_dropdown.Append(label)
+                self.scenario_dropdown.Append(self.scenario_label)
 
             # catch non-numeric inputs
             except ValueError:
@@ -195,12 +205,10 @@ class MainFrame(wx.Frame):
         # close dialog box
         dialog.Destroy()
 
-    def change_scenario(self, event):
-        """Executes on each change of the scenario dropdown menu."""
-        # get latest label from scenario dropdown
-        self.scenario_label = self.scenario_dropdown.GetValue()
+        # set scenario dropdown to the most recent option
+        self.scenario_dropdown.SetSelection(self.scenario_dropdown.GetCount() - 1)
 
-        # loop over pairs of 
+        # loop over pairs of scenario labels and text boxes
         for (label, text) in zip(self.scenario_display_labels, self.scenario_display_texts):
 
             # get new value to display from relevant Flight_scenario instance
@@ -218,19 +226,92 @@ class MainFrame(wx.Frame):
                 # display to 4 significant figures
                 text.SetLabel(f"{value:.4g}")
 
+        # clear engine selection dropdown
+        self.engine_dropdown.Clear()
+
+        # loop over all engine information texts
+        for text in self.engine_display_texts:
+
+            # clear labels
+            text.SetLabel("")
+
+
+    def change_scenario(self, event):
+        """Executes on each change of the scenario dropdown menu."""
+        # get latest label from scenario dropdown
+        self.scenario_label = self.scenario_dropdown.GetValue()
+
+        # loop over pairs of scenario labels and text boxes
+        for (label, text) in zip(self.scenario_display_labels, self.scenario_display_texts):
+
+            # get new value to display from relevant Flight_scenario instance
+            value = getattr(self.flight_scenarios[self.scenario_label], label[1])
+
+            # for string values
+            if isinstance(value, str):
+
+                # display as is
+                text.SetLabel(f"{value}")
+
+            # for numeric values
+            else:
+
+                # display to 4 significant figures
+                text.SetLabel(f"{value:.4g}")
+
+        # clear engine selection dropdown
         self.engine_dropdown.Clear()
         engines = self.flight_scenarios[self.scenario_label].engines
-        for i, e in enumerate(engines):
-            self.engine_dropdown.Append(
-                f"[{i}]      Stages: {e.no_of_stages} | n: {e.vortex_exponent} | N: {e.no_of_annuli}"
-            )
-        """if engines:
-            self.engine_dropdown.SetSelection(0)
-            self.engine_label = 0"""
 
-        for text in self.engine_display_texts:
-            text.SetLabel("")
-            self.Layout()
+        # loop over engines associated with the chosen flight scenario
+        for index, engine in enumerate(engines):
+
+            # append engine descriptions to dropdown
+            self.engine_dropdown.Append(
+                f"[{index}]     Stages: {engine.no_of_stages} | n: {engine.vortex_exponent} | "
+                f"N: {engine.no_of_annuli}"
+            )
+
+        # if the chosen flight scenario has any associated engines
+        if engines:
+
+            # set engine dropdown to the first option
+            self.engine_dropdown.SetSelection(0)
+
+            # get latest label from engine dropdown
+            self.engine_label = self.engine_dropdown.GetValue()
+            self.engine_label = int(self.engine_label.split(']')[0][1:])
+
+            # loop over pairs of ...
+            for (label, text) in zip(self.engine_display_labels, self.engine_display_texts):
+
+                # get new value to display from relevant Engine instance
+                engine = self.flight_scenarios[self.scenario_label].engines[int(self.engine_label)]
+                value = getattr(engine, label[1])
+
+                # for string values
+                if isinstance(value, str):
+
+                    # display as is
+                    text.SetLabel(f"{value}")
+
+                # for numeric values
+                else:
+
+                    # display to 4 significant figures
+                    text.SetLabel(f"{value:.4g}")
+
+        # no engines exist
+        else:
+
+            # loop over all engine information texts
+            for text in self.engine_display_texts:
+
+                # clear labels
+                text.SetLabel("")
+
+        # update layout
+        self.Layout()
 
     def add_engine(self, event):
         """Executes the creation of an engine corresponding to the selected flight scenario."""
@@ -270,6 +351,32 @@ class MainFrame(wx.Frame):
 
         # close dialog box
         dialog.Destroy()
+
+        # set engine dropdown to the most recent option
+        self.engine_dropdown.SetSelection(self.engine_dropdown.GetCount() - 1)
+
+        # get latest label from engine dropdown
+        self.engine_label = self.engine_dropdown.GetValue()
+        self.engine_label = int(self.engine_label.split(']')[0][1:])
+
+        # loop over pairs of scenario labels and text boxes
+        for (label, text) in zip(self.engine_display_labels, self.engine_display_texts):
+
+            # get new value to display from relevant Engine instance
+            engine = self.flight_scenarios[self.scenario_label].engines[int(self.engine_label)]
+            value = getattr(engine, label[1])
+
+            # for string values
+            if isinstance(value, str):
+
+                # display as is
+                text.SetLabel(f"{value}")
+
+            # for numeric values
+            else:
+
+                # display to 4 significant figures
+                text.SetLabel(f"{value:.4g}")
 
     def change_engine(self, event):
         """Executes on each change of the engine dropdown menu."""
