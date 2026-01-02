@@ -32,42 +32,54 @@ class Engine:
     ----------
     scenario : class
         Instance of the Flight_scenario class for which this engine is designed.
+    no_of_stages : int
+        Number of stages in the compressor.
+    vortex_exponent : float
+        Vortex exponent describing the distribution of stage loading across a rotor.
+    no_of_annuli : int
+        Number of annular streamtubes to consider the analysis for.
+    phi : float
+        Flow coefficient.
+    psi : float
+        Stage loading coefficient.
     """
     def __init__(
             self, scenario,
             no_of_stages = utils.Defaults.no_of_stages,
             vortex_exponent = utils.Defaults.vortex_exponent,
             no_of_annuli = utils.Defaults.no_of_annuli,
-            hub_tip_ratio = utils.Defaults.hub_tip_ratio
+            Y_p = utils.Defaults.Y_p,
+            phi = utils.Defaults.phi,
+            psi = utils.Defaults.psi
         ):
         """Create instance of the Engine class."""
         # store variables from input scenario
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
+        self.hub_tip_ratio = scenario.hub_tip_ratio
 
         # store input variables
-        self.no_of_stages = no_of_stages
+        self.no_of_stages = int(no_of_stages)
         self.vortex_exponent = vortex_exponent
-        self.no_of_annuli = no_of_annuli
-        self.hub_tip_ratio = hub_tip_ratio
-
-        # preallocate variables as None
-        #self.C_th = None
-
-        # initial guess for inlet Mach number
-        self.M_1 = 0.1
+        self.no_of_annuli = int(no_of_annuli)
+        self.Y_p = Y_p
+        self.phi = phi
+        self.psi = psi
 
         # create the appropriate number of empty stages and blade rows
         self.stages = []
         self.blade_rows = []
-        for i in range(self.no_of_stages):
+        for index in range(self.no_of_stages):
 
             # create stage and blade rows and store in lists
-            self.stages.append(Stage(self.vortex_exponent, i))
+            self.stages.append(Stage(self.phi, self.psi, self.vortex_exponent, self.Y_p, index))
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
         # create nozzle
         self.nozzle = Nozzle(2 * self.no_of_stages - 0.5, 2 * self.no_of_stages + 0.5)
+
+        # initial guess for inlet Mach number
+        self.M_1 = 0.1
 
         # set up root-solving function for thrust coefficient
         def solve_thrust(var):
@@ -84,10 +96,6 @@ class Engine:
             self.design()
             scenario.engine = self
             residual = self.C_th - self.C_th_design
-
-            # append x and y values for visualising iteration process
-            scenario.x.append(var)
-            scenario.y.append(residual)
 
             if utils.Defaults.loading_bar:
 
@@ -106,18 +114,19 @@ class Engine:
             # return thrust coefficient residual
             return residual
 
-        fig, ax = plt.subplots()
+        # create plot
+        #fig, ax = plt.subplots()
 
         # increment number of annuli for analysis, starting with mean-line only
         t1 = timer()
 
-        NN = [1]
-        if self.no_of_annuli > 1:
+        NN = [self.no_of_annuli]
+        """if self.no_of_annuli > 1:
             NN.append(2)
         if self.no_of_annuli > 2:
             NN.append(3)
         if self.no_of_annuli > 3:
-            NN.append(self.no_of_annuli)
+            NN.append(self.no_of_annuli)"""
 
         for N in NN:
 
@@ -125,8 +134,8 @@ class Engine:
             self.benchmark = None
             self.progress = 0
 
-            scenario.x = []
-            scenario.y = []
+            #scenario.x = []
+            #scenario.y = []
             self.no_of_annuli = N
             print(
                 f"{utils.Colours.CYAN}Performing analysis with {self.no_of_annuli} streamtubes..."
@@ -146,7 +155,7 @@ class Engine:
 
                 print("\r" + "|" + "-" * 100 + "|\n", end = "", flush = True)
 
-            ax.plot(scenario.x, scenario.y, label = f"{self.no_of_annuli}", linestyle = '', marker = '.')
+            #ax.plot(scenario.x, scenario.y, label = f"{self.no_of_annuli}", linestyle = '', marker = '.')
 
         t2 = timer()
         print(
@@ -161,8 +170,8 @@ class Engine:
             # run subroutine to determine blade metal angles and pitch-to-chord
             blade_row.empirical_design()
 
-        ax.grid()
-        ax.legend()
+        #ax.grid()
+        #ax.legend()
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
@@ -777,145 +786,148 @@ class Engine:
         path = os.path.join(directory, filename)
         plt.savefig(path, dpi = 300)
 
-    def plot_spanwise_variations(self, quantities):
+    def plot_spanwise_variations(self, quantity_list = utils.Defaults.quantity_list):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
-        # separate input list into pairs of values
-        q_label_bools = [quantities[i:i + 3] for i in range(0, len(quantities), 3)]
+        # loop over all list entries
+        for quantities in quantity_list:
 
-        # helper function to retrieve values from appropriate place and with correct units
-        def get_attribute(in_out, q, label, bool):
-            """"""
-            # when value to be retrieved is a flow value
-            if bool:
+            # separate input list into pairs of values
+            q_label_bools = [quantities[i:i + 3] for i in range(0, len(quantities), 3)]
 
-                # return False if value does not exist
-                if not hasattr(in_out.flow_state, q):
+            # helper function to retrieve values from appropriate place and with correct units
+            def get_attribute(in_out, q, label, bool):
+                """Retrieves an attribute, handling cases where no attribute exists."""
+                # when value to be retrieved is a flow value
+                if bool:
 
-                    return False
+                    # return False if value does not exist
+                    if not hasattr(in_out.flow_state, q):
 
-                # read attribute
-                x = getattr(in_out.flow_state, q)
+                        return False
 
-            # when value to be retrieved is not a flow value
-            else:
+                    # read attribute
+                    x = getattr(in_out.flow_state, q)
 
-                # return False if value does not exist
-                if not hasattr(in_out, q):
+                # when value to be retrieved is not a flow value
+                else:
 
-                    return False
+                    # return False if value does not exist
+                    if not hasattr(in_out, q):
 
-                # read attribute
-                x = getattr(in_out, q)
+                        return False
 
-            # if attribute is an angle
-            if "angle" in label or "Angle" in label:
+                    # read attribute
+                    x = getattr(in_out, q)
 
-                # convert to degrees and return
-                return utils.rad_to_deg(x)
+                # if attribute is an angle
+                if "angle" in label or "Angle" in label:
+
+                    # convert to degrees and return
+                    return utils.rad_to_deg(x)
+                
+                # for all other attributes
+                else:
+
+                    # return as is
+                    return x
+
+            # create plot with an axis for each blade row inlet and exit and reshape axes
+            fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows) + 2, figsize = (15, 7))
+            axes = np.reshape(axes, (len(self.blade_rows) + 1, 2))
+
+            # assign values for capturing appropriate axis limits
+            x_min = 1e12
+            x_max = -1e12
             
-            # for all other attributes
-            else:
+            # iterate over all pairs of quantity and label
+            for i, q_label_bool in enumerate(q_label_bools):
 
-                # return as is
-                return x
+                # separate into quantity, label and boolean value for convenience
+                q = q_label_bool[0]
+                label = q_label_bool[1]
+                bool = q_label_bool[2]
 
-        # create plot with an axis for each blade row inlet and exit and reshape axes
-        fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows) + 2, figsize = (15, 7))
-        axes = np.reshape(axes, (len(self.blade_rows) + 1, 2))
+                # set colour
+                colour = next(self.colour_cycle)
 
-        # assign values for capturing appropriate axis limits
-        x_min = 1e12
-        x_max = -1e12
-        
-        # iterate over all pairs of quantity and label
-        for i, q_label_bool in enumerate(q_label_bools):
+                # set legend entry in final axis
+                axes[-1][1].plot([], [], color = colour, label = label)
 
-            # separate into quantity, label and boolean value for convenience
-            q = q_label_bool[0]
-            label = q_label_bool[1]
-            bool = q_label_bool[2]
+                # iterate over all axes:
+                for ax, blade_row in zip(axes, self.blade_rows + [self.nozzle]):
 
-            # set colour
-            colour = next(self.colour_cycle)
+                    # proceed with inlet and outlet successively
+                    for index, inlet_outlet in enumerate([blade_row.inlet, blade_row.exit]):
 
-            # set legend entry in final axis
-            axes[-1][1].plot([], [], color = colour, label = label)
+                        # create array of radius values
+                        rr = np.linspace(
+                            inlet_outlet[0].r - inlet_outlet[0].dr, 
+                            inlet_outlet[-1].r + inlet_outlet[-1].dr,
+                            100
+                        )
+                        span = (rr - rr[0]) / (rr[-1] - rr[0])
 
-            # iterate over all axes:
-            for ax, blade_row in zip(axes, self.blade_rows + [self.nozzle]):
+                        # store array of attributes separately for convenience
+                        qq = [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
 
-                # proceed with inlet and outlet successively
-                for index, inlet_outlet in enumerate([blade_row.inlet, blade_row.exit]):
+                        # if attribute is None, skip block of code
+                        if False in qq or None in qq:
 
-                    # create array of radius values
-                    rr = np.linspace(
-                        inlet_outlet[0].r - inlet_outlet[0].dr, 
-                        inlet_outlet[-1].r + inlet_outlet[-1].dr,
-                        100
-                    )
-                    span = (rr - rr[0]) / (rr[-1] - rr[0])
+                            continue
 
-                    # store array of attributes separately for convenience
-                    qq = [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
+                        # handle case where only one inlet/exit datapoint is available
+                        if len(blade_row.inlet) == 1:
 
-                    # if attribute is None, skip block of code
-                    if False in qq or None in qq:
+                            # plot a constant value everywhere
+                            ax[index].plot(rr, np.full_like(rr, [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]))
 
-                        continue
+                        # if more than one inlet/exit datapoint exists, fit spline
+                        else:
 
-                    # handle case where only one inlet/exit datapoint is available
-                    if len(blade_row.inlet) == 1:
+                            # fit spline and store corresponding outputs
+                            spline = make_interp_spline(
+                                [in_out.r for in_out in inlet_outlet],
+                                [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
+                                k = min(2, len(blade_row.inlet) - 1)
+                            )
 
-                        # plot a constant value everywhere
-                        ax[index].plot(rr, np.full_like(rr, [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]))
+                            # plot spline
+                            ax[index].plot(spline(rr), span, alpha = 0.5, linewidth = 3, color = colour)
 
-                    # if more than one inlet/exit datapoint exists, fit spline
-                    else:
+                            # plot inlet conditions
+                            ax[index].plot(
+                                [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
+                                (np.array([in_out.r for in_out in inlet_outlet]) - rr[0])
+                                / (rr[-1] - rr[0]),
+                                linestyle = '', marker = '.', markersize = 8, color = colour
+                            )
 
-                        # fit spline and store corresponding outputs
-                        spline = make_interp_spline(
-                            [in_out.r for in_out in inlet_outlet],
-                            [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
-                            k = min(2, len(blade_row.inlet) - 1)
+                        # update x-axis limits
+                        x_min = min(
+                            x_min, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
+                        )
+                        x_max = max(
+                            x_max, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
                         )
 
-                        # plot spline
-                        ax[index].plot(spline(rr), span, alpha = 0.5, linewidth = 3, color = colour)
+            # flatten axes and iterate
+            axes = axes.ravel()
+            for ax in axes:
 
-                        # plot inlet conditions
-                        ax[index].plot(
-                            [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
-                            (np.array([in_out.r for in_out in inlet_outlet]) - rr[0])
-                            / (rr[-1] - rr[0]),
-                            linestyle = '', marker = '.', markersize = 8, color = colour
-                        )
+                # set axis x- and y-limits
+                ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
+                ax.set_ylim(0, 1)
 
-                    # update x-axis limits
-                    x_min = min(
-                        x_min, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
-                    )
-                    x_max = max(
-                        x_max, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
-                    )
+                # set grid and maximum number pf x-ticks
+                ax.grid()
+                ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
 
-        # flatten axes and iterate
-        axes = axes.ravel()
-        for ax in axes:
+            # set y-label and tight layout
+            axes[0].set_ylabel('Dimensionless span')
+            plt.tight_layout()
 
-            # set axis x- and y-limits
-            ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
-            ax.set_ylim(0, 1)
+            # set x-label
+            plt.subplots_adjust(bottom = 0.16)
 
-            # set grid and maximum number pf x-ticks
-            ax.grid()
-            ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
-
-        # set y-label and tight layout
-        axes[0].set_ylabel('Dimensionless span')
-        plt.tight_layout()
-
-        # set x-label
-        plt.subplots_adjust(bottom = 0.16)
-
-        # create legend
-        ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
+            # create legend
+            ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)

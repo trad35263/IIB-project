@@ -13,28 +13,39 @@ from engine import Engine
 class MainFrame(wx.Frame):
     """Used to create the primary container for the GUI."""
     # create list of label-pairs to display on the grid
-    scenario_display_labels = [
+    scenario_input_labels = [
         ["Label", "label"],
         ["Altitude (m)", "altitude"],
         ["Flight Speed (m/s)", "flight_speed"],
         ["Diameter (m)", "diameter"],
         ["Hub-tip Ratio", "hub_tip_ratio"],
-        ["Thrust (N)", "thrust"],
-        ["Mach Number", "M"],
-        ["Thrust Coefficient", "C_th"]
+        ["Thrust (N)", "thrust"]
     ]
-    engine_display_labels = [
+    scenario_display_labels = (
+        scenario_input_labels + [
+            ["Mach Number", "M"],
+            ["Thrust Coefficient", "C_th"]
+        ]
+    )
+    engine_input_labels = [
         ["No. of Stages", "no_of_stages"],
         ["Vortex Exponent", "vortex_exponent"],
         ["No. of Annuli", "no_of_annuli"],
-        ["Pressure Ratio", "pressure_ratio"],
-        ["Nozzle Area Ratio", "nozzle_area_ratio"],
-        ["Inlet Mach Number", "M_1"],
-        ["Compressor Efficiency", "eta_comp"],
-        ["Nozzle Efficiency", "eta_nozz"],
-        ["Propulsive Efficiency", "eta_prop"],
-        ["Jet Velocity Ratio", "jet_velocity_ratio"]
+        ["Stagnation Pressure Loss Coefficient", "Y_p"],
+        ["Flow Coefficient", "phi"],
+        ["Stage Loading Coefficient", "psi"]
     ]
+    engine_display_labels = (
+        engine_input_labels + [
+            ["Pressure Ratio", "pressure_ratio"],
+            ["Nozzle Area Ratio", "nozzle_area_ratio"],
+            ["Inlet Mach Number", "M_1"],
+            ["Compressor Efficiency", "eta_comp"],
+            ["Nozzle Efficiency", "eta_nozz"],
+            ["Propulsive Efficiency", "eta_prop"],
+            ["Jet Velocity Ratio", "jet_velocity_ratio"]
+        ]
+    )
     def __init__(self):
         """Creates instance of the MainFrame class."""
         # create gui and specify title and size
@@ -102,7 +113,6 @@ class MainFrame(wx.Frame):
         self.engine_grid = wx.FlexGridSizer(
             rows = len(self.engine_display_labels), cols = 2, hgap = 10, vgap = 5
         )
-        #self.engine_label = self.engine_dropdown.GetValue()
 
         # loop over label-pairs for scenarios
         for (display, attribute) in self.scenario_display_labels:
@@ -235,7 +245,6 @@ class MainFrame(wx.Frame):
             # clear labels
             text.SetLabel("")
 
-
     def change_scenario(self, event):
         """Executes on each change of the scenario dropdown menu."""
         # get latest label from scenario dropdown
@@ -326,18 +335,16 @@ class MainFrame(wx.Frame):
 
                 # create and store new object
                 label = self.scenario_dropdown.GetValue()
-                no_of_stages = int(dialog.arguments[0].GetValue())
-                vortex_exponent = float(dialog.arguments[1].GetValue())
-                no_of_annuli = int(dialog.arguments[2].GetValue())
                 arguments = (
                     [self.flight_scenarios[label]]
-                    + [no_of_stages]
-                    + [vortex_exponent]
-                    + [no_of_annuli]
+                    + [float(arg.GetValue()) for arg in dialog.arguments]
                 )
                 self.flight_scenarios[label].engines.append(Engine(*arguments))
 
                 # refresh dropdown
+                no_of_stages = int(dialog.arguments[0].GetValue())
+                vortex_exponent = float(dialog.arguments[1].GetValue())
+                no_of_annuli = int(dialog.arguments[2].GetValue())
                 self.engine_dropdown.Append(
                     f"[{len(self.flight_scenarios[label].engines) - 1}]"
                     f"      Stages: {no_of_stages} | n: {vortex_exponent} | N: {no_of_annuli}"
@@ -436,23 +443,73 @@ class AddScenarioDialog(wx.Dialog):
         )
         panel = wx.Panel(self)
 
-        # input arguments
-        self.label = wx.TextCtrl(panel)
-        self.altitude = wx.TextCtrl(panel, value = f"{utils.Defaults.altitude}")
-        self.flight_speed = wx.TextCtrl(panel, value = f"{utils.Defaults.flight_speed}")
-        self.diameter = wx.TextCtrl(panel, value = f"{utils.Defaults.diameter}")
-        self.hub_tip_ratio = wx.TextCtrl(panel, value = f"{utils.Defaults.hub_tip_ratio}")
-        self.thrust = wx.TextCtrl(panel, value = f"{utils.Defaults.thrust}")
+        # loop over all input label-pairs
+        for input_label in parent.scenario_input_labels:
+
+            # set the relevant attribute to a newly created text box
+            setattr(self, input_label[1], wx.TextCtrl(panel, value = f"{getattr(utils.Defaults, input_label[1])}"))
 
         # layout in grid form
-        grid = wx.FlexGridSizer(rows = 6, cols = 2, hgap = 10, vgap = 8)
+        grid = wx.FlexGridSizer(
+            rows = len(parent.scenario_input_labels), cols = 2, hgap = 10, vgap = 8
+        )
         grid.AddMany([
-            (wx.StaticText(panel, label = "Label")),              (self.label),
-            (wx.StaticText(panel, label = "Altitude (m)")),       (self.altitude),
-            (wx.StaticText(panel, label = "Flight Speed (m/s)")), (self.flight_speed),
-            (wx.StaticText(panel, label = "Diameter (m)")),       (self.diameter),
-            (wx.StaticText(panel, label = "Hub-Tip Ratio")),      (self.hub_tip_ratio),
-            (wx.StaticText(panel, label = "Thrust (N)")),         (self.thrust),
+            item for input_label in parent.scenario_input_labels
+            for item in (
+                wx.StaticText(panel, label = input_label[0]),
+                getattr(self, input_label[1]),
+            )
+        ])
+
+        # panel-level sizer (for the form)
+        panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
+        panel.SetSizer(panel_sizer)
+
+        # dialog-level buttons
+        buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
+
+        # dialog root sizer
+        dialog_sizer = wx.BoxSizer(wx.VERTICAL)
+        dialog_sizer.Add(panel, 1, wx.EXPAND | wx.ALL, 5)
+        dialog_sizer.Add(buttons, 0, wx.EXPAND | wx.ALL, 10)
+        self.SetSizerAndFit(dialog_sizer)
+
+        # store as ordered list of arguments
+        self.arguments = [
+            getattr(self, input_label[1]) for input_label in parent.scenario_input_labels[1:]
+        ]
+
+# create AddEngineDialog class
+class AddEngineDialog(wx.Dialog):
+    """Used to create a dialog box for creating an additional Engine class."""
+    def __init__(self, parent):
+        """Creates an instance of the AddEngineDialog class."""
+        # create dialog box
+        super().__init__(
+            parent,
+            title = "Create Engine",
+            size = (1000, 300)
+        )
+        panel = wx.Panel(self)
+
+        # loop over all input label-pairs
+        for input_label in parent.engine_input_labels:
+
+            # set the relevant attribute to a newly created text box
+            setattr(self, input_label[1], wx.TextCtrl(panel, value = f"{getattr(utils.Defaults, input_label[1])}"))
+
+        # layout in grid form
+        grid = wx.FlexGridSizer(
+            rows = len(parent.engine_input_labels), cols = 2, hgap = 10, vgap = 8
+        )
+        grid.AddMany([
+            item
+            for input_label in parent.engine_input_labels
+            for item in (
+                wx.StaticText(panel, label = input_label[0]),
+                getattr(self, input_label[1]),
+            )
         ])
 
         # panel-level sizer (for the form)
@@ -471,52 +528,8 @@ class AddScenarioDialog(wx.Dialog):
 
         # store as ordered list of arguments
         self.arguments = [
-            self.altitude, self.flight_speed,
-            self.diameter, self.hub_tip_ratio, self.thrust
+            getattr(self, input_label[1]) for input_label in parent.engine_input_labels
         ]
-
-# create AddEngineDialog class
-class AddEngineDialog(wx.Dialog):
-    """Used to create a dialog box for creating an additional Engine class."""
-    def __init__(self, parent):
-        """Creates an instance of the AddEngineDialog class."""
-        # create dialog box
-        super().__init__(
-            parent,
-            title = "Create Engine",
-            size = (1000, 300)
-        )
-        panel = wx.Panel(self)
-
-        # input arguments
-        self.no_of_stages = wx.TextCtrl(panel, value = f"{utils.Defaults.no_of_stages}")
-        self.vortex_exponent = wx.TextCtrl(panel, value = f"{utils.Defaults.vortex_exponent}")
-        self.no_of_annuli = wx.TextCtrl(panel, value = f"{utils.Defaults.no_of_annuli}")
-
-        # layout in grid form
-        grid = wx.FlexGridSizer(rows = 3, cols = 2, hgap = 10, vgap = 8)
-        grid.AddMany([
-            (wx.StaticText(panel, label = "No. of Stages")),   (self.no_of_stages),
-            (wx.StaticText(panel, label = "Vortex Exponent")), (self.vortex_exponent),
-            (wx.StaticText(panel, label = "No. of Annuli")),   (self.no_of_annuli)
-        ])
-
-        # panel-level sizer (for the form)
-        panel_sizer = wx.BoxSizer(wx.VERTICAL)
-        panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
-        panel.SetSizer(panel_sizer)
-
-        # Dialog-level buttons
-        buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
-
-        # Dialog root sizer
-        dialog_sizer = wx.BoxSizer(wx.VERTICAL)
-        dialog_sizer.Add(panel, 1, wx.EXPAND | wx.ALL, 5)
-        dialog_sizer.Add(buttons, 0, wx.EXPAND | wx.ALL, 10)
-        self.SetSizerAndFit(dialog_sizer)
-
-        # store as ordered list of arguments
-        self.arguments = [self.no_of_stages, self.vortex_exponent, self.no_of_annuli]
 
 # main function
 def main():

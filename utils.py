@@ -13,20 +13,57 @@ gamma = 1.4
 
 class Defaults:
     """Container for default values relating to the engine system."""
-    # define non-dimensional stage parameters
+    # default flight scenario parameters
+    label = ""
+    
+    # default engine input parameters
+    no_of_stages = 1
+    vortex_exponent = 0.5
+    no_of_annuli = 1
+    hub_tip_ratio = 0.3077
+    Y_p = 0.02
+    phi = 0.6
+    psi = 0.15
+
+    # default plotting parameters
+    quantity_list = [
+        [
+            'M', 'Mach number', True,
+            'M_rel', 'Relative Mach number', True
+        ],
+        [
+            'alpha', 'Flow angle (°)', True,
+            'beta', 'Relative flow angle (°)', True,
+            'metal_angle', 'Metal angle (°)', False
+        ],
+        ['M_x', 'Axial Mach number', False],
+        [
+            'pitch_to_chord', 'Pitch-to-chord ratio', False,
+            's', 'Pitch', False,
+            'c', 'Chord', False
+        ],
+        [
+            'phi', 'Flow coefficient', False,
+            'psi', 'Stage loading coefficient', False,
+            'reaction', 'Reaction', False
+        ],
+        [
+            'DF', 'Diffusion factor', False
+        ]
+    ]
+
+
     flow_coefficient = 0.6
     stage_loading_coefficient = 0.18
+
+
     stagnation_pressure_loss_coefficient = 0.00
-    vortex_exponent = 0.5
 
     # code iteration parameters
-    no_of_annuli = 1
-    no_of_stages = 1
     delta = 1e-6
 
     # default dimensional values
     diameter = 0.14
-    hub_tip_ratio = 0.3077
     altitude = 10000
     flight_speed = 30
     thrust = 20

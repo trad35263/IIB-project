@@ -23,27 +23,26 @@ class Blade_row:
     
     Parameters
     ----------
-    casing_area_ratio : float
-        Ratio of blade row casing area to a reference area.
-    hub_area_ratio : float
-        Ratio of blade row hub area to a reference area.
     Y_p : float
         Stagnation pressure loss coefficient.
     is_rotor : boolean
-        Reference to whether or not to categorise the blade row as a rotor or a stator.
+        Whether or not to categorise the blade row as a rotor or a stator.
+    phi : float
+        Flow coefficient.
+    psi : float
+        Stage loading coefficient.
+    vortex_exponent : float
+        Vortex exponent.
     """
-    def __init__(self, Y_p, n, is_rotor = False):
+    def __init__(self, Y_p, is_rotor = False, phi = None, psi = None, vortex_exponent = None):
         """Create instance of the Blade_row class."""
-        # assign attributes
-        #self.r_casing_inlet = 1
-        self.r_hub = utils.Defaults.hub_tip_ratio
+        # store input variables
         self.Y_p = Y_p
-        self.n = n
-
-        # derive inlet and exit areas
-        #self.r_casing_exit = 1
-        #self.area_inlet = np.pi * (self.r_casing_inlet**2 - self.r_hub**2)
-        #self.area_exit = np.pi * (self.r_casing_exit**2 - self.r_hub**2)
+        self.phi = phi
+        self.psi = psi
+        self.vortex_exponent = vortex_exponent
+        
+        self.r_hub = utils.Defaults.hub_tip_ratio
 
         # assign the default colour of black
         self.colour = 'k'
@@ -218,7 +217,7 @@ class Blade_row:
 
             # determine local stage loading coefficient
             inlet.psi = (
-                psi * np.power(inlet.r / self.inlet_mean.r, self.n - 1)
+                psi * np.power(inlet.r / self.inlet_mean.r, self.vortex_exponent - 1)
             )
 
             # determine local blade Mach number

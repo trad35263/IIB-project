@@ -17,52 +17,45 @@ class Stage:
     
     Parameters
     ----------
-    n : float
+    phi : float
+        Flow coefficient.
+    psi : float
+        Stage loading coefficient.
+    vortex_exponent : float
         Vortex exponent.
-    i : integer
+    Y_p : float
+        Stagnation pressure loss coefficient.
+    index : int
         Stage number.
     """
-    def __init__(self, n, i):
+    def __init__(self, phi, psi, vortex_exponent, Y_p, index):
         """Create instance of the Stage class."""
         # store input parameters
-        self.n = n
+        self.phi = phi
+        self.psi = psi
+        self.vortex_exponent = vortex_exponent
+        self.Y_p = Y_p
 
         # create list of blade rows
         self.blade_rows = []
 
-        # store non-dimensional stage parameters
-        self.phi = utils.Defaults.flow_coefficient
-        self.psi = utils.Defaults.stage_loading_coefficient
-
         # create rotor
-        rotor = Blade_row(
-            utils.Defaults.stagnation_pressure_loss_coefficient,
-            self.n, True
-        )
+        rotor = Blade_row(self.Y_p, True, self.phi, self.psi, self.vortex_exponent)
         self.blade_rows.append(rotor)
 
         # create stator
-        stator = Blade_row(
-            utils.Defaults.stagnation_pressure_loss_coefficient,
-            self.n, False
-        )
+        stator = Blade_row(self.Y_p)
         self.blade_rows.append(stator)
 
         # set centred axial position for rotor and stator
-        rotor.x = 2 * i + 0.25
-        stator.x = 2 * i + 1.25
+        rotor.x = 2 * index + 0.25
+        stator.x = 2 * index + 1.25
 
         # set axial position for rotor and stator
-        self.blade_rows[0].x_inlet = 2 * i
-        self.blade_rows[0].x_exit = 2 * i + utils.Defaults.blade_row_axial_depth
-        self.blade_rows[1].x_inlet = 2 * i + 1
-        self.blade_rows[1].x_exit = 2 * i + 1 + utils.Defaults.blade_row_axial_depth
-
-        # set radius information for rotor and stator
-        #self.blade_rows[0].r_inlet = 1
-        #self.blade_rows[0].r_hub = utils.Defaults.hub_tip_ratio
-        #self.blade_rows[1].r_inlet = 1
-        #self.blade_rows[1].r_hub = utils.Defaults.hub_tip_ratio
+        self.blade_rows[0].x_inlet = 2 * index
+        self.blade_rows[0].x_exit = 2 * index + utils.Defaults.blade_row_axial_depth
+        self.blade_rows[1].x_inlet = 2 * index + 1
+        self.blade_rows[1].x_exit = 2 * index + 1 + utils.Defaults.blade_row_axial_depth
 
     def __str__(self):
         """Prints a string representation of the stage."""

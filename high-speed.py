@@ -115,9 +115,7 @@ def main():
             ]
         ]
 
-        for quantity in quantities:
-
-            scenario.engine.plot_spanwise_variations(quantity)
+        scenario.engine.plot_spanwise_variations(quantities)
 
         scenario.engine.plot_velocity_triangles()
         scenario.engine.plot_contours()
