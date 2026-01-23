@@ -15,13 +15,13 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # default flight scenario parameters
     label = ""
-    
+
     # default engine input parameters
     no_of_stages = 1
     vortex_exponent = 0.5
-    no_of_annuli = 1
-    hub_tip_ratio = 0.3077
-    Y_p = 0.02
+    no_of_annuli = 3
+    hub_tip_ratio = 0.025 / 0.070
+    Y_p = 0.00
     phi = 0.6
     psi = 0.15
 
@@ -85,9 +85,9 @@ class Defaults:
 
     # default flight scenarios
     flight_scenarios = {
-        "Cruise": ["Cruise", 0, 60, diameter, hub_tip_ratio, 30],
-        "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
         "Take-off": ["Take-off", 0, 20, diameter, hub_tip_ratio, 30],
+        "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
+        "Cruise": ["Cruise", 3000, 40, diameter, hub_tip_ratio, 20]
     }
 
 # 0.3 compressible flow perfect gas relations
@@ -123,7 +123,7 @@ def velocity_function(M):
     """Calculates the non-dimensional velocity for a given Mach number."""
     return np.sqrt(gamma - 1) * M * np.power(1 + (gamma - 1) * M**2 / 2, -1 / 2)
 
-def invert(function, target, bracket = [1e-6, 1], method = "brentq"):
+def invert(function, target, bracket = [0, 1], method = "brentq"):
     """
     Numerically inverts a 1D function f(x), solving f(x) = y_target.
     
@@ -138,13 +138,7 @@ def invert(function, target, bracket = [1e-6, 1], method = "brentq"):
         Required for bracketed methods like 'brentq' or 'bisect'.
     method : str, default 'brentq'
         Root-finding method ('brentq', 'bisect', 'secant', 'newton', etc.)
-    
-    Returns
-    -------
-    M : float
-        The M value such that function(M_inverse) = target.
     """
-
     # define residual function
     def residual(x):
 
@@ -180,12 +174,6 @@ spline = make_interp_spline(x, y, k = 2)
 x_fine = np.linspace(x.min(), x.max(), 10000)
 y_fine = spline(x_fine)
 aerofoil_data = np.array([x_fine, y_fine])
-
-"""fig, ax = plt.subplots()
-ax.plot(x, y)
-ax.plot(aerofoil_data[0], aerofoil_data[1])
-ax.set_aspect('equal', 'box')
-plt.show()"""
 
 # 0.5 define Colours class
 
@@ -251,3 +239,34 @@ def debug(string):
     if Defaults.debug:
 
         print(f"{string}")
+
+M_infinity = 0.05877
+M_1 = 0.152
+M_1A_rel = 0.2413
+M_2A_rel = 0.2133
+
+M_1B_rel = 0.3167
+M_2B_rel = 0.2750
+
+M_1C_rel = 0.3759
+M_2C_rel = 0.3283
+
+print(f"stagnation_temperature_ratio(M_1): {stagnation_temperature_ratio(M_1)}")
+
+
+print(f"mass_flow_function(M_1A_rel): {mass_flow_function(M_1A_rel)}")
+print(f"stagnation_temperature_ratio(M_1A_rel): {stagnation_temperature_ratio(M_1A_rel)}")
+print(f"invert(mass_flow_function, 0.4595): {invert(mass_flow_function, 0.4595)}")
+print(f"stagnation_temperature_ratio(M_2A_rel): {stagnation_temperature_ratio(M_2A_rel)}")
+
+
+print(f"mass_flow_function(M_1B_rel): {mass_flow_function(M_1B_rel)}")
+print(f"stagnation_temperature_ratio(M_1B_rel): {stagnation_temperature_ratio(M_1B_rel)}")
+print(f"invert(mass_flow_function, 0.5526): {invert(mass_flow_function, 0.5820)}")
+print(f"stagnation_temperature_ratio(M_2B_rel): {stagnation_temperature_ratio(M_2B_rel)}")
+
+
+print(f"mass_flow_function(M_1C_rel): {mass_flow_function(M_1C_rel)}")
+print(f"stagnation_temperature_ratio(M_1C_rel): {stagnation_temperature_ratio(M_1C_rel)}")
+print(f"invert(mass_flow_function, 0.6817): {invert(mass_flow_function, 0.6817)}")
+print(f"stagnation_temperature_ratio(M_2C_rel): {stagnation_temperature_ratio(M_2C_rel)}")

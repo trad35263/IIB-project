@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import wx
 import utils
-import inspect
+import traceback
 
 # import custom classes
 from flight_scenario import Flight_scenario
@@ -97,6 +97,7 @@ class MainFrame(wx.Frame):
         buttons = [wx.Button(panel, label = method) for method in methods]
         for button in buttons:
 
+            # bind button to event function
             button.Bind(wx.EVT_BUTTON, self.display_plot)
 
         # create empty lists of text boxes with values to be edited
@@ -351,10 +352,11 @@ class MainFrame(wx.Frame):
                 )
 
             # catch non-numeric inputs
-            except ValueError:
+            except ValueError as error:
 
                 # display error
                 wx.MessageBox("Please enter a valid numeric input.", "Invalid Input")
+                traceback.print_exc()
 
         # close dialog box
         dialog.Destroy()

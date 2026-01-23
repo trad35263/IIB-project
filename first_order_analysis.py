@@ -56,6 +56,7 @@ class Constants:
     # fixed values
     hub_tip_ratio = 0.3
     thrust_target = 100
+    hub_diameter = 61e-3
 
 class Analysis:
     """Contains grids of values used for analysis."""
@@ -176,7 +177,7 @@ class Analysis:
         # find (dimensional) thrust
         self.thrust = self.m_dot * (self.M_j - self.M_flight) * self.a_atm
 
-    def plot(self, label, max = 1, xx = None, yy = None, N_levels = 31):
+    def plot(self, label, max = 1, manual = [(0.5, 0.5)], xx = None, yy = None, N_levels = 31):
         """Creates a contour plot of a given parameter."""
         # refresh cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
@@ -218,9 +219,11 @@ class Analysis:
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
-        colour_bar.set_label(f"{label_unit}")
-        ax.set_xlabel("Flight Mach number, $ M_\\infty $")
-        ax.set_ylabel("Nozzle area ratio, $ \\sigma $")
+        colour_bar.set_label(f"{label_unit}", fontsize = 14)
+        colour_bar.ax.tick_params(labelsize = 12)
+        ax.set_xlabel("Flight Mach number, $ M_\\infty $", fontsize = 14)
+        ax.set_ylabel("Nozzle area ratio, $ \\sigma $", fontsize = 14)
+        ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
         ax.set_xlim(0, 0.8)
         ax.set_ylim(0, 1.2)
         ax.text(
@@ -229,7 +232,7 @@ class Analysis:
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',
-            fontsize = 12
+            fontsize = 16
         )
         plt.tight_layout()
         
@@ -266,8 +269,15 @@ class Analysis:
 
                 ax.fill_between(x, y, y_lim, color = yellow)
 
-        # add contour again
+        # add contours again
         contour = ax.contourf(xx, yy, zz, levels = levels, vmin = 0, vmax = max, alpha = 0.5)
+        contour = ax.contour(xx, yy, zz, levels = [max / 2], colors = ['k'], alpha = 0.5)
+        ax.clabel(
+            contour,
+            inline = True,
+            fontsize = 10,
+            manual = manual
+        )
 
         return fig, ax
 
@@ -301,7 +311,7 @@ class Analysis:
 
         # add legend entry
         axis.plot([], [], color = colour, label = f"{label} = {value}")
-        axis.legend()
+        axis.legend(fontsize = 12)
 
     def shade(self, axis, label, value, lower_bound = True, xx = None, yy = None):
         """Plots a shaded area on a given axis bounded by two contours."""
@@ -362,7 +372,7 @@ class Analysis:
 
         # add legend entries
         axis.plot([], [], label = f" $ \\{label} $ {symbol} {value}", color = colour)
-        axis.legend()
+        axis.legend(fontsize = 12)
 
 def main():
     """Main function to run on script execution."""
@@ -371,7 +381,7 @@ def main():
         Analysis(
             power = 3000,
             rpm = 12000,
-            motor_diameter = 60 * 1e-3,
+            motor_diameter = Constants.hub_diameter,
             altitude = 0,
             N_stages = 1,
             N_engines = 1,
@@ -380,7 +390,7 @@ def main():
         Analysis(
             power = 9000,
             rpm = 12000,
-            motor_diameter = 60 * 1e-3,
+            motor_diameter = Constants.hub_diameter,
             altitude = 0,
             N_stages = 1,
             N_engines = 1,
@@ -389,7 +399,7 @@ def main():
         Analysis(
             power = 3000,
             rpm = 12000,
-            motor_diameter = 60 * 1e-3,
+            motor_diameter = Constants.hub_diameter,
             altitude = 0,
             N_stages = 3,
             N_engines = 1,
@@ -397,8 +407,14 @@ def main():
         )
     ]
 
+    label_positions = [
+        [(0.2, 0.95)],
+        [(0.5, 0.3)],
+        [(0.5, 0.38)]
+    ]
+
     # loop over all scenarios
-    for analysis in analyses:
+    for (analysis, label_position) in zip(analyses, label_positions):
 
         # analyse and create plots
         print(analysis)
@@ -406,7 +422,7 @@ def main():
 
         # create un-annotated plot
         label = 'thrust'
-        _, ax = analysis.plot(label, 100)
+        _, ax = analysis.plot(label, 100, label_position)
 
         # save fig
         directory = "figures"
@@ -415,7 +431,7 @@ def main():
         plt.savefig(path, dpi = 300)
 
         # create plot with 1 annotation
-        analysis.shade(ax, 'psi', 0.3, False)
+        analysis.shade(ax, 'psi', 0.2, False)
 
         # save fig
         directory = "figures"
@@ -442,7 +458,7 @@ def main():
         plt.savefig(path, dpi = 300)
 
     # consider rim-driven separately
-    analysis = Analysis(
+    """analysis = Analysis(
         power = 200,
         rpm = 10000,
         motor_diameter = 70 * 1e-3 * Constants.hub_tip_ratio,
@@ -461,7 +477,7 @@ def main():
     # annotate plot
     analysis.shade(ax, 'psi', 0.5, False)
     analysis.shade(ax, 'phi', 0.4)
-    analysis.shade(ax, 'phi', 0.9, False)
+    analysis.shade(ax, 'phi', 0.9, False)"""
 
     # save fig
     directory = "figures"

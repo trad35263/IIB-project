@@ -52,7 +52,7 @@ class Engine:
             phi = utils.Defaults.phi,
             psi = utils.Defaults.psi
         ):
-        """Create instance of the Engine class."""
+        """Creates an instance of the Engine class."""
         # store variables from input scenario
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
@@ -87,6 +87,18 @@ class Engine:
             # unpack var and use as inlet Mach number, eliminating negative solutions
             self.M_1 = np.abs(float(np.squeeze(var)))
 
+            # check if inlet Mach number is too low
+            if self.M_1 <= 1e-6:
+
+                # impose lower bound
+                self.M_1 = 1e-6
+
+            # check if inlet Mach number is too high (transonic)
+            if self.M_1 >= 0.7:
+
+                # impose upper bound
+                self.M_1 = 0.7
+
             # draw loading bar
             if utils.Defaults.loading_bar and self.benchmark == None:
 
@@ -114,19 +126,10 @@ class Engine:
             # return thrust coefficient residual
             return residual
 
-        # create plot
-        #fig, ax = plt.subplots()
-
         # increment number of annuli for analysis, starting with mean-line only
         t1 = timer()
 
         NN = [self.no_of_annuli]
-        """if self.no_of_annuli > 1:
-            NN.append(2)
-        if self.no_of_annuli > 2:
-            NN.append(3)
-        if self.no_of_annuli > 3:
-            NN.append(self.no_of_annuli)"""
 
         for N in NN:
 
@@ -134,28 +137,23 @@ class Engine:
             self.benchmark = None
             self.progress = 0
 
-            #scenario.x = []
-            #scenario.y = []
-            self.no_of_annuli = N
+            #self.no_of_annuli = N
             print(
                 f"{utils.Colours.CYAN}Performing analysis with {self.no_of_annuli} streamtubes..."
                 f"{utils.Colours.END}"
             )
             x0 = self.M_1
             x1 = 0.9 * self.M_1
-            if self.no_of_annuli == NN[-1]:
+    
+            sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant")
 
-                sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant")
+            """else:
 
-            else:
-
-                sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant", rtol = 2e-1)
+                sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant", rtol = 2e-1)"""
 
             if utils.Defaults.loading_bar:
 
                 print("\r" + "|" + "-" * 100 + "|\n", end = "", flush = True)
-
-            #ax.plot(scenario.x, scenario.y, label = f"{self.no_of_annuli}", linestyle = '', marker = '.')
 
         t2 = timer()
         print(
@@ -169,9 +167,6 @@ class Engine:
 
             # run subroutine to determine blade metal angles and pitch-to-chord
             blade_row.empirical_design()
-
-        #ax.grid()
-        #ax.legend()
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)

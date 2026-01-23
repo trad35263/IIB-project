@@ -300,6 +300,7 @@ class Nozzle:
             self.inlet.p_0
         )
 
+# unused???
     def solve_nozzle(self):
         """Solve for conditions at outlet, given the inlet conditions, due to the area change."""
         # check if inlet conditions exist
@@ -340,9 +341,6 @@ class Nozzle:
                     / np.cos(self.inlet.alpha)
                     / self.area_ratio
                 )
-                #exit_M_guess = utils.solve_M_from_mass_flow_function(
-                #    exit_mass_flow_function_guess
-                #)
                 exit_M_guess = utils.invert(utils.mass_flow_function, exit_mass_flow_function_guess)
                 if exit_M_guess == None:
 
@@ -357,15 +355,6 @@ class Nozzle:
                 )
                 return exit_M_guess - RHS
 
-            """
-            # DEBUGGING
-            xx = np.linspace(-np.pi / 4, np.pi / 4, 100)
-            yy = [residual(x) for x in xx]
-            fig, ax = plt.subplots()
-            ax.plot(xx, yy, marker = '.', linestyle = '')
-            plt.show()
-            """
-
             # solve for root of residual function
             sol = root_scalar(
                 residual, x0 = self.inlet.alpha, x1 = 0.9 * self.inlet.alpha, method = "secant"
@@ -378,9 +367,6 @@ class Nozzle:
                 / np.cos(self.inlet.alpha)
                 / self.area_ratio
             )
-            #exit_M = utils.solve_M_from_mass_flow_function(
-            #    exit_mass_flow_function
-            #)
             exit_M = utils.invert(utils.mass_flow_function, exit_mass_flow_function)
             if exit_M == None:
 
