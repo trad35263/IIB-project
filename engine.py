@@ -223,7 +223,7 @@ class Engine:
                 rotor.set_inlet_conditions(
                     self.M_1, utils.Defaults.inlet_swirl, self.no_of_annuli
                 )
-                self.A = np.sum([inlet.A for inlet in rotor.inlet])
+                #self.A = np.sum([inlet.A for inlet in rotor.inlet])
 
             # handle all other stages
             else:
@@ -236,6 +236,7 @@ class Engine:
             rotor.rotor_design(stage.phi, stage.psi)
             t2 = timer()
             utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
             stator.inlet = copy.deepcopy(rotor.exit)
             t1 = timer()
             stator.stator_design(index == len(self.stages) - 1)

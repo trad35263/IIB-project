@@ -53,14 +53,15 @@ class Defaults:
     ]
 
 
-    flow_coefficient = 0.6
-    stage_loading_coefficient = 0.18
+    #flow_coefficient = 0.6
+    #stage_loading_coefficient = 0.18
 
 
-    stagnation_pressure_loss_coefficient = 0.00
+    #stagnation_pressure_loss_coefficient = 0.00
 
     # code iteration parameters
     delta = 1e-6
+    fine_grid = 100
 
     # default dimensional values
     diameter = 0.14
@@ -251,7 +252,7 @@ M_2B_rel = 0.2750
 M_1C_rel = 0.3759
 M_2C_rel = 0.3283
 
-print(f"stagnation_temperature_ratio(M_1): {stagnation_temperature_ratio(M_1)}")
+"""print(f"stagnation_temperature_ratio(M_1): {stagnation_temperature_ratio(M_1)}")
 
 
 print(f"mass_flow_function(M_1A_rel): {mass_flow_function(M_1A_rel)}")
@@ -269,4 +270,4 @@ print(f"stagnation_temperature_ratio(M_2B_rel): {stagnation_temperature_ratio(M_
 print(f"mass_flow_function(M_1C_rel): {mass_flow_function(M_1C_rel)}")
 print(f"stagnation_temperature_ratio(M_1C_rel): {stagnation_temperature_ratio(M_1C_rel)}")
 print(f"invert(mass_flow_function, 0.6817): {invert(mass_flow_function, 0.6817)}")
-print(f"stagnation_temperature_ratio(M_2C_rel): {stagnation_temperature_ratio(M_2C_rel)}")
+print(f"stagnation_temperature_ratio(M_2C_rel): {stagnation_temperature_ratio(M_2C_rel)}")"""
