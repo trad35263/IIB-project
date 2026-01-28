@@ -20,6 +20,7 @@ import itertools
 from stage import Stage
 from nozzle import Nozzle
 from flow_state import Flow_state
+from annulus import Annulus
 import utils
 
 # define Engine class
@@ -124,6 +125,7 @@ class Engine:
                 print("\r" + bar, end = "", flush = True)
 
             # return thrust coefficient residual
+            return 0
             return residual
 
         # increment number of annuli for analysis, starting with mean-line only
@@ -163,10 +165,10 @@ class Engine:
         print(self)
 
         # loop over all blade rows
-        for blade_row in self.blade_rows:
+        #for blade_row in self.blade_rows:
 
             # run subroutine to determine blade metal angles and pitch-to-chord
-            blade_row.empirical_design()
+            #blade_row.empirical_design()
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
@@ -220,7 +222,12 @@ class Engine:
             if index == 0:
 
                 # set first stage to default inlet conditions
-                rotor.set_inlet_conditions(
+                """rotor.set_inlet_conditions(
+                    self.M_1, utils.Defaults.inlet_swirl, self.no_of_annuli
+                )"""
+                
+                rotor.inlet = Annulus()
+                rotor.inlet.set_inlet_conditions(
                     self.M_1, utils.Defaults.inlet_swirl, self.no_of_annuli
                 )
                 #self.A = np.sum([inlet.A for inlet in rotor.inlet])
@@ -231,15 +238,19 @@ class Engine:
                 # set stage inlet to previous stage exit conditions
                 rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
 
-            # define blade geometry for that stage
+            # define rotor blade geometry
             t1 = timer()
             rotor.rotor_design(stage.phi, stage.psi)
             t2 = timer()
             utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
+            # stator inlet conditions are rotor exit conditions
             stator.inlet = copy.deepcopy(rotor.exit)
+
+            # define stator blade geometry
             t1 = timer()
-            stator.stator_design(index == len(self.stages) - 1)
+            #stator.old_stator_design(index == len(self.stages) - 1)
+            stator.stator_design()
             t2 = timer()
             utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
@@ -247,12 +258,12 @@ class Engine:
             stage.rotor = rotor
             stage.stator = stator
 
-        # set nozzle inlet conditions
+        # nozzle inlet conditions are final stator exit conditions
         self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
 
         # design nozzle to match atmospheric pressure in jet periphery
-        p_atm = utils.stagnation_pressure_ratio(self.M_flight)
-        self.nozzle.nozzle_design(p_atm)
+        self.p_atm = utils.stagnation_pressure_ratio(self.M_flight)
+        self.nozzle.nozzle_design(self.p_atm)
         self.evaluate()
 
     def analyse(self):
@@ -345,7 +356,27 @@ class Engine:
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
         # investigate nozzle performance
-        self.nozzle.evaluate(self.M_1, self.M_flight, self.A)
+        self.nozzle.evaluate()
+
+        # extract nozzle properties to get key engine metrics
+        self.C_th = (
+            self.nozzle.C_th[-1] - utils.mass_flow_function(self.M_1)
+            * utils.velocity_function(self.M_flight) / (1 - self.p_atm)
+        )
+
+        print(f"self.C_th: {self.C_th}")
+
+        # self.nozzle_area_ratio = self.nozzle.
+
+        # for now, return
+        self.nozzle_area_ratio = 1
+        self.pressure_ratio = 1
+        self.eta_prop = 1
+        self.eta_nozz = 1
+        self.eta_comp = 1
+        self.eta_elec = 1
+        self.jet_velocity_ratio = 1
+        return
 
         # iterate over all stages
         for stage in self.stages:
@@ -927,3 +958,158 @@ class Engine:
 
             # create legend
             ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
+
+    def plot_M_spanwise(self):
+        """Plots the spanwise variation of Mach number at each axial position."""
+        # create plot with an axis for each blade row inlet and exit and reshape axes
+        fig, axes = plt.subplots(ncols = len(self.blade_rows) + 2, figsize = (15, 7))
+        #axes = np.reshape(axes, (len(self.blade_rows) + 1, 2))
+
+        # assign values for capturing appropriate axis limits
+        x_min = 1e12
+        x_max = -1e12
+    
+        label = "Mach number"
+        q = "M"
+
+        # set colour
+        colour = next(self.colour_cycle)
+
+        # set legend entry in final axis
+        axes[-1].plot([], [], color = colour, label = label)
+
+        # plot rotor inlet conditions
+        span = (
+                (self.blade_rows[0].inlet.rr - self.blade_rows[0].inlet.rr[0])
+                / (self.blade_rows[0].inlet.rr[-1] - self.blade_rows[0].inlet.rr[0])
+            )
+        axes[0].plot(getattr(self.blade_rows[0].inlet, q).value, span, alpha = 0.5, linewidth = 3, color = colour)
+
+        # update x-axis limits
+        x_min = min(
+            x_min, *getattr(self.blade_rows[0].inlet, q).value
+        )
+        x_max = max(
+            x_max, *getattr(self.blade_rows[0].inlet, q).value
+        )
+
+        # iterate over all axes:
+        for ax, blade_row in zip(axes[1:], self.blade_rows + [self.nozzle]):
+
+            span = (
+                (blade_row.exit.rr - blade_row.exit.rr[0])
+                / (blade_row.exit.rr[-1] - blade_row.exit.rr[0])
+            )
+
+            # plot spline
+            ax.plot(getattr(blade_row.exit, q).value, span, alpha = 0.5, linewidth = 3, color = colour)
+
+            # update x-axis limits
+            x_min = min(
+                x_min, *getattr(blade_row.exit, q).value
+            )
+            x_max = max(
+                x_max, *getattr(blade_row.exit, q).value
+            )
+
+        # flatten axes and iterate
+        #axes = axes.ravel()
+        for ax in axes:
+
+            # set axis x- and y-limits
+            ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
+            ax.set_ylim(0, 1)
+
+            # set grid and maximum number pf x-ticks
+            ax.grid()
+            ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
+
+        # set y-label and tight layout
+        axes[0].set_ylabel('Dimensionless span')
+        plt.tight_layout()
+
+        # set x-label
+        plt.subplots_adjust(bottom = 0.16)
+
+        # create legend
+        ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
+        
+        plt.show()
+
+    def plot_alpha_spanwise(self):
+        """Plots the spanwise variation of flow angle at each axial position."""
+        # create plot with an axis for each blade row inlet and exit and reshape axes
+        fig, axes = plt.subplots(ncols = len(self.blade_rows) + 2, figsize = (15, 7))
+        #axes = np.reshape(axes, (len(self.blade_rows) + 1, 2))
+
+        # assign values for capturing appropriate axis limits
+        x_min = 1e12
+        x_max = -1e12
+    
+        label = "Flow angle"
+        q = "alpha"
+
+        # set colour
+        colour = next(self.colour_cycle)
+
+        # set legend entry in final axis
+        axes[-1].plot([], [], color = colour, label = label)
+
+        # plot rotor inlet conditions
+        span = (
+                (self.blade_rows[0].inlet.rr - self.blade_rows[0].inlet.rr[0])
+                / (self.blade_rows[0].inlet.rr[-1] - self.blade_rows[0].inlet.rr[0])
+            )
+        axes[0].plot(getattr(self.blade_rows[0].inlet, q).value, span, alpha = 0.5, linewidth = 3, color = colour)
+
+        # update x-axis limits
+        x_min = min(
+            x_min, *getattr(self.blade_rows[0].inlet, q).value
+        )
+        x_max = max(
+            x_max, *getattr(self.blade_rows[0].inlet, q).value
+        )
+
+        # iterate over all axes:
+        for ax, blade_row in zip(axes[1:], self.blade_rows + [self.nozzle]):
+
+            span = (
+                (blade_row.exit.rr - blade_row.exit.rr[0])
+                / (blade_row.exit.rr[-1] - blade_row.exit.rr[0])
+            )
+
+            # plot spline
+            ax.plot(getattr(blade_row.exit, q).value, span, alpha = 0.5, linewidth = 3, color = colour)
+
+            # update x-axis limits
+            x_min = min(
+                x_min, *getattr(blade_row.exit, q).value
+            )
+            x_max = max(
+                x_max, *getattr(blade_row.exit, q).value
+            )
+
+        # flatten axes and iterate
+        #axes = axes.ravel()
+        for ax in axes:
+
+            # set axis x- and y-limits
+            ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
+            ax.set_ylim(0, 1)
+
+            # set grid and maximum number pf x-ticks
+            ax.grid()
+            ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
+
+        # set y-label and tight layout
+        axes[0].set_ylabel('Dimensionless span')
+        plt.tight_layout()
+
+        # set x-label
+        plt.subplots_adjust(bottom = 0.16)
+
+        # create legend
+        ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
+        
+        plt.show()
+    

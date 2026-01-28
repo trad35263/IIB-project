@@ -84,6 +84,8 @@ class Defaults:
     debug = False
     loading_bar = True
 
+    nfev = 50
+
     # default flight scenarios
     flight_scenarios = {
         "Take-off": ["Take-off", 0, 20, diameter, hub_tip_ratio, 30],

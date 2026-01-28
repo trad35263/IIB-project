@@ -4,6 +4,10 @@ import numpy as np
 from scipy.optimize import root_scalar
 from scipy.optimize import least_squares
 from scipy.interpolate import make_interp_spline
+from scipy.integrate import cumulative_simpson
+
+from annulus import Annulus
+from coefficients import Coefficients
 
 from streamtube import Streamtube
 from flow_state import Flow_state
@@ -65,7 +69,7 @@ class Nozzle:
 
 # design functions --------------------------------------------------------------------------------
 
-    def nozzle_design(self, p):
+    def old_nozzle_design(self, p):
         """Determines the nozzle area to satisfy the atmospheric pressure boundary condition."""
         # create empty array of exit streamtubes
         self.exit = np.empty((len(self.inlet),), dtype = object)
@@ -248,7 +252,150 @@ class Nozzle:
         sol = least_squares(solve_nozzle, x0, bounds = (lower, upper))
         self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"sol: {sol}")
-    
+
+    def nozzle_design(self, p_atm):
+        """Determines the nozzle area to satisfy the atmospheric pressure boundary condition."""
+        # initialise exit annulus object to be populated
+        self.exit = Annulus()
+
+        # store variation in static properties for convenience
+        T_1 = self.inlet.T_0.value * utils.stagnation_temperature_ratio(self.inlet.M.value)
+        p_1 = self.inlet.p_0.value * utils.stagnation_pressure_ratio(self.inlet.M.value)
+
+        # get incremental change in inlet mass flow
+        dm_dr_1 = (
+            p_1 / np.sqrt(T_1) * self.inlet.M.value * np.cos(self.inlet.alpha.value)
+            * self.inlet.rr
+        )
+        m_dot_1 = cumulative_simpson(dm_dr_1, x = self.inlet.rr, initial = 0.0)
+        dm_dot_1 = np.diff(m_dot_1)
+
+        # FOR NOW ASSUME THAT INLET ANGLE IS ZERO AND CONSERVATION OF ANGULAR MOMENTUM IS TRIVIAL
+        
+        def solve_nozzle(vars):
+            """Determines the matrix of residuals for a given guess of coefficients."""
+            # store guess of exit conditions
+            self.exit.M = Coefficients(vars)
+
+            # set up solutions matrix to be populated
+            solutions = np.zeros_like(vars)
+            
+            # initialise vector of new radial positions
+            self.exit.rr = np.zeros_like(self.inlet.rr)
+            self.exit.rr[0] = 1e-2
+
+            # some quantities can be known because nozzle is isentropic
+            self.exit.alpha.value = self.inlet.alpha.value
+            self.exit.alpha.coefficients = self.inlet.alpha.coefficients
+            self.exit.T_0.value = self.inlet.T_0.value
+            self.exit.p_0.value = self.inlet.p_0.value
+            self.exit.s.value = self.inlet.s.value
+
+            # loop over all streamtubes
+            for index, m_1 in enumerate(dm_dot_1):
+
+                # get exit inner streamtube radius and determine extra-fine grid for interpolation
+                r_2_fine = np.linspace(
+                    self.exit.rr[index],
+                    self.exit.rr[index] + 2 * (self.inlet.rr[index + 1] - self.inlet.rr[index]),
+                    utils.Defaults.fine_grid
+                )
+
+                # evaluate relative Mach numbers and flow angles on fine, local grid
+                M_2 = np.polyval(self.exit.M.coefficients, r_2_fine)
+                alpha_2 = np.polyval(self.exit.alpha.coefficients, r_2_fine)
+
+                # get variation in mass flow rate at the inlet radial nodes
+                dm_dr_2 = (
+                    np.power(
+                        1 + 0.5 * (utils.gamma - 1) * M_2**2,
+                        -utils.gamma / (utils.gamma - 1) + 0.5
+                    ) * M_2 * np.cos(alpha_2) * r_2_fine
+                )
+                m_dot_2 = (
+                    self.exit.p_0.value[index] / np.sqrt(self.exit.T_0.value[index])
+                    * cumulative_simpson(dm_dr_2, x = r_2_fine, initial = 0.0)
+                )
+
+                # interpolate to find upper bound of corresponding streamtube
+                self.exit.rr[index + 1] = np.interp(m_1, m_dot_2, r_2_fine)
+
+            # expand primary flow variables onto new grid
+            self.exit.value("M")
+
+            # get variation in exit static properties
+            T_2 = self.exit.T_0.value * utils.stagnation_temperature_ratio(self.exit.M.value)
+            p_2 = self.exit.p_0.value * utils.stagnation_pressure_ratio(self.exit.M.value)
+
+            # calculate dimensionless velocity components at exit
+            v_x_2 = self.exit.M.value * np.sqrt(T_2) * np.cos(self.exit.alpha.value)
+            rv_theta_2 = (
+                self.exit.rr * self.exit.M.value * np.sqrt(T_2) * np.sin(self.exit.alpha.value)
+            )
+
+            # calculate necessary derivatives for radial equilibrium
+            ds_dr = np.gradient(self.exit.s.value, self.exit.rr, edge_order = 2)
+            dv_x_dr = np.gradient(v_x_2, self.exit.rr, edge_order = 2)
+            drv_theta_dr = np.gradient(rv_theta_2, self.exit.rr, edge_order = 2)
+            dT_0_dr = np.gradient(self.exit.T_0.value, self.exit.rr, edge_order = 2)
+
+            # evaluate radial equilibrium
+            dradial = (
+                T_2 * ds_dr + v_x_2 * dv_x_dr + rv_theta_2 / self.exit.rr * drv_theta_dr
+                - 1 / (utils.gamma - 1) * dT_0_dr
+            )
+
+            # convert stage loading residuals to a (1, N) residual array
+            dradial_buckets = np.array_split(dradial, solutions.shape[0] - 1)
+            solutions[:-1] = np.array([
+                np.mean(dradial_bucket**2) for dradial_bucket in dradial_buckets
+            ])
+
+            # final residual comes from atmospheric pressure boundary condition
+            solutions[-1] = p_2[-1] - p_atm
+
+            # return solutions
+            solutions = solutions.ravel()
+            return solutions
+        
+        # set list of lower and upper bounds and reshape
+        lower = -2 * np.ones_like(self.inlet.M.coefficients)
+        upper = 2 * np.ones_like(self.inlet.M.coefficients)
+
+        # get initial guess based on inlet conditions
+        x0 = self.inlet.M.coefficients
+        print(f"x0: {x0}")
+
+        # solve iteratively
+        sol = least_squares(solve_nozzle, x0, bounds = (lower, upper), max_nfev = utils.Defaults.nfev)
+        print(f"sol: {sol}")
+
+        print(f"self.exit.M.value: {self.exit.M.value}")
+        print(f"self.exit.rr: {self.exit.rr}")
+
+    def evaluate(self):
+        """"""
+        # get cumulative mass flow rate
+        self.dm_dot_dr = (
+            2 * utils.mass_flow_function(self.exit.M.value)
+            * self.exit.p_0.value / np.sqrt(self.exit.T_0.value)
+            * self.exit.rr / (1 - utils.Defaults.hub_tip_ratio**2)
+        )
+        self.m_dot = cumulative_simpson(self.dm_dot_dr, x = self.exit.rr, initial = 0)
+
+        # find cumulative thrust coefficient
+        dC_th_dr = (
+            self.dm_dot_dr * np.sqrt(
+                (utils.gamma - 1) * self.exit.T_0.value
+                * utils.stagnation_temperature_ratio(self.exit.M.value)
+            ) * self.exit.M.value / (
+                1 - self.exit.p_0.value[-1] * utils.stagnation_pressure_ratio(self.exit.M.value[-1])
+            )
+        )
+        self.C_th = cumulative_simpson(dC_th_dr, x = self.exit.rr, initial = 0)
+
+# unused?????
+ 
     def define_nozzle_geometry(self, M_exit):
         """Determine area ratio required to achieve specified thrust coefficient."""
 
@@ -381,7 +528,7 @@ class Nozzle:
             self.inlet.p_0
         )
 
-    def evaluate(self, M_1, M_flight, A):
+    def old_evaluate(self, M_1, M_flight, A):
         """Determine key performance metrics local to the nozzle exit conditions."""
         # find thrust coefficient
         for exit in self.exit:
