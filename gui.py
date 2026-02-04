@@ -30,7 +30,7 @@ class MainFrame(wx.Frame):
     engine_input_labels = [
         ["No. of Stages", "no_of_stages"],
         ["Vortex Exponent", "vortex_exponent"],
-        ["No. of Annuli", "no_of_annuli"],
+        ["Solver Order", "solver_order"],
         ["Stagnation Pressure Loss Coefficient", "Y_p"],
         ["Flow Coefficient", "phi"],
         ["Stage Loading Coefficient", "psi"]

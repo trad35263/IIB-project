@@ -195,10 +195,6 @@ class Blade_row:
 
 # design functions --------------------------------------------------------------------------------
 
-    def analyse(self):
-        """Determines the rotor exit conditions given defined geometry."""
-        pass
-
     def old_rotor_design(self, phi, psi):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
         # determine inlet mean line parameters
@@ -535,13 +531,17 @@ class Blade_row:
     def rotor_design(self, phi, psi):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""
         # store variation in static properties based on polynomial fits
-        T_1 = self.inlet.T_0.value * utils.stagnation_temperature_ratio(self.inlet.M.value)
-        p_1 = self.inlet.p_0.value * utils.stagnation_pressure_ratio(self.inlet.M.value)
+        self.inlet.T.value = (
+            self.inlet.T_0.value * utils.stagnation_temperature_ratio(self.inlet.M.value)
+        )
+        self.inlet.p.value = (
+            self.inlet.p_0.value * utils.stagnation_pressure_ratio(self.inlet.M.value)
+        )
 
         # get variation in blade Mach number
         M_1_blade_mean = self.inlet.M.value * np.cos(self.inlet.alpha.value) / phi
-        T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, T_1)
-        M_1_blade = M_1_blade_mean * (self.inlet.rr / self.inlet.r_mean) * np.sqrt(T_mean / T_1)
+        T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.T.value)
+        M_1_blade = M_1_blade_mean * (self.inlet.rr / self.inlet.r_mean) * np.sqrt(T_mean / self.inlet.T.value)
         
         # initialise empty Coefficients instances for relative quantities
         self.inlet.M_rel = Coefficients()
@@ -574,8 +574,8 @@ class Blade_row:
 
         # get cumulative inlet mass flow
         dm_dr_1 = (
-            p_1 / np.sqrt(T_1) * self.inlet.M_rel.value * np.cos(self.inlet.beta.value)
-            * self.inlet.rr
+            self.inlet.p.value / np.sqrt(self.inlet.T.value) * self.inlet.M_rel.value
+            * np.cos(self.inlet.beta.value) * self.inlet.rr
         )
         m_dot_1 = cumulative_simpson(dm_dr_1, x = self.inlet.rr, initial = 0.0)
 
@@ -621,15 +621,20 @@ class Blade_row:
 
                 # get relative stagnation temperature from lower bound of streamtube
                 self.exit.T_0_rel.value[index] = (
-                    self.inlet.T_0_rel.value[index] - 0.5 * (utils.gamma - 1) * M_1_blade[index]**2 * T_1[index]
+                    self.inlet.T_0_rel.value[index] - 0.5 * (utils.gamma - 1) * M_1_blade[index]**2
+                    * self.inlet.T.value[index]
                     * (1 - (self.exit.rr[index] / self.inlet.rr[index])**2)
                 )
 
                 # get relative stagnation pressure from stagnation pressure loss coefficient
                 self.exit.p_0_rel.value[index] = (
                     self.inlet.p_0_rel.value[index] * (
-                        np.power(self.exit.T_0_rel.value[index] / self.inlet.T_0_rel.value[index], utils.gamma / (utils.gamma - 1))
-                        - utils.Defaults.Y_p * (1 - p_1[index] / self.inlet.p_0_rel.value[index])
+                        np.power(
+                            self.exit.T_0_rel.value[index] / self.inlet.T_0_rel.value[index],
+                            utils.gamma / (utils.gamma - 1)
+                        )
+                        - utils.Defaults.Y_p
+                        * (1 - self.inlet.p.value[index] / self.inlet.p_0_rel.value[index])
                     )
                 )
 
@@ -654,24 +659,33 @@ class Blade_row:
 
             # get final relative stagnation values for upper bound of streamtube
             self.exit.T_0_rel.value[-1] = (
-                self.inlet.T_0_rel.value[-1] - 0.5 * (utils.gamma - 1) * M_1_blade[-1]**2 * T_1[-1]
-                * (1 - (self.exit.rr[-1] / self.inlet.rr[-1])**2)
+                self.inlet.T_0_rel.value[-1] - 0.5 * (utils.gamma - 1) * M_1_blade[-1]**2
+                * self.inlet.T.value[-1] * (1 - (self.exit.rr[-1] / self.inlet.rr[-1])**2)
             )
             self.exit.p_0_rel.value[-1] = (
                 self.inlet.p_0_rel.value[-1] * (
                     np.power(
                         self.exit.T_0_rel.value[-1] / self.inlet.T_0_rel.value[-1],
                         utils.gamma / (utils.gamma - 1)
-                    ) - utils.Defaults.Y_p * (1 - p_1[-1] / self.inlet.p_0_rel.value[-1])
+                    )
+                    - utils.Defaults.Y_p
+                    * (1 - self.inlet.p.value[-1] / self.inlet.p_0_rel.value[-1])
                 )
             )
 
             # get variation in exit static properties
-            T_2 = self.exit.T_0_rel.value * utils.stagnation_temperature_ratio(M_2_rel)
-            p_2 = self.exit.p_0_rel.value * utils.stagnation_pressure_ratio(M_2_rel)
+            self.exit.T.value = (
+                self.exit.T_0_rel.value * utils.stagnation_temperature_ratio(self.exit.M_rel.value)
+            )
+            self.exit.p.value = (
+                self.exit.p_0_rel.value * utils.stagnation_pressure_ratio(self.exit.M_rel.value)
+            )
 
             # get exit blade Mach number distribution
-            M_2_blade = M_1_blade * np.sqrt(T_1 / T_2) * self.exit.rr / self.inlet.rr
+            M_2_blade = (
+                M_1_blade * np.sqrt(self.inlet.T.value / self.exit.T.value)
+                * self.exit.rr / self.inlet.rr
+            )
 
             # get absolute Mach number and flow angle via vector algebra
             z_x = self.exit.M_rel.value * np.cos(self.exit.beta.value)
@@ -680,31 +694,40 @@ class Blade_row:
             self.exit.alpha.value = np.arctan2(z_y, z_x)
 
             # compare along each streamline to determine stage loading residual
-            dpsi = (
+            self.exit.dpsi = (
                 (
-                    self.exit.rr / self.inlet.rr * np.sqrt(T_2 / T_1) * self.exit.M.value
-                    * np.sin(self.exit.alpha.value)
+                    self.exit.rr / self.inlet.rr * np.sqrt(self.exit.T.value / self.inlet.T.value)
+                    * self.exit.M.value * np.sin(self.exit.alpha.value)
                     - self.inlet.M.value * np.sin(self.inlet.alpha.value)
-                ) / (M_1_blade * psi_1) - 1
+                )
+                / (M_1_blade * psi_1) - 1
             )
 
             # convert stage loading residuals to a (1, N) residual array
-            dpsi_buckets = np.array_split(dpsi, solutions.shape[1])
-            solutions[0] = np.array([np.mean(dpsi_bucket**2) for dpsi_bucket in dpsi_buckets])
+            dpsi_buckets = np.array_split(self.exit.dpsi, solutions.shape[1])
+            solutions[0] = np.array([np.sqrt(np.mean(bucket**2)) for bucket in dpsi_buckets])
 
             # calculate exit entropy distribution
             self.exit.s.value = (
-                self.inlet.s.value + np.log(T_2 / T_1) / (utils.gamma - 1)
-                - np.log(p_2 / p_1) / utils.gamma
+                self.inlet.s.value
+                + np.log(self.exit.T.value / self.inlet.T.value)/ (utils.gamma - 1)
+                - np.log(self.exit.p.value / self.inlet.p.value) / utils.gamma
             )
 
             # calculate exit stagnation temperature and pressure distributions
-            self.exit.T_0.value = T_2 / utils.stagnation_temperature_ratio(self.exit.M.value)
-            self.exit.p_0.value = p_2 / utils.stagnation_pressure_ratio(self.exit.M.value)
+            self.exit.T_0.value = (
+                self.exit.T.value / utils.stagnation_temperature_ratio(self.exit.M.value)
+            )
+            self.exit.p_0.value = (
+                self.exit.p.value / utils.stagnation_pressure_ratio(self.exit.M.value)
+            )
 
             # calculate dimensionless velocity components at exit
-            v_x_2 = self.exit.M.value * np.sqrt(T_2) * np.cos(self.exit.alpha.value)
-            rv_theta_2 = self.exit.rr * self.exit.M.value * np.sqrt(T_2) * np.sin(self.exit.alpha.value)
+            v_x_2 = self.exit.M.value * np.sqrt(self.exit.T.value) * np.cos(self.exit.alpha.value)
+            rv_theta_2 = (
+                self.exit.rr * self.exit.M.value * np.sqrt(self.exit.T.value)
+                * np.sin(self.exit.alpha.value)
+            )
 
             # calculate necessary derivatives for radial equilibrium
             ds_dr = np.gradient(self.exit.s.value, self.exit.rr, edge_order = 2)
@@ -713,15 +736,16 @@ class Blade_row:
             dT_0_dr = np.gradient(self.exit.T_0.value, self.exit.rr, edge_order = 2)
 
             # evaluate radial equilibrium
-            dradial = (
-                T_2 * ds_dr + v_x_2 * dv_x_dr + rv_theta_2 / self.exit.rr * drv_theta_dr
+            self.exit.dr = (
+                self.exit.T.value * ds_dr + v_x_2 * dv_x_dr
+                + rv_theta_2 / self.exit.rr * drv_theta_dr
                 - 1 / (utils.gamma - 1) * dT_0_dr
             )
 
             # convert stage loading residuals to a (1, N) residual array
-            dradial_buckets = np.array_split(dradial, solutions.shape[1] - 1)
+            dr_buckets = np.array_split(self.exit.dr, solutions.shape[0] - 1)
             solutions[1][:-1] = np.array([
-                np.mean(dradial_bucket**2) for dradial_bucket in dradial_buckets
+                np.sqrt(np.mean(bucket**2)) for bucket in dr_buckets
             ])
 
             # final residual comes from constant area
@@ -736,24 +760,22 @@ class Blade_row:
             return solutions
 
         # set list of lower and upper bounds and reshape
-        lower = np.concatenate((
+        lower = 100 * np.concatenate((
             -2 * np.ones_like(self.inlet.M.coefficients),
             -np.pi * np.ones_like(self.inlet.M.coefficients)
         ))
-        upper = np.concatenate((
+        upper = 100 * np.concatenate((
             2 * np.ones_like(self.inlet.M.coefficients),
             np.pi * np.ones_like(self.inlet.M.coefficients)
         ))
 
         # get initial guess based on inlet conditions
         x0 = np.concatenate((self.inlet.M_rel.coefficients, self.inlet.beta.coefficients))
-        print(f"x0: {x0}")
+        #print(f"x0: {x0}")
 
         # solve iteratively
         sol = least_squares(solve_rotor, x0, bounds = (lower, upper), max_nfev = utils.Defaults.nfev)
-        print(f"sol: {sol}")
-
-        print(f"self.exit.M.value: {self.exit.M.value}")
+        #print(f"sol: {sol}")
 
     def old_stator_design(self, last_stage = False):
         """Determines the stator blade geometry necessary to satisfy the given stage parameters."""
@@ -1014,14 +1036,12 @@ class Blade_row:
         self.exit.alpha.coefficients = np.zeros_like(self.inlet.M.coefficients)
         self.exit.alpha.value = np.zeros_like(self.inlet.M.value)
 
-
         # find stagnation quantities via no isentropic stagnation temperature change
         self.exit.T_0.value = self.inlet.T_0.value
         self.exit.p_0.value = (
             self.inlet.p_0.value * (1 - utils.Defaults.Y_p * (1 - p_1 / self.inlet.p_0.value))
         )
 
-        
         def solve_stator(vars):
             """Determines the matrix of residuals for a given guess of coefficients."""
             # store guess of exit conditions
@@ -1066,6 +1086,11 @@ class Blade_row:
 
             # expand primary flow variables onto new grid
             self.exit.value("M")
+            if (np.abs(self.exit.M.value) > 1).any():
+
+                print(f"Error!!!\n{self.exit.M.value}")
+                solutions = 1e9 * np.random.random() * np.ones_like(solutions)
+                return solutions
 
             # get variation in exit static properties
             T_2 = self.exit.T_0.value * utils.stagnation_temperature_ratio(self.exit.M.value)
@@ -1088,15 +1113,15 @@ class Blade_row:
             dT_0_dr = np.gradient(self.exit.T_0.value, self.exit.rr, edge_order = 2)
 
             # evaluate radial equilibrium
-            dradial = (
+            self.exit.dr = (
                 T_2 * ds_dr + v_x_2 * dv_x_dr + rv_theta_2 / self.exit.rr * drv_theta_dr
                 - 1 / (utils.gamma - 1) * dT_0_dr
             )
 
             # convert stage loading residuals to a (1, N) residual array
-            dradial_buckets = np.array_split(dradial, solutions.shape[0] - 1)
+            dr_buckets = np.array_split(self.exit.dr, solutions.shape[0] - 1)
             solutions[:-1] = np.array([
-                np.mean(dradial_bucket**2) for dradial_bucket in dradial_buckets
+                np.sqrt(np.mean(bucket**2)) for bucket in dr_buckets
             ])
 
             # final residual comes from constant area
@@ -1107,18 +1132,16 @@ class Blade_row:
             return solutions
         
         # set list of lower and upper bounds and reshape
-        lower = -2 * np.ones_like(self.inlet.M.coefficients)
-        upper = 2 * np.ones_like(self.inlet.M.coefficients)
+        lower = 100 * -2 * np.ones_like(self.inlet.M.coefficients)
+        upper = 100 * 2 * np.ones_like(self.inlet.M.coefficients)
 
         # get initial guess based on inlet conditions
         x0 = self.inlet.M.coefficients
-        print(f"x0: {x0}")
+        #print(f"x0: {x0}")
 
         # solve iteratively
         sol = least_squares(solve_stator, x0, bounds = (lower, upper), max_nfev = utils.Defaults.nfev)
-        print(f"sol: {sol}")
-
-        print(f"self.exit.M.value: {self.exit.M.value}")
+        #print(f"sol: {sol}")
 
     def deviation(self):
         """Calculate local deviation across the blade span using Carter and Howell."""

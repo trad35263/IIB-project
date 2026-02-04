@@ -18,15 +18,16 @@ class Defaults:
 
     # default engine input parameters
     no_of_stages = 1
-    vortex_exponent = 0.5
+    vortex_exponent = -0.5
     no_of_annuli = 3
+    solver_order = 3
     hub_tip_ratio = 0.025 / 0.070
     Y_p = 0.00
     phi = 0.6
     psi = 0.15
 
     # default plotting parameters
-    quantity_list = [
+    """quantity_list = [
         [
             'M', 'Mach number', True,
             'M_rel', 'Relative Mach number', True
@@ -49,6 +50,38 @@ class Defaults:
         ],
         [
             'DF', 'Diffusion factor', False
+        ]
+    ]"""
+    quantity_list = [
+        [
+            'M', 'Mach number',
+            'M_rel', 'Relative Mach number'
+        ],
+        [
+            'alpha', 'Flow angle (°)',
+            'beta', 'Relative flow angle (°)',
+            'metal_angle', 'Metal angle (°)'
+        ],
+        [
+            'pitch_to_chord', 'Pitch-to-chord ratio',
+            's', 'Pitch',
+            'c', 'Chord'
+        ],
+        [
+            'phi', 'Flow coefficient',
+            'psi', 'Stage loading coefficient',
+            'reaction', 'Reaction'
+        ],
+        [
+            'DF', 'Diffusion factor'
+        ],
+        [
+            'p_0', 'Stagnation pressure',
+            'T_0', 'Stagnation temperature'
+        ],
+        [
+            'dpsi', 'Stage loading residual',
+            'dr', 'Radial equilibrium residual'
         ]
     ]
 
@@ -224,9 +257,9 @@ class Colours:
 def rad_to_deg(x):
     """Converts a float from radians into degrees (°)."""
     # handle case where None is passed
-    if x == None:
+    #if x == None:
 
-        return None
+        #return None
 
     # convert to degrees and return
     return 180 * x / np.pi

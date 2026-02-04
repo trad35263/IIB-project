@@ -51,9 +51,7 @@ class Flight_scenario:
         self.M = self.flight_speed / self.a
         self.A = (np.pi / 4) * self.diameter**2 * (1 - self.hub_tip_ratio**2)
         self.p_0 = self.p / utils.stagnation_pressure_ratio(self.M)
-        self.C_th = self.thrust / (self.A * (self.p_0 - self.p))
-        print(f"self.p_0 - self.p: {self.p_0 - self.p}")
-        print(f"self.C_th: {self.C_th}")
+        self.C_th = self.thrust / (self.A * self.p_0)
 
         # create list to store engines designed for this flight scenario
         self.engines = []

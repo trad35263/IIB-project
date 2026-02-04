@@ -2,6 +2,8 @@
 
 import utils
 from blade_row import Blade_row
+from rotor import Rotor
+from stator import Stator
 from flow_state import Flow_state
 
 import numpy as np
@@ -40,22 +42,12 @@ class Stage:
         self.blade_rows = []
 
         # create rotor
-        rotor = Blade_row(self.Y_p, True, self.phi, self.psi, self.vortex_exponent)
+        rotor = Rotor(self.Y_p, self.phi, self.psi, self.vortex_exponent)
         self.blade_rows.append(rotor)
 
         # create stator
-        stator = Blade_row(self.Y_p)
+        stator = Stator(self.Y_p)
         self.blade_rows.append(stator)
-
-        # set centred axial position for rotor and stator
-        rotor.x = 2 * index + 0.25
-        stator.x = 2 * index + 1.25
-
-        # set axial position for rotor and stator
-        self.blade_rows[0].x_inlet = 2 * index
-        self.blade_rows[0].x_exit = 2 * index + utils.Defaults.blade_row_axial_depth
-        self.blade_rows[1].x_inlet = 2 * index + 1
-        self.blade_rows[1].x_exit = 2 * index + 1 + utils.Defaults.blade_row_axial_depth
 
     def __str__(self):
         """Prints a string representation of the stage."""

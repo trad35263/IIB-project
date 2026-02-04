@@ -19,6 +19,8 @@ class Annulus:
         self.T_0 = Coefficients()
         self.p_0 = Coefficients()
         self.s = Coefficients()
+        self.T = Coefficients()
+        self.p = Coefficients()
 
     def set_inlet_conditions(self, M, alpha, N):
         """Sets the inlet conditions for the first stage rotor."""
@@ -41,6 +43,10 @@ class Annulus:
         self.T_0.value = np.polyval(self.T_0.coefficients, self.rr)
         self.p_0.value = np.polyval(self.p_0.coefficients, self.rr)
         self.s.value = np.polyval(self.s.coefficients, self.rr)
+
+        # store static properties
+        self.T.value = self.T_0.value * utils.stagnation_temperature_ratio(self.M.value)
+        self.p.value = self.p_0.value * utils.stagnation_pressure_ratio(self.M.value)
 
     def value(self, quantity):
         """Returns the spanwise distribution of a given quantity."""
