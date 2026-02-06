@@ -330,7 +330,7 @@ class Stage:
             / (utils.gamma * np.log(self.stator.exit.T_0 / self.rotor.inlet.T_0))
         )
 
-    def evaluate(self):
+    def evaluate2(self):
         """Determines the distribution and mean values of non-dimensional stage parameters."""
         # loop over inlet-exit pairs for the stage's rotor
         for (inlet, exit) in zip(self.rotor.inlet, self.rotor.exit):
@@ -410,3 +410,8 @@ class Stage:
             # normalise mass flow rates
             inlet.m /= m_sum_inlet
             exit.m /= m_sum_exit
+
+    def evaluate(self):
+        """Evaluates performance of the individual stage."""
+        self.rotor.evaluate()
+        self.stator.evaluate(self.rotor.inlet.T.value)

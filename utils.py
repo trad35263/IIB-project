@@ -18,8 +18,8 @@ class Defaults:
 
     # default engine input parameters
     no_of_stages = 1
-    vortex_exponent = -0.5
-    no_of_annuli = 3
+    vortex_exponent = 0.5
+    #no_of_annuli = 3
     solver_order = 3
     hub_tip_ratio = 0.025 / 0.070
     Y_p = 0.00
@@ -27,31 +27,6 @@ class Defaults:
     psi = 0.15
 
     # default plotting parameters
-    """quantity_list = [
-        [
-            'M', 'Mach number', True,
-            'M_rel', 'Relative Mach number', True
-        ],
-        [
-            'alpha', 'Flow angle (°)', True,
-            'beta', 'Relative flow angle (°)', True,
-            'metal_angle', 'Metal angle (°)', False
-        ],
-        ['M_x', 'Axial Mach number', False],
-        [
-            'pitch_to_chord', 'Pitch-to-chord ratio', False,
-            's', 'Pitch', False,
-            'c', 'Chord', False
-        ],
-        [
-            'phi', 'Flow coefficient', False,
-            'psi', 'Stage loading coefficient', False,
-            'reaction', 'Reaction', False
-        ],
-        [
-            'DF', 'Diffusion factor', False
-        ]
-    ]"""
     quantity_list = [
         [
             'M', 'Mach number',
@@ -80,21 +55,17 @@ class Defaults:
             'T_0', 'Stagnation temperature'
         ],
         [
+            'p', 'Static pressure',
+            'T', 'Static temperature'
+        ],
+        [
             'dpsi', 'Stage loading residual',
             'dr', 'Radial equilibrium residual'
         ]
     ]
 
-
-    #flow_coefficient = 0.6
-    #stage_loading_coefficient = 0.18
-
-
-    #stagnation_pressure_loss_coefficient = 0.00
-
     # code iteration parameters
-    delta = 1e-6
-    fine_grid = 100
+    fine_grid = 31
 
     # default dimensional values
     diameter = 0.14
@@ -114,10 +85,10 @@ class Defaults:
     AR_target = 2.5
 
     # whether or not debug mode is active
-    debug = False
+    debug = True
     loading_bar = True
 
-    nfev = 50
+    nfev = 500
 
     # default flight scenarios
     flight_scenarios = {
@@ -275,6 +246,28 @@ def debug(string):
     if Defaults.debug:
 
         print(f"{string}")
+
+# 0.8 logistic curve
+
+def bound(x, a = 0.01, b = 0.5, c = 0.6):
+    """Bounds a value between 0 and c using a logistic curve."""
+    # check if x is too small
+    if x < a:
+
+        # return lower bound
+        return a * np.exp((x - a) / a)
+
+    # check if x is too large
+    elif x > b:
+
+        # return upper bound
+        return c - (c - b) * np.exp(-(x - b) / (c - b))
+
+    # intermediate cases
+    else:
+
+        # return as is
+        return x 
 
 M_infinity = 0.05877
 M_1 = 0.152

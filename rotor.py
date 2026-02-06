@@ -1,13 +1,24 @@
 # import modules
 import numpy as np
 from scipy.optimize import least_squares
-from scipy.integrate import cumulative_simpson
 from time import perf_counter as timer
 
 # import custom classes
 from annulus import Annulus
 from coefficients import Coefficients
 import utils
+
+def cumulative_trapezoid(y, x, initial = 0):
+    """Compute cumulative trapezoidal integral for arrays y(x)."""
+    # 
+    dx = np.diff(x)
+    mids = 0.5 * (y[:-1] + y[1:])
+
+    # cumulative sum of mids * dx, prepend initial
+    cum = np.empty(len(x), dtype=y.dtype)
+    cum[0] = initial
+    cum[1:] = np.cumsum(mids * dx) + initial
+    return cum
 
 # define Rotor class
 class Rotor:
@@ -66,7 +77,7 @@ class Rotor:
 
         return string
 
-    def design(self, phi, psi):
+    def design(self, phi, psi, n):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""        
         # initialise empty Coefficients instances for relative quantities
         self.inlet.M_rel = Coefficients()
@@ -90,7 +101,7 @@ class Rotor:
         self.inlet.beta.calculate(self.inlet.rr, len(self.inlet.M.coefficients))
 
         # get expected variation in stage loading coefficient
-        psi_1 = psi * np.power(self.inlet.rr / self.inlet.r_mean, utils.Defaults.vortex_exponent)
+        psi_1 = psi * np.power(self.inlet.rr / self.inlet.r_mean, n - 1)
 
         # get spanwise variation of relative stagnation properties
         self.inlet.T_0_rel.value = (
@@ -107,17 +118,15 @@ class Rotor:
             self.inlet.p.value / np.sqrt(self.inlet.T.value) * self.inlet.M_rel.value
             * np.cos(self.inlet.beta.value) * self.inlet.rr
         )
-        m_dot_1 = cumulative_simpson(dm_dr_1, x = self.inlet.rr, initial = 0.0)
+        m_dot_1 = cumulative_trapezoid(dm_dr_1, self.inlet.rr)
 
         # get incremental change in inlet mass flow
         dm_dot_1 = np.diff(m_dot_1)
 
-        # initialise exit annulus object to be populated
-        self.exit = Annulus()
-
         def solve_rotor(vars):
             """Determines the matrix of residuals for a given guess of coefficients."""
             # regroup vars into shape (2, N) and store guess of exit conditions
+            t1 = timer()
             vars = vars.reshape(2, -1)
             self.exit.M_rel = Coefficients(vars[0])
             self.exit.beta = Coefficients(vars[1])
@@ -135,6 +144,10 @@ class Rotor:
             self.exit.T_0_rel.value = np.zeros_like(self.inlet.T_0_rel.value)
             self.exit.p_0_rel.value = np.zeros_like(self.inlet.p_0_rel.value)
 
+            # pre-compute constants used in loop
+            gamma_m1_half = 0.5 * (utils.gamma - 1)
+            gamma_ratio = utils.gamma / (utils.gamma - 1)
+
             # loop over all streamtubes
             for index, m_1 in enumerate(dm_dot_1):
 
@@ -151,9 +164,9 @@ class Rotor:
 
                 # get relative stagnation temperature from lower bound of streamtube
                 self.exit.T_0_rel.value[index] = (
-                    self.inlet.T_0_rel.value[index] - 0.5 * (utils.gamma - 1) * M_1_blade[index]**2
+                    self.inlet.T_0_rel.value[index] + gamma_m1_half * M_1_blade[index]**2
                     * self.inlet.T.value[index]
-                    * (1 - (self.exit.rr[index] / self.inlet.rr[index])**2)
+                    * ((self.exit.rr[index] / self.inlet.rr[index])**2 - 1)
                 )
 
                 # get relative stagnation pressure from stagnation pressure loss coefficient
@@ -161,7 +174,7 @@ class Rotor:
                     self.inlet.p_0_rel.value[index] * (
                         np.power(
                             self.exit.T_0_rel.value[index] / self.inlet.T_0_rel.value[index],
-                            utils.gamma / (utils.gamma - 1)
+                            gamma_ratio
                         )
                         - utils.Defaults.Y_p
                         * (1 - self.inlet.p.value[index] / self.inlet.p_0_rel.value[index])
@@ -171,13 +184,13 @@ class Rotor:
                 # get variation in mass flow rate at the inlet radial nodes
                 dm_dr_2 = (
                     np.power(
-                        1 + 0.5 * (utils.gamma - 1) * M_2_rel**2,
-                        -utils.gamma / (utils.gamma - 1) + 0.5
+                        1 + gamma_m1_half * M_2_rel**2,
+                        -gamma_ratio + 0.5
                     ) * M_2_rel * np.cos(beta_2) * r_2_fine
                 )
                 m_dot_2 = (
                     self.exit.p_0_rel.value[index] / np.sqrt(self.exit.T_0_rel.value[index])
-                    * cumulative_simpson(dm_dr_2, x = r_2_fine, initial = 0.0)
+                    * cumulative_trapezoid(dm_dr_2, r_2_fine)
                 )
 
                 # interpolate to find upper bound of corresponding streamtube
@@ -188,16 +201,15 @@ class Rotor:
             self.exit.value("beta")
 
             # get final relative stagnation values for upper bound of streamtube
-            # I THINK THIS IS WRONG
             self.exit.T_0_rel.value[-1] = (
-                self.inlet.T_0_rel.value[-1] - 0.5 * (utils.gamma - 1) * M_1_blade[-1]**2
-                * self.inlet.T.value[-1] * (1 - (self.exit.rr[-1] / self.inlet.rr[-1])**2)
+                self.inlet.T_0_rel.value[-1] + gamma_m1_half * M_1_blade[-1]**2
+                * self.inlet.T.value[-1] * ((self.exit.rr[-1] / self.inlet.rr[-1])**2 - 1)
             )
             self.exit.p_0_rel.value[-1] = (
                 self.inlet.p_0_rel.value[-1] * (
                     np.power(
                         self.exit.T_0_rel.value[-1] / self.inlet.T_0_rel.value[-1],
-                        utils.gamma / (utils.gamma - 1)
+                        gamma_ratio
                     )
                     - utils.Defaults.Y_p
                     * (1 - self.inlet.p.value[-1] / self.inlet.p_0_rel.value[-1])
@@ -224,22 +236,20 @@ class Rotor:
             self.exit.M.value = np.hypot(z_x, z_y)
             self.exit.alpha.value = np.arctan2(z_y, z_x)
 
-            # compare along each streamline to determine stage loading residual
-            self.exit.dpsi = (
-                (
-                    self.exit.rr / self.inlet.rr * np.sqrt(self.exit.T.value / self.inlet.T.value)
-                    * self.exit.M.value * np.sin(self.exit.alpha.value)
-                    - self.inlet.M.value * np.sin(self.inlet.alpha.value)
-                )
-                / (M_1_blade * psi_1) - 1
+            # calculate exit stagnation temperature and pressure distributions
+            self.exit.T_0.value = (
+                self.exit.T.value / utils.stagnation_temperature_ratio(self.exit.M.value)
             )
-            print(f"self.exit.dpsi: {self.exit.dpsi}")
+            self.exit.p_0.value = (
+                self.exit.p.value / utils.stagnation_pressure_ratio(self.exit.M.value)
+            )
 
-            self.exit.dpsi = (
+            # compare along each streamline to determine stage loading residual
+            self.exit.psi = (
                 (self.exit.T_0.value - self.inlet.T_0.value)
                 / (self.inlet.T.value * (utils.gamma - 1) * M_1_blade**2)
             )
-            print(f"self.exit.dpsi: {self.exit.dpsi}")
+            self.exit.dpsi = self.exit.psi / psi_1 - 1
 
             # convert stage loading residuals to a (1, N) residual array
             dpsi_buckets = np.array_split(self.exit.dpsi, solutions.shape[1])
@@ -252,14 +262,6 @@ class Rotor:
                 - np.log(self.exit.p.value / self.inlet.p.value) / utils.gamma
             )
 
-            # calculate exit stagnation temperature and pressure distributions
-            self.exit.T_0.value = (
-                self.exit.T.value / utils.stagnation_temperature_ratio(self.exit.M.value)
-            )
-            self.exit.p_0.value = (
-                self.exit.p.value / utils.stagnation_pressure_ratio(self.exit.M.value)
-            )
-
             # calculate dimensionless velocity components at exit
             v_x_2 = self.exit.M.value * np.sqrt(self.exit.T.value) * np.cos(self.exit.alpha.value)
             rv_theta_2 = (
@@ -268,10 +270,10 @@ class Rotor:
             )
 
             # calculate necessary derivatives for radial equilibrium
-            ds_dr = np.gradient(self.exit.s.value, self.exit.rr, edge_order = 2)
-            dv_x_dr = np.gradient(v_x_2, self.exit.rr, edge_order = 2)
-            drv_theta_dr = np.gradient(rv_theta_2, self.exit.rr, edge_order = 2)
-            dT_0_dr = np.gradient(self.exit.T_0.value, self.exit.rr, edge_order = 2)
+            ds_dr = np.gradient(self.exit.s.value, self.exit.rr, edge_order = 1)
+            dv_x_dr = np.gradient(v_x_2, self.exit.rr, edge_order = 1)
+            drv_theta_dr = np.gradient(rv_theta_2, self.exit.rr, edge_order = 1)
+            dT_0_dr = np.gradient(self.exit.T_0.value, self.exit.rr, edge_order = 1)
 
             # evaluate radial equilibrium
             self.exit.dr = (
@@ -289,10 +291,6 @@ class Rotor:
             # final residual comes from constant area
             solutions[1][-1] = self.exit.rr[-1]**2 - self.inlet.rr[-1]**2
 
-            # calculate polynomial fit through absolute quantities for stator calculations
-            self.exit.M.calculate(self.exit.rr, len(self.inlet.M.coefficients))
-            self.exit.alpha.calculate(self.exit.rr, len(self.inlet.M.coefficients))
-
             # return solutions
             solutions = solutions.ravel()
             return solutions
@@ -307,10 +305,39 @@ class Rotor:
             np.pi * np.ones_like(self.inlet.M.coefficients)
         ))
 
-        # get initial guess based on inlet conditions
-        x0 = np.concatenate((self.inlet.M_rel.coefficients, self.inlet.beta.coefficients))
-        #print(f"x0: {x0}")
+        # check if exit conditions are available
+        if hasattr(self, "exit") and 0 == 1:
+
+            # set initial guess to those exit conditions
+            x0 = np.concatenate((self.exit.M_rel.coefficients, self.exit.beta.coefficients))
+
+        # first time solving the engine
+        else:
+
+            # initialise exit annulus object to be populated
+            self.exit = Annulus()
+
+            # set initial guess based on inlet conditions
+            x0 = np.concatenate((self.inlet.M_rel.coefficients, self.inlet.beta.coefficients))
 
         # solve iteratively
-        sol = least_squares(solve_rotor, x0, bounds = (lower, upper), max_nfev = utils.Defaults.nfev)
-        #print(f"sol: {sol}")
+        sol = least_squares(
+            solve_rotor, x0, bounds = (lower, upper),
+            xtol = 1e-9, ftol = 1e-9, gtol = 1e-2
+        )
+        utils.debug(f"sol: {sol}")
+
+        # get inlet coefficients
+        self.exit.M.calculate(self.exit.rr, len(self.inlet.M.coefficients))
+        self.exit.alpha.calculate(self.exit.rr, len(self.inlet.M.coefficients))
+
+    def evaluate(self):
+        """Evaluates performance of the rotor blade row."""
+        # find flow coefficient
+        self.exit.phi = (
+            self.inlet.M.value * np.cos(self.inlet.alpha.value)
+            / (
+                self.inlet.M.value * np.sin(self.inlet.alpha.value)
+                - self.inlet.M_rel.value * np.sin(self.inlet.beta.value)
+            )
+        ) 

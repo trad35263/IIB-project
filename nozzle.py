@@ -24,27 +24,9 @@ class Nozzle:
     Used to model the bellmouth inlet to the engine, the exit nozzle, and inter-blade row passages
     through which there may be a change in area. Assumptions made include conservation of energy,
     isentropic process, conservation of angular momentum and compressible continuity.
-    
-    Parameters
-    ----------
-    area_ratio : float
-        Ratio of outlet area to inlet area.
-    inlet : object or None
-        Inlet flow state (to be defined externally).
-    exit : object or None
-        Exit flow state (to be defined externally).
     """
-    def __init__(self, x_inlet, x_exit, inlet = None):
+    def __init__(self):
         """Create instance of the Nozzle class."""
-        # store input variables
-        self.x_inlet = x_inlet
-        self.x_exit = x_exit
-        self.inlet = inlet
-
-        # preallocate properties
-        self.exit = None
-        self.r_hub = 0
-
         # set label and colour
         self.label = f"{utils.Colours.PURPLE}Nozzle{utils.Colours.END}"
         self.colour = 'k'
@@ -255,7 +237,7 @@ class Nozzle:
         self.A_exit = np.sum([exit.A for exit in self.exit])
         utils.debug(f"sol: {sol}")
 
-    def nozzle_design(self, p_atm):
+    def design(self, p_atm):
         """Determines the nozzle area to satisfy the atmospheric pressure boundary condition."""
         # initialise exit annulus object to be populated
         self.exit = Annulus()
@@ -368,15 +350,16 @@ class Nozzle:
         # set list of lower and upper bounds and reshape
         lower = 100 * -2 * np.ones_like(self.inlet.M.coefficients)
         upper = 100 * 2 * np.ones_like(self.inlet.M.coefficients)
-        # IS THERE A WAY TO AVOID SPECIFYING BOUNDS?
 
         # get initial guess based on inlet conditions
         x0 = self.inlet.M.coefficients
 
         # solve iteratively
         sol = least_squares(
-            solve_nozzle, x0, bounds = (lower, upper), max_nfev = utils.Defaults.nfev
+            solve_nozzle, x0, bounds = (lower, upper),
+            xtol = 1e-6, ftol = 1e-6, gtol = 1e-6
         )
+        utils.debug(f"sol: {sol}")
 
     def evaluate(self, hub_tip_ratio):
         """Evaluates the performance of the nozzle as part of the engine system."""

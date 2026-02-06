@@ -75,78 +75,53 @@ class Engine:
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
         # create nozzle
-        self.nozzle = Nozzle(2 * self.no_of_stages - 0.5, 2 * self.no_of_stages + 0.5)
+        self.nozzle = Nozzle()
 
-        # initial guess for inlet Mach number
-        self.M_1 = 0.1
+        xx = []
+        yy = []
 
         # set up root-solving function for thrust coefficient
         def solve_thrust(var):
             """Iterates through engine designs until a given thrust is achieved."""
-            # unpack var and use as inlet Mach number, eliminating negative solutions
-            self.M_1 = np.abs(float(np.squeeze(var)))
-
-            # check if inlet Mach number is too low
-            if self.M_1 <= 1e-6:
-
-                # impose lower bound
-                self.M_1 = 1e-6
-
-            # check if inlet Mach number is too high (transonic)
-            if self.M_1 >= 0.7:
-
-                # impose upper bound
-                self.M_1 = 0.7
-
-            # draw loading bar
-            if utils.Defaults.loading_bar and self.benchmark == None:
-
-                print("|" + "-" * 100 + "|")
+            # apply bounds to var use as inlet Mach number
+            self.M_1 = utils.bound(np.squeeze(var))
+            xx.append(var)
 
             # design engine, store inside scenario and calculate residual
             self.design()
             scenario.engine = self
             residual = self.C_th - self.C_th_design
 
-            if utils.Defaults.loading_bar:
-
-                # set benchmark for loading bar
-                if self.benchmark == None:
-
-                    # benchmark for loading bar is the first residual
-                    self.benchmark = self.C_th - self.C_th_design
-
-                # calculate progress and print loading bar
-                new_progress = max(0.0, 100 * min(1.0, np.power(1 - residual / self.benchmark, 4)))
-                self.progress = max(self.progress, new_progress)
-                bar = f"{utils.Colours.GREEN}|" + "-" * int(self.progress) + f"|{utils.Colours.END}"
-                print("\r" + bar, end = "", flush = True)
-
             # return thrust coefficient residual
+            print(f"self.C_th: {self.C_th}")
+            yy.append(self.C_th)
             #return 0
             return residual
 
         # increment number of annuli for analysis, starting with mean-line only
         t1 = timer()
 
-        # initialise variables for storing loading bar progress
-        self.benchmark = None
-        self.progress = 0
-
-        # print user feedback and store initial guesses
+        # print user feedback
         print(
             f"{utils.Colours.CYAN}Performing analysis with solver order: {self.solver_order}..."
             f"{utils.Colours.END}"
         )
-        x0 = self.M_1
-        x1 = 0.9 * self.M_1
 
-        sol = root_scalar(solve_thrust, x0 = x0, x1 = x1, method = "secant")
+        # store initial guesses
+        x0 = 0.1
+        x1 = 0.2
 
-        if utils.Defaults.loading_bar:
+        # solve iteratively
+        sol = root_scalar(
+            solve_thrust, x0 = x0, x1 = x1, method = "secant", xtol = 1e-4, rtol = 1e-4
+        )
 
-            print("\r" + "|" + "-" * 100 + "|\n", end = "", flush = True)
+        fig, ax = plt.subplots()
+        ax.plot(xx, yy, linestyle = '', marker = '.', markersize = 6)
+        ax.axhline(self.C_th_design)
+        plt.show()
 
+        # end timer and print feedback
         t2 = timer()
         print(
             f"Engine design completed after {utils.Colours.GREEN}{t2 - t1:.3g}s:"
@@ -202,7 +177,7 @@ class Engine:
     def design(self):
         """Determines appropriate values for blade metal angles for the given requirements."""
         # iterate over all stages
-        utils.debug(f"\nself.M_1: {self.M_1}")
+        print(f"\nself.M_1: {self.M_1}")
         for index, stage in enumerate(self.stages):
 
             # store rotor and stator as variables for convenience
@@ -226,7 +201,7 @@ class Engine:
 
             # define rotor blade geometry
             t1 = timer()
-            rotor.design(stage.phi, stage.psi)
+            rotor.design(stage.phi, stage.psi, self.vortex_exponent)
             t2 = timer()
             utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
@@ -235,7 +210,6 @@ class Engine:
 
             # define stator blade geometry
             t1 = timer()
-            #stator.old_stator_design(index == len(self.stages) - 1)
             stator.design()
             t2 = timer()
             utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
@@ -249,8 +223,15 @@ class Engine:
 
         # design nozzle to match atmospheric pressure in jet periphery
         self.p_atm = utils.stagnation_pressure_ratio(self.M_flight)
-        self.nozzle.nozzle_design(self.p_atm)
+        t1 = timer()
+        self.nozzle.design(self.p_atm)
+        t2 = timer()
+        utils.debug(f"Nozzle design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
+        t1 = timer()
         self.evaluate()
+        t2 = timer()
+        utils.debug(f"Engine evaluation duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
     def analyse(self):
         """Analyses the entire engine system."""
@@ -361,7 +342,6 @@ class Engine:
         self.eta_comp = 1
         self.eta_elec = 1
         self.jet_velocity_ratio = 1
-        return
 
         # iterate over all stages
         for stage in self.stages:
@@ -370,7 +350,7 @@ class Engine:
             stage.evaluate()
 
         # sum thrust coefficients
-        self.C_th = np.sum([exit.C_th * exit.m for exit in self.nozzle.exit])
+        """self.C_th = np.sum([exit.C_th * exit.m for exit in self.nozzle.exit])
 
         # find mass-averaged propulsive efficiency
         self.eta_prop = np.sum([exit.eta_prop * exit.m for exit in self.nozzle.exit])
@@ -389,7 +369,7 @@ class Engine:
 
         # store miscellaneous engine quantities
         self.nozzle_area_ratio = self.nozzle.A_exit / np.sum(inlet.A for inlet in self.blade_rows[0].inlet)
-        self.pressure_ratio = np.sum([exit.m * exit.flow_state.p_0 for exit in self.nozzle.exit])
+        self.pressure_ratio = np.sum([exit.m * exit.flow_state.p_0 for exit in self.nozzle.exit])"""
 
 # plotting functions ------------------------------------------------------------------------------
     
@@ -1034,3 +1014,34 @@ class Engine:
         # show plots
         plt.show()
     
+    def plot_section(self):
+        """Plots a section view through the engine highlighting streamline behaviour."""
+        # create plot
+        fig, ax = plt.subplots(figsize = (14, 6))
+
+        # initialise empty list to hold x- and y-values
+        xx = [0, 1]
+        yy = []
+
+        # store rotor inlet values
+        yy.append(self.blade_rows[0].inlet.rr)
+
+        # loop over all blade rows
+        for index, blade_row in enumerate(self.blade_rows):
+
+            xx.append(index + 2)
+            yy.append(blade_row.exit.rr)
+
+        # store nozzle exit values
+        yy.append(self.nozzle.exit.rr)
+
+        # transpose y-array
+        yy = np.transpose(yy)
+
+        # plot each streamline separately
+        for streamline in yy:
+
+            # plot streamline
+            ax.plot(xx, streamline, linewidth = 1, color = 'k')
+
+        plt.show()
