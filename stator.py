@@ -1,7 +1,7 @@
 # import modules
 import numpy as np
 from scipy.optimize import least_squares
-from scipy.integrate import cumulative_simpson
+#from scipy.integrate import cumulative_simpson
 from time import perf_counter as timer
 
 # import custom classes
@@ -67,7 +67,7 @@ class Stator:
             self.inlet.p.value / np.sqrt(self.inlet.T.value) * self.inlet.M.value * np.cos(self.inlet.alpha.value)
             * self.inlet.rr
         )
-        m_dot_1 = cumulative_simpson(dm_dr_1, x = self.inlet.rr, initial = 0.0)
+        m_dot_1 = utils.cumulative_trapezoid(dm_dr_1, x = self.inlet.rr, initial = 0.0)
 
         # get incremental change in inlet mass flow
         dm_dot_1 = np.diff(m_dot_1)
@@ -108,7 +108,7 @@ class Stator:
                 )
                 m_dot_2 = (
                     self.exit.p_0.value[index] / np.sqrt(self.exit.T_0.value[index])
-                    * cumulative_simpson(dm_dr_2, x = r_2_fine, initial = 0.0)
+                    * utils.cumulative_trapezoid(dm_dr_2, x = r_2_fine, initial = 0.0)
                 )
 
                 # interpolate to find upper bound of corresponding streamtube
@@ -167,29 +167,20 @@ class Stator:
             solutions[-1] = self.exit.rr[-1]**2 - self.inlet.rr[-1]**2
 
             # return solutions
-            solutions = solutions.ravel()
+            #solutions = solutions.ravel()
             return solutions
         
         # set list of lower and upper bounds and reshape
         lower = 100 * -2 * np.ones_like(self.inlet.M.coefficients)
         upper = 100 * 2 * np.ones_like(self.inlet.M.coefficients)
 
-        # check if exit conditions are available
-        if hasattr(self, "exit") and 0 == 1:
+        # initialise exit annulus object to be populated
+        self.exit = Annulus()
+        self.exit.alpha.coefficients = np.zeros_like(self.inlet.M.coefficients)
+        self.exit.alpha.value = np.zeros_like(self.inlet.M.value)
 
-            # set initial guess to those exit conditions
-            x0 = self.exit.M.coefficients
-
-        # first time solving the engine
-        else:
-
-            # initialise exit annulus object to be populated
-            self.exit = Annulus()
-            self.exit.alpha.coefficients = np.zeros_like(self.inlet.M.coefficients)
-            self.exit.alpha.value = np.zeros_like(self.inlet.M.value)
-
-            # set initial guess based on inlet conditions
-            x0 = self.inlet.M.coefficients
+        # set initial guess based on inlet conditions
+        x0 = self.inlet.M.coefficients
 
         # find stagnation quantities via no isentropic stagnation temperature change
         self.exit.T_0.value = self.inlet.T_0.value
@@ -200,8 +191,8 @@ class Stator:
         # solve iteratively
         sol = least_squares(
             solve_stator, x0, bounds = (lower, upper),
-            #max_nfev = utils.Defaults.nfev
-            xtol = 1e-9, ftol = 1e-9, gtol = 1e-9
+            xtol = 1e-6, ftol = 1e-6, gtol = 1e-6,
+            x_scale = 'jac'
         )
         utils.debug(f"sol: {sol}")
 

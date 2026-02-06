@@ -85,7 +85,7 @@ class Defaults:
     AR_target = 2.5
 
     # whether or not debug mode is active
-    debug = True
+    debug = False
     loading_bar = True
 
     nfev = 500
@@ -267,7 +267,21 @@ def bound(x, a = 0.01, b = 0.5, c = 0.6):
     else:
 
         # return as is
-        return x 
+        return x
+    
+# 0.9 faster cumulative trapezoid function
+
+def cumulative_trapezoid(y, x, initial = 0):
+    """Compute cumulative trapezoidal integral for arrays y(x)."""
+    # 
+    dx = np.diff(x)
+    mids = 0.5 * (y[:-1] + y[1:])
+
+    # cumulative sum of mids * dx, prepend initial
+    cum = np.empty(len(x), dtype=y.dtype)
+    cum[0] = initial
+    cum[1:] = np.cumsum(mids * dx) + initial
+    return cum
 
 M_infinity = 0.05877
 M_1 = 0.152

@@ -357,7 +357,8 @@ class Nozzle:
         # solve iteratively
         sol = least_squares(
             solve_nozzle, x0, bounds = (lower, upper),
-            xtol = 1e-6, ftol = 1e-6, gtol = 1e-6
+            xtol = 1e-6, ftol = 1e-6, gtol = 1e-6,
+            x_scale = 'jac'
         )
         utils.debug(f"sol: {sol}")
 
