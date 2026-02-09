@@ -8,7 +8,7 @@
 close all; clear; clc; Multistage
 
 % load .mat object containing the engine blade information
-S = load("high_speed_geometry.mat");
+%S = load("high_speed_geometry.mat");
 
 % continue
 % ...

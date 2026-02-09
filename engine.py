@@ -139,6 +139,9 @@ class Engine:
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
 
+        # initialise empty list of Geometry objects
+        self.geometries = []
+
     def __str__(self):
         """Prints a string representation of the stage."""
         string = ""
@@ -1084,3 +1087,18 @@ class Engine:
             ax.plot(xx, streamline, linewidth = 1, color = 'k')
 
         plt.show()
+
+# new
+
+    def empirical_design(self):
+        """Determines the actual geometry of the engine."""
+        geometry = self.geometries[-1]
+
+        aspect_ratio = geometry.aspect_ratio
+        diffusion_factor = geometry.diffusion_factor
+        deviation_constant = geometry.deviation_constant
+
+        for blade_row in self.blade_rows:
+
+            blade_row.calculate_chord(aspect_ratio, diffusion_factor)
+            blade_row.calculate_deviation(deviation_constant)

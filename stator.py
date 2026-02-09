@@ -199,3 +199,11 @@ class Stator:
             (self.inlet.T.value - T_1)
             / (self.exit.T.value - T_1)
         )
+
+    def calculate_chord(self, aspect_ratio, diffusion_factor):
+        """"""
+        pass
+
+    def calculate_deviation(self, deviation_constant):
+        """"""
+        pass

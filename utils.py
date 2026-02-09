@@ -15,16 +15,28 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # default flight scenario parameters
     label = ""
+    diameter = 0.14
+    #hub_tip_ratio = 0.025 / 0.070
+    hub_tip_ratio = 0.3077
+    flight_scenarios = {
+        "Take-off": ["Take-off", 0, 10, diameter, hub_tip_ratio, 10],
+        "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
+        "Cruise": ["Cruise", 3000, 40, diameter, hub_tip_ratio, 20]
+    }
 
     # default engine input parameters
     no_of_stages = 1
     vortex_exponent = 0.5
-    #no_of_annuli = 3
-    solver_order = 3
-    hub_tip_ratio = 0.025 / 0.070
-    Y_p = 0.00
+    solver_order = 2
+    Y_p = 0.02
     phi = 0.6
-    psi = 0.15
+    psi = 0.1596
+
+    # default geometry parameters
+    aspect_ratio = 2
+    diffusion_factor = 0.5
+    deviation_constant = 1
+    max_blades = 20
 
     # default plotting parameters
     quantity_list = [
@@ -68,10 +80,9 @@ class Defaults:
     fine_grid = 61
 
     # default dimensional values
-    diameter = 0.14
-    altitude = 10000
-    flight_speed = 30
-    thrust = 20
+    #altitude = 10000
+    #flight_speed = 30
+    #thrust = 20
 
     # placeholder for now
     blade_row_axial_depth = 0.5
@@ -80,22 +91,15 @@ class Defaults:
     inlet_swirl = 0
 
     # specify maximum permissible diffusion factor
-    DF_limit = 0.4
-    pitch_to_chord_limit = 1
-    AR_target = 2.5
+    #DF_limit = 0.4
+    #pitch_to_chord_limit = 1
+    #AR_target = 2.5
 
     # whether or not debug mode is active
     debug = False
     loading_bar = True
 
     nfev = 500
-
-    # default flight scenarios
-    flight_scenarios = {
-        "Take-off": ["Take-off", 0, 20, diameter, hub_tip_ratio, 30],
-        "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
-        "Cruise": ["Cruise", 3000, 40, diameter, hub_tip_ratio, 20]
-    }
 
 # 0.3 compressible flow perfect gas relations
 
