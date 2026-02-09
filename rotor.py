@@ -73,6 +73,9 @@ class Rotor:
         self.inlet.T_0_rel = Coefficients()
         self.inlet.p_0_rel = Coefficients()
 
+        # calculate mid-span radius
+        self.inlet.r_mean = 0.5 * (self.inlet.rr[0] + self.inlet.rr[-1])
+
         # get variation in blade Mach number
         M_1_blade_mean = self.inlet.M.value * np.cos(self.inlet.alpha.value) / phi
         T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.T.value)
@@ -113,11 +116,8 @@ class Rotor:
 
         def solve_rotor(vars):
             """Determines the matrix of residuals for a given guess of coefficients."""
-            # regroup vars into shape (2, N) and store guess of exit conditions
+            # create Coefficients objects for each of the relative quantities
             t1 = timer()
-            #vars = vars.reshape(2, -1)
-            #self.exit.M_rel = Coefficients(vars[0])
-            #self.exit.beta = Coefficients(vars[1])
             self.exit.M_rel = Coefficients(vars)
             self.exit.beta = Coefficients()
             self.exit.T_0_rel = Coefficients()
@@ -165,8 +165,7 @@ class Rotor:
                         np.power(
                             self.exit.T_0_rel.value[index] / self.inlet.T_0_rel.value[index],
                             gamma_ratio
-                        )
-                        - utils.Defaults.Y_p
+                        ) - self.Y_p
                         * (1 - self.inlet.p.value[index] / self.inlet.p_0_rel.value[index])
                     )
                 )
@@ -188,8 +187,6 @@ class Rotor:
                     )
                 )
 
-                #beta_2 = np.polyval(self.exit.beta.coefficients, r_2_fine)
-
                 # get variation in mass flow rate at the inlet radial nodes
                 dm_dr_2 = (
                     np.power(
@@ -206,7 +203,6 @@ class Rotor:
 
             # expand primary flow variables onto new grid
             self.exit.value("M_rel")
-            #self.exit.value("beta")
 
             # get final relative stagnation values for upper bound of streamtube
             self.exit.T_0_rel.value[-1] = (
@@ -218,8 +214,7 @@ class Rotor:
                     np.power(
                         self.exit.T_0_rel.value[-1] / self.inlet.T_0_rel.value[-1],
                         gamma_ratio
-                    )
-                    - utils.Defaults.Y_p
+                    ) - self.Y_p
                     * (1 - self.inlet.p.value[-1] / self.inlet.p_0_rel.value[-1])
                 )
             )
@@ -274,16 +269,12 @@ class Rotor:
                 (self.exit.T_0.value - self.inlet.T_0.value)
                 / (self.inlet.T.value * (utils.gamma - 1) * M_1_blade**2)
             )
-            self.exit.dpsi = self.exit.psi / psi_1 - 1
-
-            # convert stage loading residuals to a (1, N) residual array
-            #dpsi_buckets = np.array_split(self.exit.dpsi, solutions.shape[1])
-            #solutions[0] = np.array([np.sqrt(np.mean(bucket**2)) for bucket in dpsi_buckets])
+            #self.exit.dpsi = self.exit.psi / psi_1 - 1
 
             # calculate exit entropy distribution
             self.exit.s.value = (
                 self.inlet.s.value
-                + np.log(self.exit.T.value / self.inlet.T.value)/ (utils.gamma - 1)
+                + np.log(self.exit.T.value / self.inlet.T.value) / (utils.gamma - 1)
                 - np.log(self.exit.p.value / self.inlet.p.value) / utils.gamma
             )
 

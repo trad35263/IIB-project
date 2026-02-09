@@ -22,13 +22,10 @@ class Stator:
     Y_p : float
         Stagnation pressure loss coefficient.
     """
-    def __init__(self, Y_p, is_rotor = False, phi = None, psi = None, vortex_exponent = None):
+    def __init__(self, Y_p):
         """Create instance of the Blade_row class."""
         # store input variables
         self.Y_p = Y_p
-        self.phi = phi
-        self.psi = psi
-        self.vortex_exponent = vortex_exponent
         
         # hub radius is set by global hub-tip ratio
         self.r_hub = utils.Defaults.hub_tip_ratio
@@ -185,7 +182,7 @@ class Stator:
         # find stagnation quantities via no isentropic stagnation temperature change
         self.exit.T_0.value = self.inlet.T_0.value
         self.exit.p_0.value = (
-            self.inlet.p_0.value * (1 - utils.Defaults.Y_p * (1 - self.inlet.p.value / self.inlet.p_0.value))
+            self.inlet.p_0.value * (1 - self.Y_p * (1 - self.inlet.p.value / self.inlet.p_0.value))
         )
 
         # solve iteratively

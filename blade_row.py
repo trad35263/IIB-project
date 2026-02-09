@@ -1252,7 +1252,7 @@ class Blade_row:
 
 # plotting functions ------------------------------------------------------------------------------
 
-    def draw_blades(self):
+    def old_draw_blades(self):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
         # initialise arrays to store blade shape data in
         self.xx = np.empty(len(self.inlet), dtype=object)
@@ -1404,3 +1404,12 @@ class Blade_row:
             ),
             colour = 'C0'
         )
+
+    def draw_blades(self):
+        """Generates an x-y representation of the blade shape."""
+        # set resolution
+        n = 100
+
+        # initialise empty arrays to store x- and y-data in
+        self.xx = np.zeros((3, n))
+        self.yy = np.zeros((3, n))

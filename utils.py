@@ -65,7 +65,7 @@ class Defaults:
     ]
 
     # code iteration parameters
-    fine_grid = 31
+    fine_grid = 61
 
     # default dimensional values
     diameter = 0.14

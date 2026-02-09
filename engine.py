@@ -373,7 +373,7 @@ class Engine:
 
 # plotting functions ------------------------------------------------------------------------------
     
-    def plot_velocity_triangles(self):
+    def old_plot_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
         # determine factor to scale Mach triangles by
         scaling = 1 / (4 * self.M_1)
@@ -490,7 +490,7 @@ class Engine:
             path = os.path.join(directory, filename)
             plt.savefig(path, dpi = 300)
 
-    def plot_contours(self):
+    def old_plot_contours(self):
         """Creates a plot of a section view of the engine with contours of a specified quantity."""
         # plotting parameters
         alpha = 0.5
@@ -923,6 +923,45 @@ class Engine:
 
             # create legend
             ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
+
+    def plot_velocity_triangles(self):
+        """Plots the Mach triangles and approximate blade shapes for the compressor."""
+        # create plot
+        fig, ax = plt.subplots(figsize = (14, 6))
+
+        # coordinates for a brace
+        verts = [
+            (-0.15, -0.30),
+            (-0.05, -0.30),
+            (-0.05, -0.125),
+            (-0.05, 0.00),
+            (0.00, 0.00),
+            (-0.05, 0.00),
+            (-0.05, 0.125),
+            (-0.05, 0.30),
+            (-0.15, 0.30)
+        ]
+        codes = [
+            Path.MOVETO,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3
+        ]
+
+        # labels for plotting
+        labels = ["HUB", "MID-SPAN", "TIP"]
+
+        # array of spanwise position indices to plot
+        spanwise_positions = [0, int(np.floor(utils.Defaults.fine_grid / 2)), -1]
+
+        for blade_row in self.blade_rows:
+
+            pass
 
     def plot_spanwise(self, quantities = utils.Defaults.quantity_list):
         """Plots the spanwise variation of flow angle at each axial position."""
