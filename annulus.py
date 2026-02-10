@@ -35,7 +35,7 @@ class Annulus:
         self.r_hub = utils.Defaults.hub_tip_ratio
         self.r_casing = 1
         self.r_mean = 0.5 * (self.r_hub + self.r_casing)
-        self.rr = np.linspace(self.r_hub, self.r_casing, utils.Defaults.fine_grid)
+        self.rr = np.linspace(self.r_hub, self.r_casing, utils.Defaults.solver_grid)
 
         # define spanwise distributions of primary flow variables
         self.M.value = np.polyval(self.M.coefficients, self.rr)

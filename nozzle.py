@@ -281,7 +281,7 @@ class Nozzle:
                 r_2_fine = np.linspace(
                     self.exit.rr[index],
                     self.exit.rr[index] + 2 * (self.inlet.rr[index + 1] - self.inlet.rr[index]),
-                    utils.Defaults.fine_grid
+                    utils.Defaults.solver_grid
                 )
 
                 # evaluate relative Mach numbers and flow angles on fine, local grid

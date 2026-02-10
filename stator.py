@@ -89,7 +89,7 @@ class Stator:
                 r_2_fine = np.linspace(
                     self.exit.rr[index],
                     self.exit.rr[index] + 2 * (self.inlet.rr[index + 1] - r_1_i),
-                    utils.Defaults.fine_grid
+                    utils.Defaults.solver_grid
                 )
 
                 # evaluate Mach numbers and flow angles on fine, local grid
@@ -201,9 +201,62 @@ class Stator:
         )
 
     def calculate_chord(self, aspect_ratio, diffusion_factor):
-        """"""
-        pass
+        """Applies empirical relations to design the pitch-to-chord distributions."""
+        # get nominal pitch-to-chord distribution
+        self.exit.pitch_to_chord = (
+            2 * (
+                diffusion_factor - 1 + self.exit.M.value / self.inlet.M.value
+                * np.sqrt(self.exit.T.value / self.inlet.T.value)
+            ) / (
+                np.sin(np.abs(self.inlet.alpha.value))
+                - self.exit.M.value / self.inlet.M.value
+                * np.sqrt(self.exit.T.value / self.inlet.T.value)
+                * np.sin(np.abs(self.exit.alpha.value))
+            )
+        )
+
+        # calculate minimum number of blades to achieve aspect ratio
+        self.no_of_blades = 2
+        while True:
+
+            # calculate pitch and chord distributions
+            self.exit.pitch = 2 * np.pi * self.exit.rr / self.no_of_blades
+            self.exit.chord = self.exit.pitch / self.exit.pitch_to_chord
+
+            # calculate mean-line aspect ratio
+            r_mean = 0.5 * (self.exit.rr[0] + self.exit.rr[-1])
+            #pitch_mean = np.interp(r_mean, self.exit.rr, self.exit.pitch)
+            chord_mean = np.interp(r_mean, self.exit.rr, self.exit.chord)
+            AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
+
+            # check if aspect ratio criterion is met
+            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_blades:
+
+                break
+
+            # increment number of blades
+            self.no_of_blades += 1
+
+        # calculate true aspect ratio distribution
+        self.exit.aspect_ratio = (self.exit.rr[-1] - self.exit.rr[0]) / self.exit.chord
 
     def calculate_deviation(self, deviation_constant):
-        """"""
-        pass
+        """Calculates the deviation distribution using Carter and Howell."""
+        # store inlet metal angles
+        self.inlet.metal_angle = self.inlet.alpha.value
+
+        # store inlet and exit angles in degrees for convenience
+        inlet_angles = utils.rad_to_deg(self.inlet.alpha.value)
+        exit_angles = utils.rad_to_deg(self.exit.alpha.value)
+
+        # calculate deviation coefficient using Howell's correlation for a circular camber line
+        m = 0.23 + exit_angles / 500
+
+        # calculate exit metal angles and corresponding deviation
+        self.exit.metal_angle = (
+            utils.deg_to_rad(
+                exit_angles - m * inlet_angles * np.sqrt(self.exit.pitch_to_chord)
+                / (1 + m * np.sqrt(self.exit.pitch_to_chord))
+            )
+        )
+        self.exit.deviation = self.exit.alpha.value - self.exit.metal_angle

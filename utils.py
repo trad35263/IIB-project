@@ -33,9 +33,9 @@ class Defaults:
     psi = 0.1596
 
     # default geometry parameters
-    aspect_ratio = 2
-    diffusion_factor = 0.5
-    deviation_constant = 1
+    aspect_ratio = 2.5
+    diffusion_factor = 0.4
+    deviation_constant = 0.23
     max_blades = 20
 
     # default plotting parameters
@@ -51,8 +51,8 @@ class Defaults:
         ],
         [
             'pitch_to_chord', 'Pitch-to-chord ratio',
-            's', 'Pitch',
-            'c', 'Chord'
+            'pitch', 'Pitch',
+            'chord', 'Chord'
         ],
         [
             'phi', 'Flow coefficient',
@@ -67,25 +67,22 @@ class Defaults:
             'T_0', 'Stagnation temperature'
         ],
         [
-            'p', 'Static pressure',
-            'T', 'Static temperature'
-        ],
-        [
             'dpsi', 'Stage loading residual',
             'dr', 'Radial equilibrium residual'
         ]
     ]
 
     # code iteration parameters
-    fine_grid = 61
+    solver_grid = 61
+    export_grid = 200
 
     # default dimensional values
-    #altitude = 10000
-    #flight_speed = 30
-    #thrust = 20
+    altitude = 10000
+    flight_speed = 30
+    thrust = 20
 
     # placeholder for now
-    blade_row_axial_depth = 0.5
+    #blade_row_axial_depth = 0.5
 
     # specify inlet swirl
     inlet_swirl = 0

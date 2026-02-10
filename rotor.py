@@ -65,7 +65,7 @@ class Rotor:
 
         return string
 
-    def design(self, phi, psi, n):
+    def design(self, phi_mean, psi_mean, n):
         """Determines the rotor blade geometry necessary to satisfy the given stage parameters."""        
         # initialise empty Coefficients instances for relative quantities
         self.inlet.M_rel = Coefficients()
@@ -77,7 +77,7 @@ class Rotor:
         self.inlet.r_mean = np.sqrt(0.5 * (self.inlet.rr[0]**2 + self.inlet.rr[-1]**2))
 
         # get variation in blade Mach number
-        M_1_blade_mean = self.inlet.M.value * np.cos(self.inlet.alpha.value) / phi
+        M_1_blade_mean = self.inlet.M.value * np.cos(self.inlet.alpha.value) / phi_mean
         T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.T.value)
         M_1_blade = M_1_blade_mean * (self.inlet.rr / self.inlet.r_mean) * np.sqrt(T_mean / self.inlet.T.value)
 
@@ -91,10 +91,7 @@ class Rotor:
         self.inlet.M_rel.calculate(self.inlet.rr, len(self.inlet.M.coefficients))
 
         # get variation in stage loading coefficient
-        #r_mean = np.sqrt(0.5 * (self.inlet.rr[-1]**2 + self.inlet.rr[0]**2))
-        psi_1 = psi * np.power(self.inlet.rr / self.inlet.r_mean, n - 1)
-
-        print(f"psi_1: {psi_1}")
+        psi = psi_mean * np.power(self.inlet.r_mean / self.inlet.rr, n + 1)
 
         # get spanwise variation of relative stagnation properties
         self.inlet.T_0_rel.value = (
@@ -148,7 +145,7 @@ class Rotor:
                 r_2_fine = np.linspace(
                     self.exit.rr[index],
                     self.exit.rr[index] + 2 * (self.inlet.rr[index + 1] - self.inlet.rr[index]),
-                    utils.Defaults.fine_grid
+                    utils.Defaults.solver_grid
                 )
 
                 # evaluate relative Mach number on fine, local grid
@@ -177,7 +174,7 @@ class Rotor:
                     np.arcsin(
                         (
                             M_1_blade[index] * (
-                                psi_1[index] - (self.exit.rr[index] / self.inlet.rr[index])**2
+                                psi[index] - (self.exit.rr[index] / self.inlet.rr[index])**2
                             ) + self.inlet.M.value[index] * np.sin(self.inlet.alpha.value[index])
                         ) / (
                             self.exit.rr[index] / self.inlet.rr[index] * M_2_rel[0] * np.sqrt(
@@ -226,7 +223,7 @@ class Rotor:
                 np.arcsin(
                     (
                         M_1_blade[-1] * (
-                            psi_1[-1] - (self.exit.rr[-1] / self.inlet.rr[-1])**2
+                            psi[-1] - (self.exit.rr[-1] / self.inlet.rr[-1])**2
                         ) + self.inlet.M.value[-1] * np.sin(self.inlet.alpha.value[-1])
                     ) / (
                         self.exit.rr[-1] / self.inlet.rr[-1] * self.exit.M_rel.value[-1] * np.sqrt(
@@ -271,7 +268,7 @@ class Rotor:
                 (self.exit.T_0.value - self.inlet.T_0.value)
                 / (self.inlet.T.value * (utils.gamma - 1) * M_1_blade**2)
             )
-            #self.exit.dpsi = self.exit.psi / psi_1 - 1
+            #self.exit.dpsi = self.exit.psi / psi - 1
 
             # calculate exit entropy distribution
             self.exit.s.value = (
@@ -360,29 +357,12 @@ class Rotor:
                 diffusion_factor - 1 + self.exit.M_rel.value / self.inlet.M_rel.value
                 * np.sqrt(self.exit.T.value / self.inlet.T.value)
             ) / (
-                np.sin(self.inlet.beta.value)
+                np.sin(np.abs(self.inlet.beta.value))
                 - self.exit.M_rel.value / self.inlet.M_rel.value
                 * np.sqrt(self.exit.T.value / self.inlet.T.value)
-                * np.sin(self.exit.beta.value)
+                * np.sin(np.abs(self.exit.beta.value))
             )
         )
-
-        x = (
-            diffusion_factor - 1 + self.exit.M_rel.value / self.inlet.M_rel.value
-            * np.sqrt(self.exit.T.value / self.inlet.T.value)
-        )
-
-        y = (
-            np.sin(self.inlet.beta.value)
-            - self.exit.M_rel.value / self.inlet.M_rel.value
-            * np.sqrt(self.exit.T.value / self.inlet.T.value)
-            * np.sin(self.exit.beta.value)
-        )
-
-        print(f"x: {x}")
-        print(f"y: {y}")
-
-        print(f"self.exit.pitch_to_chord: {self.exit.pitch_to_chord}")
 
         # calculate minimum number of blades to achieve aspect ratio
         self.no_of_blades = 2
@@ -411,6 +391,9 @@ class Rotor:
 
     def calculate_deviation(self, deviation_constant):
         """Calculates the deviation distribution using Carter and Howell."""
+        # store inlet metal angles
+        self.inlet.metal_angle = self.inlet.beta.value
+        
         # store inlet and exit angles in degrees for convenience
         inlet_angles = utils.rad_to_deg(self.inlet.beta.value)
         exit_angles = utils.rad_to_deg(self.exit.beta.value)
