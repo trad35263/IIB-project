@@ -69,6 +69,9 @@ class Defaults:
         [
             'dpsi', 'Stage loading residual',
             'dr', 'Radial equilibrium residual'
+        ],
+        [
+            'v_x', 'Axial velocity'
         ]
     ]
 
@@ -272,17 +275,17 @@ def bound(x, a = 0.01, b = 0.5, c = 0.6):
     
 # 0.9 faster cumulative trapezoid function
 
-def cumulative_trapezoid(y, x, initial = 0):
-    """Compute cumulative trapezoidal integral for arrays y(x)."""
-    # 
+def cumulative_trapezoid(x, y, initial = 0):
+    """Computes the cumulative trapezoidal integral for arrays x and y = y(x)."""
+    # extract necessary x-coordinate information.
     dx = np.diff(x)
     mids = 0.5 * (y[:-1] + y[1:])
 
     # cumulative sum of mids * dx, prepend initial
-    cum = np.empty(len(x), dtype=y.dtype)
-    cum[0] = initial
-    cum[1:] = np.cumsum(mids * dx) + initial
-    return cum
+    result = np.zeros(len(x))
+    result[0] = initial
+    result[1:] = np.cumsum(mids * dx) + initial
+    return result
 
 M_infinity = 0.05877
 M_1 = 0.152

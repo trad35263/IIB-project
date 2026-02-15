@@ -13,6 +13,23 @@ class Annulus:
     """"""
     def __init__(self):
         """Creates an instance of the Annulus class."""
+        # create empty arrays for each of the primary flow variables
+        self.M = np.zeros(utils.Defaults.solver_grid)
+        self.alpha = np.zeros(utils.Defaults.solver_grid)
+        self.T_0 = np.zeros(utils.Defaults.solver_grid)
+        self.p_0 = np.zeros(utils.Defaults.solver_grid)
+        self.s = np.zeros(utils.Defaults.solver_grid)
+
+        # create empty array for secondary flow variables
+        self.v_x = np.zeros(utils.Defaults.solver_grid)
+        self.v_theta = np.zeros(utils.Defaults.solver_grid)
+        self.T = np.zeros(utils.Defaults.solver_grid)
+        self.p = np.zeros(utils.Defaults.solver_grid)
+
+        # create empty array of radius values
+        self.rr = np.zeros(utils.Defaults.solver_grid)
+
+        return
         # initialise empty Coefficients instances for each primary flow variable
         self.M = Coefficients()
         self.alpha = Coefficients()

@@ -6,6 +6,7 @@ from matplotlib.path import Path
 import matplotlib.patches as patches
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import root_scalar
+from scipy.optimize import least_squares
 from scipy.io import savemat
 from time import perf_counter as timer
 import itertools
@@ -60,6 +61,8 @@ class Engine:
         self.M_flight = scenario.M
         self.C_th_design = scenario.C_th
         self.hub_tip_ratio = scenario.hub_tip_ratio
+        self.diameter = scenario.diameter
+        self.p_atm = scenario.p
 
         # store input variables
         self.no_of_stages = int(no_of_stages)
@@ -75,11 +78,35 @@ class Engine:
         for index in range(self.no_of_stages):
 
             # create stage and blade rows and store in lists
-            self.stages.append(Stage(self.phi, self.psi, self.vortex_exponent, self.Y_p, index))
+            stage = Stage(self.phi, self.psi, self.vortex_exponent, self.Y_p, index)
+            self.stages.append(stage)
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
-        # create nozzle
+            # handle first stage
+            if index == 0:
+
+                # set first stage to default inlet conditions
+                stage.rotor.inlet = Annulus()
+                """stage.rotor.inlet.set_inlet_conditions(
+                    self.M_1, utils.Defaults.inlet_swirl, self.solver_order
+                )"""
+
+            # for all other stages
+            else:
+
+                # set rotor exit conditions to previous stage stator exit conditions
+                stage.rotor.inlet = self.stages[index - 1].stator.exit
+
+            stage.rotor.exit = Annulus()
+            stage.stator.exit = Annulus()
+
+            # set stator exit conditions to rotor exit conditions
+            stage.stator.inlet = stage.rotor.exit
+
+        # create nozzle and set inlet conditions to final stage stator exit conditions
         self.nozzle = Nozzle()
+        self.nozzle.inlet = self.stages[-1].stator.exit
+        self.nozzle.exit = Annulus()
 
         xx = []
         yy = []
@@ -110,20 +137,22 @@ class Engine:
             f"{utils.Colours.CYAN}Performing analysis with solver order: {self.solver_order}..."
             f"{utils.Colours.END}"
         )
+        self.design()
+        input()
 
         # store initial guesses
-        x0 = 0.1
-        x1 = 0.2
+        #x0 = 0.1
+        #x1 = 0.2
 
         # solve iteratively
-        sol = root_scalar(
+        """sol = root_scalar(
             solve_thrust, x0 = x0, x1 = x1, method = "secant", xtol = 1e-4, rtol = 1e-4
-        )
+        )"""
 
-        fig, ax = plt.subplots()
+        """fig, ax = plt.subplots()
         ax.plot(xx, yy, linestyle = '', marker = '.', markersize = 6)
         ax.axhline(self.C_th_design)
-        plt.show()
+        plt.show()"""
 
         # end timer and print feedback
         t2 = timer()
@@ -181,49 +210,32 @@ class Engine:
 
 # design functions --------------------------------------------------------------------------------
 
-    def design(self):
+    def old_design(self):
         """Determines appropriate values for blade metal angles for the given requirements."""
         # iterate over all stages
         print(f"\nself.M_1: {self.M_1}")
         for index, stage in enumerate(self.stages):
 
-            # store rotor and stator as variables for convenience
-            rotor = stage.blade_rows[0]
-            stator = stage.blade_rows[1]
-
-            # handle first stage
-            if index == 0:
-
-                # set first stage to default inlet conditions
-                rotor.inlet = Annulus()
-                rotor.inlet.set_inlet_conditions(
-                    self.M_1, utils.Defaults.inlet_swirl, self.solver_order
-                )
-
             # handle all other stages
-            else:
+            if index != 0:
 
                 # set stage inlet to previous stage exit conditions
-                rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
+                stage.rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
 
             # define rotor blade geometry
             t1 = timer()
-            rotor.design(stage.phi, stage.psi, self.vortex_exponent)
+            stage.rotor.design(stage.phi, stage.psi, self.vortex_exponent)
             t2 = timer()
             utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
             # stator inlet conditions are rotor exit conditions
-            stator.inlet = copy.deepcopy(rotor.exit)
+            stage.stator.inlet = copy.deepcopy(stage.rotor.exit)
 
             # define stator blade geometry
             t1 = timer()
-            stator.design()
+            stage.stator.design()
             t2 = timer()
             utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-            # store rotor and stator as such in stage for convenience
-            stage.rotor = rotor
-            stage.stator = stator
 
         # nozzle inlet conditions are final stator exit conditions
         self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
@@ -235,28 +247,54 @@ class Engine:
         t2 = timer()
         utils.debug(f"Nozzle design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
+        # evaluate engine performance
         t1 = timer()
         self.evaluate()
         t2 = timer()
         utils.debug(f"Engine evaluation duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
 
-    def empirical_design(self):
-        """Determines the actual geometry of the engine."""
-        geometry = self.geometry
+    def design(self):
+        """Designs the engine system for the given flight scenario and inputs."""
+        # function to solve roots
+        def solve_thrust(vars):
 
-        aspect_ratio = geometry.aspect_ratio
-        diffusion_factor = geometry.diffusion_factor
-        deviation_constant = geometry.deviation_constant
+            # create empty array of residuals to be populated
+            residuals = np.zeros_like(vars)
 
-        for blade_row in self.blade_rows:
+            # store inlet Mach number and set at rotor inlet
+            self.M_1 = vars[0]
+            self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
+            self.m_dot_1 = utils.mass_flow_function(self.M_1)
 
-            blade_row.calculate_chord(aspect_ratio, diffusion_factor)
-            blade_row.calculate_deviation(deviation_constant)
+            # loop over all blade rows (including nozzle)
+            for index, (blade_row, var) in enumerate(zip(self.blade_rows, vars[1:])):
 
-        geometry.no_of_blades = [blade_row.no_of_blades for blade_row in self.blade_rows]
+                # design component, setting hub axial velocity
+                blade_row.design(var, self.hub_tip_ratio)
+
+                # residual is mass flow rate delta
+                residuals[index] = blade_row.m_dot - self.m_dot_1
+
+            # evaluate engine performance
+            self.evaluate()
+
+            # final residuals come from nozzle static pressure boundary condition and thrust target
+            residuals[-2] = self.nozzle.exit.p[-1] - self.p_atm
+            residuals[-1] = self.C_th - self.C_th_design
+
+            print(f"residuals: {residuals}")
+
+            return residuals
+        
+        # initial guess and solve iteratively
+        x0 = 0.1 * np.ones(len(self.blade_rows) + 2)
+        sol = least_squares(solve_thrust, x0 = x0)
 
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
+        # return for now
+        self.C_th = self.C_th_design
+        return 
         # investigate nozzle performance
         self.nozzle.evaluate(self.hub_tip_ratio)
         self.nozzle_area_ratio = self.nozzle.area_ratio
@@ -306,8 +344,79 @@ class Engine:
         self.nozzle_area_ratio = self.nozzle.A_exit / np.sum(inlet.A for inlet in self.blade_rows[0].inlet)
         self.pressure_ratio = np.sum([exit.m * exit.flow_state.p_0 for exit in self.nozzle.exit])"""
 
+    def empirical_design(self):
+        """Determines the actual geometry of the engine."""
+        # store relevant geometry parameters separately for convenience
+        aspect_ratio = self.geometry.aspect_ratio
+        diffusion_factor = self.geometry.diffusion_factor
+        deviation_constant = self.geometry.deviation_constant
+
+        # loop over all blade rows
+        for blade_row in self.blade_rows:
+
+            # calculate chord distribution and deviation
+            blade_row.calculate_chord(aspect_ratio, diffusion_factor)
+            blade_row.calculate_deviation(deviation_constant)
+
+        # store list containing number of blades for each row
+        self.geometry.no_of_blades = [blade_row.no_of_blades for blade_row in self.blade_rows]
+
+    def dimensional_values(self):
+        """Convert some values back to dimensional values for export to CFD."""
+        # get mean of mean-line chords for each blade row
+        chords = [np.interp(
+            0.5 * (blade_row.exit.rr[0] + blade_row.exit.rr[-1]),
+            blade_row.exit.rr, blade_row.exit.axial_chord
+        ) for blade_row in self.blade_rows]
+        nominal_chord = np.mean(chords)
+
+        # convert to mm
+        chord_spacing = 4
+        nominal_chord_mm = chord_spacing * nominal_chord * self.diameter / 2
+
+        # space blade rows one nominal chord apart
+        #self.xx = np.linspace(-0.1, len(self.blade_rows) + 0.1, utils.Defaults.export_grid)
+        xx = nominal_chord * np.repeat(np.arange(len(self.blade_rows)), 2)
+
+        # add tip axial chord to the second x-element corresponding to each blade row
+        xx[1::2] += np.array([
+            blade_row.exit.axial_chord[-1] for blade_row in self.blade_rows
+        ])
+
+        # fit spline through casing and hub radii
+        r_casing_spline = make_interp_spline(
+            xx,
+            #[blade_row.exit.rr[-1] for blade_row in self.blade_rows],
+            [
+                x.rr[-1] for blade_row in self.blade_rows
+                for x in (blade_row.inlet, blade_row.exit)
+            ],
+            k = 3,
+            bc_type = "clamped"
+        )
+        r_hub_spline = make_interp_spline(
+            xx,
+            [
+                x.rr[0] for blade_row in self.blade_rows
+                for x in (blade_row.inlet, blade_row.exit)
+            ],
+            k = 3,
+            bc_type = "clamped"
+        )
+
+        xx_mm = np.linspace(-0.1, len(self.blade_rows) + 0.1, utils.Defaults.export_grid)
+        r_casing_mm = r_casing_spline(xx_mm)
+        r_hub_mm = r_hub_spline(xx_mm)
+
+        print(f"xx_mm: {xx_mm}")
+        print(f"r_casing_mm: {r_casing_mm}")
+        print(f"r_hub_mm: {r_hub_mm}")
+
     def export(self):
         """Exports the engine's parameters as a .mat file for CFD."""
+        # get dimensional axial and radial coordinates
+        self.dimensional_values()
+
         # create empty dictionary
         self.export_dictionary = {}
 

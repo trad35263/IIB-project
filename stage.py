@@ -42,12 +42,12 @@ class Stage:
         self.blade_rows = []
 
         # create rotor
-        rotor = Rotor(self.Y_p, self.phi, self.psi, self.vortex_exponent)
-        self.blade_rows.append(rotor)
+        self.rotor = Rotor(self.Y_p, self.phi, self.psi, self.vortex_exponent)
+        self.blade_rows.append(self.rotor)
 
         # create stator
-        stator = Stator(self.Y_p)
-        self.blade_rows.append(stator)
+        self.stator = Stator(self.Y_p)
+        self.blade_rows.append(self.stator)
 
     def __str__(self):
         """Prints a string representation of the stage."""
