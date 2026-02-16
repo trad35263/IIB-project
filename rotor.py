@@ -2,14 +2,16 @@
 import numpy as np
 from scipy.optimize import least_squares
 from time import perf_counter as timer
+import matplotlib.pyplot as plt
 
 # import custom classes
 from annulus import Annulus
 from coefficients import Coefficients
 import utils
+from blade_row import Blade_row
 
 # define Rotor class
-class Rotor:
+class Rotor(Blade_row):
     """
     Represents a single compressor rotor and stores the associated flowfield.
     
@@ -29,6 +31,9 @@ class Rotor:
     """
     def __init__(self, Y_p, phi, psi, vortex_exponent):
         """Create instance of the Rotor class."""
+        #
+        super().__init__(Y_p, phi, psi, vortex_exponent)
+
         # store input variables
         self.Y_p = Y_p
         self.phi_mean = phi
@@ -566,13 +571,13 @@ class Rotor:
         # get nominal pitch-to-chord distribution
         self.exit.pitch_to_chord = (
             2 * (
-                diffusion_factor - 1 + self.exit.M_rel.value / self.inlet.M_rel.value
-                * np.sqrt(self.exit.T.value / self.inlet.T.value)
+                diffusion_factor - 1 + self.exit.M_rel / self.inlet.M_rel
+                * np.sqrt(self.exit.T / self.inlet.T)
             ) / (
-                np.sin(np.abs(self.inlet.beta.value))
-                - self.exit.M_rel.value / self.inlet.M_rel.value
-                * np.sqrt(self.exit.T.value / self.inlet.T.value)
-                * np.sin(np.abs(self.exit.beta.value))
+                np.sin(np.abs(self.inlet.beta))
+                - self.exit.M_rel / self.inlet.M_rel
+                * np.sqrt(self.exit.T / self.inlet.T)
+                * np.sin(np.abs(self.exit.beta))
             )
         )
 
@@ -604,11 +609,11 @@ class Rotor:
     def calculate_deviation(self, deviation_constant):
         """Calculates the deviation distribution using Carter and Howell."""
         # store inlet metal angles
-        self.inlet.metal_angle = self.inlet.beta.value
+        self.inlet.metal_angle = self.inlet.beta
         
         # store inlet and exit angles in degrees for convenience
-        inlet_angles = utils.rad_to_deg(self.inlet.beta.value)
-        exit_angles = utils.rad_to_deg(self.exit.beta.value)
+        inlet_angles = utils.rad_to_deg(self.inlet.beta)
+        exit_angles = utils.rad_to_deg(self.exit.beta)
 
         # calculate deviation coefficient using Howell's correlation for a circular camber line
         m = 0.23 + exit_angles / 500    # only exit angle? really??
@@ -620,7 +625,7 @@ class Rotor:
                 / (1 + m * np.sqrt(self.exit.pitch_to_chord))
             )
         )
-        self.exit.deviation = self.exit.beta.value - self.exit.metal_angle
+        self.exit.deviation = self.exit.beta - self.exit.metal_angle
 
         # calculate axial chord distribution
         self.exit.axial_chord = (

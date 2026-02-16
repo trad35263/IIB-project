@@ -555,6 +555,8 @@ class Engine:
         # create plot
         fig, ax = plt.subplots(figsize = (14, 6))
 
+        scaling = 1
+
         # coordinates for a brace
         verts = [
             (-0.15, -0.30),
@@ -583,11 +585,98 @@ class Engine:
         labels = ["HUB", "MID-SPAN", "TIP"]
 
         # array of spanwise position indices to plot
-        spanwise_positions = [0, int(np.floor(utils.Defaults.fine_grid / 2)), -1]
+        indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
 
-        for blade_row in self.blade_rows:
+        # create plot for displaying velocity triangles
+        fig, ax = plt.subplots(figsize = (11, 6))
 
-            pass
+        # set legend labels
+        ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
+        ax.plot([], [], color = 'C4', label = 'Relative Mach number')
+        ax.plot([], [], color = 'C3', label = 'Blade Mach number')
+
+        # configure plot
+        ax.set_aspect('equal')
+        ax.legend()
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # set axis limits
+        ax.set_xlim(-0.4, len(self.blade_rows) + 0.7)
+        ax.set_ylim(-0.7, len(indices) - 0.2)
+
+        # set title
+        ax.text(
+            0.5, 1.02,
+            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+            f"$ \\phi $ = {self.phi:.3g}, $ \\psi $ = {self.psi:.3g}, n = {self.vortex_exponent:.3g}",
+            transform = ax.transAxes,
+            ha = 'center',
+            va = 'bottom',
+            fontsize = 12
+        )
+
+        # tight layout
+        plt.tight_layout()
+
+        # iterate over all inlet and exit streamtubes chosen for plotting
+        for row, index in enumerate(indices):
+                
+            # iterate over all blade rows
+            for column, blade_row in enumerate(self.blade_rows):
+
+                # plot blade row at chosen spanwise positions
+                #blade_row.plot_blade_row(ax, column, row, index, scaling)
+                blade_row.draw_blades()
+                ax.plot(blade_row.xx[row] + column, blade_row.yy[row] + row)
+
+                # add velocity triangles
+                x_te = blade_row.xx[row][0]
+                y_te = blade_row.yy[row][0]
+
+                # annotate inlet velocity triangle
+                ax.annotate(
+                    "",
+                    xy = (column, row),
+                    xytext = (
+                        column - blade_row.inlet.v_x[index],
+                        row - blade_row.inlet.v_theta[index]
+                    ),
+                    arrowprops = dict(
+                        arrowstyle = "->", color = 'k',
+                        shrinkA = 0, shrinkB = 0, lw = 1.5
+                    )
+                )
+                
+                # annotate exit velocity triangle
+                ax.annotate(
+                    "",
+                    xy = (
+                        column + x_te + blade_row.exit.v_x[index],
+                        row + y_te + blade_row.exit.v_theta[index]
+                    ),
+                    xytext = (column + x_te, row + y_te),
+                    arrowprops = dict(
+                        arrowstyle = "->", color = 'k',
+                        shrinkA = 0, shrinkB = 0, lw = 1.5
+                    )
+                )
+
+            # add brace to plot
+            dx = 2 * len(self.stages)
+            dy = row - 0.1
+            brace = patches.PathPatch(
+                Path([(x + dx, y + dy) for x, y in verts], codes),
+                fill = False, linewidth = 1
+            )
+            ax.add_patch(brace)
+            ax.text(
+                dx + 0.15, dy,
+                f"{labels[row]}",
+                ha = "left", va = "center"
+            )
+
+        plt.show()
 
     def plot_spanwise(self, quantities = utils.Defaults.quantity_list):
         """Plots the spanwise variation of flow angle at each axial position."""

@@ -8,9 +8,10 @@ from time import perf_counter as timer
 from annulus import Annulus
 from coefficients import Coefficients
 import utils
+from blade_row import Blade_row
 
 # define Stator class
-class Stator:
+class Stator(Blade_row):
     """
     Represents a single compressor stator and stores the associated flowfield.
     
@@ -24,6 +25,9 @@ class Stator:
     """
     def __init__(self, Y_p):
         """Create instance of the Blade_row class."""
+        #
+        super().__init__(Y_p)
+
         # store input variables
         self.Y_p = Y_p
         
@@ -305,13 +309,13 @@ class Stator:
         # get nominal pitch-to-chord distribution
         self.exit.pitch_to_chord = (
             2 * (
-                diffusion_factor - 1 + self.exit.M.value / self.inlet.M.value
-                * np.sqrt(self.exit.T.value / self.inlet.T.value)
+                diffusion_factor - 1 + self.exit.M / self.inlet.M
+                * np.sqrt(self.exit.T / self.inlet.T)
             ) / (
-                np.sin(np.abs(self.inlet.alpha.value))
-                - self.exit.M.value / self.inlet.M.value
-                * np.sqrt(self.exit.T.value / self.inlet.T.value)
-                * np.sin(np.abs(self.exit.alpha.value))
+                np.sin(np.abs(self.inlet.alpha))
+                - self.exit.M / self.inlet.M
+                * np.sqrt(self.exit.T / self.inlet.T)
+                * np.sin(np.abs(self.exit.alpha))
             )
         )
 
@@ -343,11 +347,11 @@ class Stator:
     def calculate_deviation(self, deviation_constant):
         """Calculates the deviation distribution using Carter and Howell."""
         # store inlet metal angles
-        self.inlet.metal_angle = self.inlet.alpha.value
+        self.inlet.metal_angle = self.inlet.alpha
 
         # store inlet and exit angles in degrees for convenience
-        inlet_angles = utils.rad_to_deg(self.inlet.alpha.value)
-        exit_angles = utils.rad_to_deg(self.exit.alpha.value)
+        inlet_angles = utils.rad_to_deg(self.inlet.alpha)
+        exit_angles = utils.rad_to_deg(self.exit.alpha)
 
         # calculate deviation coefficient using Howell's correlation for a circular camber line
         m = 0.23 + exit_angles / 500
@@ -359,7 +363,7 @@ class Stator:
                 / (1 + m * np.sqrt(self.exit.pitch_to_chord))
             )
         )
-        self.exit.deviation = self.exit.alpha.value - self.exit.metal_angle
+        self.exit.deviation = self.exit.alpha - self.exit.metal_angle
 
         # calculate axial chord distribution
         self.exit.axial_chord = (

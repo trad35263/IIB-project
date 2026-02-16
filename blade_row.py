@@ -1315,15 +1315,16 @@ class Blade_row:
         self.xx = self.xx / 2
         self.yy = self.yy / 2
 
-    def plot_blade_row(self, ax, index, j, k, scaling = 1):
+    def plot_blade_row(self, ax, column, row, index, scaling = 1):
         """Plots a blade row onto a given axes at a specified spanwise position."""
         # plot blade shape
         self.draw_blades()
+        return
         ax.plot(self.xx[k] + index, self.yy[k] + j, color = self.colour)
 
         # store inlet and exit for convenience
-        inlet = self.inlet[k]
-        exit = self.exit[k]
+        #inlet = self.inlet[k]
+        #exit = self.exit[k]
 
         # get trailing edge coordinates
         x_te, y_te = self.xx[k][0], self.yy[k][0]
@@ -1406,10 +1407,71 @@ class Blade_row:
         )
 
     def draw_blades(self):
-        """Generates an x-y representation of the blade shape."""
-        # set resolution
-        n = 100
+        """Creates a series of x- and y- coordinates based on the blade shape data."""
+        # initialise arrays to store blade shape data in
+        self.xx = np.zeros((3, 2 * utils.Defaults.export_grid))
+        self.yy = np.zeros((3, 2 * utils.Defaults.export_grid))
 
-        # initialise empty arrays to store x- and y-data in
-        self.xx = np.zeros((3, n))
-        self.yy = np.zeros((3, n))
+        # get hub, mid-span and tip indices
+        indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
+
+        # loop over all inlet and exit angles
+        for j, index in enumerate(indices):
+
+            # construct circular camber line
+            r = 1 / (self.exit.metal_angle[index] - self.inlet.metal_angle[index])
+            x0 = -r * np.sin(self.inlet.metal_angle[index])
+            y0 = r * np.cos(self.inlet.metal_angle[index])
+            theta = np.linspace(
+                self.inlet.metal_angle[index],
+                self.exit.metal_angle[index],
+                utils.Defaults.export_grid
+            )
+            xx_0 = x0 + r * np.sin(theta)
+            yy_0 = y0 - r * np.cos(theta)
+
+            # determine cumulative length of chord line
+            ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])
+
+            # calculate derivatives in x and y with respect to l
+            dx_dl = np.gradient(xx_0, ll_0)
+            dy_dl = np.gradient(yy_0, ll_0)
+
+            # compute unit normals
+            norm = np.sqrt(dx_dl**2 + dy_dl**2)
+            nx = -dy_dl / norm
+            ny =  dx_dl / norm
+
+            # get the upper surface only from the imported aerofoil data and sort
+            zz_0 = utils.aerofoil_data
+            zz_0 = zz_0[:, zz_0[0].argsort()]
+
+            # initialise empty arrays for the upper and lower surfaces
+            xx_upper = np.zeros(xx_0.shape)
+            xx_lower = np.zeros(xx_0.shape)
+            yy_upper = np.zeros(xx_0.shape)
+            yy_lower = np.zeros(xx_0.shape)
+
+            # iterate over each datapoint
+            for i, (x, y, l) in enumerate(zip(xx_0, yy_0, ll_0)):
+
+                # add thickness to the camberline
+                dy = np.interp(l, *zz_0)
+                nx_i = np.interp(l, ll_0, nx)
+                ny_i = np.interp(l, ll_0, ny)
+                xx_upper[i] = x + dy * nx_i
+                yy_upper[i] = y + dy * ny_i
+                xx_lower[i] = x - dy * nx_i
+                yy_lower[i] = y - dy * ny_i
+
+            # reverse upper surface
+            xx_upper = xx_upper[::-1]
+            yy_upper = yy_upper[::-1]
+
+            # combine upper and lower surfaces
+            self.xx[j] = np.concatenate([xx_upper, xx_lower])
+            self.yy[j] = np.concatenate([yy_upper, yy_lower])
+
+        # resize
+        self.xx = self.xx / 2
+        self.yy = self.yy / 2
