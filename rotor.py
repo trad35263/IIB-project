@@ -357,11 +357,14 @@ class Rotor:
         self.inlet.T = self.inlet.T_0 * utils.stagnation_temperature_ratio(self.inlet.M)
         self.inlet.p = self.inlet.p_0 * utils.stagnation_temperature_ratio(self.inlet.M)
 
+        # store axial velocity
+        self.inlet.v_x = self.inlet.M * self.inlet.T
+
         # store grid of equally-spaced radial positions to consider
         self.inlet.rr = np.linspace(hub_tip_ratio, 1, utils.Defaults.solver_grid)
 
     def design(self, v_x_hub, hub_tip_ratio):
-        """New design function that uses a difference equation."""
+        """Solves for the rotor exit conditions and blade geometry."""
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
         self.exit.rr[0] = self.inlet.rr[0]
@@ -394,55 +397,21 @@ class Rotor:
 
         # determine inlet mass flow rate distribution
         dm_dr_1 = (
-            self.inlet.p_0_rel / np.sqrt(self.inlet.T_0_rel) * self.inlet.M_rel * np.power(
-                1 + 0.5 * (utils.gamma - 1) * self.inlet.M_rel**2,
-                0.5 - utils.gamma / (utils.gamma - 1)
-            ) * np.cos(self.inlet.beta) * self.inlet.rr
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.inlet.p / np.sqrt(self.inlet.T)
+            * self.inlet.M * np.cos(self.inlet.alpha) * self.inlet.rr
         )
-        m_dot_1 = utils.cumulative_trapezoid(self.inlet.rr, dm_dr_1)
+        self.inlet.m_dot = utils.cumulative_trapezoid(self.inlet.rr, dm_dr_1)
 
         # get mass flow rate through each streamtube
-        dm_dot_1 = np.diff(m_dot_1)
-
-        # get cumulative inlet mass flow
-        """dm_dr_1 = (
-            self.inlet.p / np.sqrt(self.inlet.T) * self.inlet.M_rel
-            * np.cos(self.inlet.beta) * self.inlet.rr
-        )
-        m_dot_1 = utils.cumulative_trapezoid(dm_dr_1, self.inlet.rr)
-
-        # get incremental change in inlet mass flow
-        dm_dot_1 = np.diff(m_dot_1)"""
+        dm_dot_1 = np.diff(self.inlet.m_dot)
 
         # create empty arrays of exit relative quantities
         self.exit.M_rel = np.zeros(utils.Defaults.solver_grid)
         self.exit.beta = np.zeros(utils.Defaults.solver_grid)
-
-        # store exit relative stagnation quantities at hub before looping
-        self.exit.T_0_rel = (
-            np.r_[self.inlet.T_0_rel[0], np.zeros(utils.Defaults.solver_grid - 1, )]
-        )
-        self.exit.p_0_rel = (
-            np.r_[
-                self.inlet.p_0_rel[0]
-                - self.Y_p * (1 - utils.stagnation_pressure_ratio(self.inlet.M[0])),
-                np.zeros(utils.Defaults.solver_grid - 1, )
-            ]
-        )
-
-        # store exit static quantities at hub
-        """self.exit.T = (
-            np.r_[
-                self.inlet.T_0_rel[0] * utils.stagnation_temperature_ratio(self.inlet.M_rel[0]),
-                np.zeros(utils.Defaults.solver_grid - 1, )
-            ]
-        )
-        self.exit.p = (
-            np.r_[
-                self.inlet.p_0_rel[0] * utils.stagnation_pressure_ratio(self.inlet.M_rel[0]),
-                np.zeros(utils.Defaults.solver_grid - 1, )
-            ]
-        )"""
+        self.exit.M_blade = np.zeros(utils.Defaults.solver_grid)
+        self.exit.T_0_rel = np.zeros(utils.Defaults.solver_grid)
+        self.exit.p_0_rel = np.zeros(utils.Defaults.solver_grid)
 
         # loop over all r values
         for index in range(len(self.inlet.rr)):
@@ -457,30 +426,19 @@ class Rotor:
                     utils.Defaults.solver_grid
                 )
 
-                # get variation in mass flow rate at the inlet radial nodes
+                # determine local exit mass flow rate distribution
                 dm_dr_2 = (
-                    np.power(
-                        1 + half_gamma_minus_1 * self.exit.M_rel[index - 1]**2, - gamma_ratio + 0.5
-                    ) * self.exit.M_rel[index - 1] * np.cos(self.exit.beta[index - 1]) * r_2_fine
-                )
-                m_dot_2 = (
-                    self.exit.p_0_rel[index - 1] / np.sqrt(self.exit.T_0_rel[index - 1])
-                    * utils.cumulative_trapezoid(dm_dr_2, r_2_fine)
-                )
-
-                # determine inlet mass flow rate distribution
-                dm_dr_2 = (
-                    self.exit.p_0_rel[index] / np.sqrt(self.exit.T_0_rel[index])
-                    * self.exit.M_rel[index] * np.power(
-                        1 + 0.5 * (utils.gamma - 1) * self.exit.M_rel[index]**2,
+                    2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+                    * self.exit.p_0_rel[index - 1] / np.sqrt(self.exit.T_0_rel[index - 1])
+                    * self.exit.M_rel[index - 1] * np.power(
+                        1 + 0.5 * (utils.gamma - 1) * self.exit.M_rel[index - 1]**2,
                         0.5 - utils.gamma / (utils.gamma - 1)
-                    ) * np.cos(self.exit.beta[index]) * r_2_fine
+                    ) * np.cos(self.exit.beta[index - 1]) * r_2_fine
                 )
-                m_dot_3 = utils.cumulative_trapezoid(r_2_fine, dm_dr_2)
+                m_dot_2 = utils.cumulative_trapezoid(r_2_fine, dm_dr_2)
 
                 # interpolate to find upper bound of corresponding streamtube
                 self.exit.rr[index] = np.interp(dm_dot_1[index - 1], m_dot_2, r_2_fine)
-                print(f"self.exit.rr[{index}]: {self.exit.rr[index]}")
 
             # solve for relative stagnation temperature at upper bound of streamtube
             self.exit.T_0_rel[index] = (
@@ -548,20 +506,36 @@ class Rotor:
                         - self.exit.T[index - 1] * ds
                     )
                 )
-                print(f"dT_0: {dT_0}")
-                print(f"dr_v_theta: {dr_v_theta}")
-                print(f"ds: {ds}")
-                print(f"x: {x}")
 
-                # extract Mach number from dimensionless velocity information
-                M_2_T_T_0 = self.exit.v_x[index]**2 + self.exit.v_theta[index]**2
-                self.exit.M[index] = M_2_T_T_0 / (1 - M_2_T_T_0 * (utils.gamma - 1) / 2)
+            # extract Mach number from dimensionless velocity information
+            M_2_T_T_0 = (
+                (self.exit.v_x[index]**2 + self.exit.v_theta[index]**2)
+                / self.exit.T_0[index]
+            )
+            self.exit.M[index] = np.sqrt(M_2_T_T_0 / (1 - M_2_T_T_0 * (utils.gamma - 1) / 2))
 
-        # calculate downstream relative Mach number and flow angle
-        print(f"self.exit.v_x: {self.exit.v_x}")
-        print(f"self.exit.v_theta: {self.exit.v_theta}")
-        print(f"self.exit.rr: {self.exit.rr}")
-        print(f"self.exit.M: {self.exit.M}")
+            # get flow angle from dimensionless velocity information
+            self.exit.alpha[index] = np.arctan2(self.exit.v_theta[index], self.exit.v_x[index])
+
+            # get static temperature and pressure
+            self.exit.T[index] = (
+                self.exit.T_0[index] * utils.stagnation_temperature_ratio(self.exit.M[index])
+            )
+            self.exit.p[index] = (
+                self.exit.p_0[index] * utils.stagnation_pressure_ratio(self.exit.M[index])
+            )
+
+            # find blade Mach number
+            self.exit.M_blade[index] = (
+                self.inlet.M_blade[index] * self.exit.rr[index] / self.inlet.rr[index]
+                * np.sqrt(self.inlet.T[index] / self.exit.T[index])
+            )
+
+            # get variation in relative Mach number and flow angle via vector algebra
+            z_x = self.exit.M[index] * np.cos(self.exit.alpha[index])
+            z_y = self.exit.M[index] * np.sin(self.exit.alpha[index]) - self.exit.M_blade[index]
+            self.exit.M_rel[index] = np.hypot(z_x, z_y)
+            self.exit.beta[index] = np.arctan2(z_y, z_x)
 
         # calculate exit stagnation conditions
         self.exit.T = self.exit.T_0_rel * utils.stagnation_temperature_ratio(self.exit.M_rel)
@@ -569,23 +543,22 @@ class Rotor:
         self.exit.p_0 = self.exit.p / utils.stagnation_pressure_ratio(self.exit.M)
 
         # calculate total mass flow rate
-        dm_dr = (
-            2 * utils.gamma / (1 - hub_tip_ratio**2)
-            * self.exit.p / self.exit.p_0
-            * np.sqrt(self.exit.T_0 / self.exit.T)
+        dm_dr_2 = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.exit.p / np.sqrt(self.exit.T)
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
-        self.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr)[-1]
+        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr_2)
 
     def evaluate(self):
         """Evaluates performance of the rotor blade row."""
         # find flow coefficient
-        self.exit.phi = (
-            self.inlet.M.value * np.cos(self.inlet.alpha.value)
-            / (
-                self.inlet.M.value * np.sin(self.inlet.alpha.value)
-                - self.inlet.M_rel.value * np.sin(self.inlet.beta.value)
-            )
+        self.exit.phi = self.inlet.M * np.cos(self.inlet.alpha) / self.inlet.M_blade
+
+        # find stage loading coefficient
+        self.exit.psi = (
+            (self.exit.T_0 - self.inlet.T_0)
+            / (self.inlet.T * (utils.gamma - 1) * self.inlet.M_blade**2)
         )
 
     def calculate_chord(self, aspect_ratio, diffusion_factor):

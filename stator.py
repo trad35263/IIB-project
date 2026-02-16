@@ -198,14 +198,10 @@ class Stator:
         utils.debug(f"sol: {sol}")
 
     def design(self, v_x_hub, hub_tip_ratio):
-        """"""
+        """Solves for the stator exit conditions and blade geometry."""
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
         self.exit.rr[0] = self.inlet.rr[0]
-
-        print(f"self.inlet.rr: {self.inlet.rr}")
-        print(f"self.inlet.p_0: {self.inlet.p_0}")
-        print(f"self.inlet.T_0: {self.inlet.T_0}")
 
         # stagnation temperature is conserved across stator row
         self.exit.T_0 = self.inlet.T_0
@@ -222,18 +218,15 @@ class Stator:
         self.exit.alpha = np.zeros(utils.Defaults.solver_grid)  # technically this is done already but included for clarity
 
         # determine inlet mass flow rate distribution
-        dm_dr_2 = (
-            self.inlet.p_0 / np.sqrt(self.inlet.T_0) * self.inlet.M * np.power(
-                1 + 0.5 * (utils.gamma - 1) * self.inlet.M**2,
-                0.5 - utils.gamma / (utils.gamma - 1)
-            ) * np.cos(self.inlet.alpha) * self.inlet.rr
+        self.inlet.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.inlet.p / np.sqrt(self.inlet.T)
+            * self.inlet.M * np.cos(self.inlet.alpha) * self.inlet.rr
         )
-        m_dot_2 = utils.cumulative_trapezoid(self.inlet.rr, dm_dr_2)
+        self.inlet.m_dot = utils.cumulative_trapezoid(self.inlet.rr, self.inlet.dm_dot_dr)
 
         # get mass flow rate through each streamtube
-        dm_dot_2 = np.diff(m_dot_2)
-
-        print(f"dm_dot_2: {dm_dot_2}")
+        dm_dot_2 = np.diff(self.inlet.m_dot)
 
         # loop over each streamtube
         for index in range(utils.Defaults.solver_grid):
@@ -244,23 +237,23 @@ class Stator:
                 # create fine grid for calculating streamtube upper bound 
                 r_3_fine = np.linspace(
                     self.exit.rr[index - 1],
-                    self.exit.rr[index - 1] + 2 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
+                    self.exit.rr[index - 1] + 10 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
                     utils.Defaults.solver_grid
                 )
 
-                # determine inlet mass flow rate distribution
+                # determine local exit mass flow rate distribution
                 dm_dr_3 = (
-                    self.exit.p_0[index] / np.sqrt(self.exit.T_0[index]) * self.exit.M[index]
-                    * np.power(
-                        1 + 0.5 * (utils.gamma - 1) * self.exit.M[index]**2,
+                    2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+                    * self.exit.p_0[index - 1] / np.sqrt(self.exit.T_0[index - 1])
+                    * self.exit.M[index - 1] * np.power(
+                        1 + 0.5 * (utils.gamma - 1) * self.exit.M[index - 1]**2,
                         0.5 - utils.gamma / (utils.gamma - 1)
-                    ) * np.cos(self.exit.alpha[index]) * r_3_fine
+                    ) * np.cos(self.exit.alpha[index - 1]) * r_3_fine
                 )
                 m_dot_3 = utils.cumulative_trapezoid(r_3_fine, dm_dr_3)
 
                 # interpolate to find upper bound of corresponding streamtube
                 self.exit.rr[index] = np.interp(dm_dot_2[index - 1], m_dot_3, r_3_fine)
-                print(f"self.exit.rr[{index}]: {self.exit.rr[index]}")
 
                 # calculate derivatives required for radial equilibrium
                 dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
@@ -280,32 +273,31 @@ class Stator:
                     ) / self.exit.v_x[index - 1]
                 )
 
-            # get exit tangential velocity from axial velocity and flow angle
+            # solve for exit tangential velocity from axial velocity and flow angle
             self.exit.v_theta[index] = self.exit.v_x[index] * np.tan(self.exit.alpha[index])
 
-            # get Mach number
+            # solve for Mach number
             v_squared = (self.exit.v_x[index] / np.cos(self.exit.alpha[index]))**2
             self.exit.M[index] = np.sqrt(v_squared / (1 - 0.5 * (utils.gamma - 1) * v_squared))
 
-        # get exit static conditions
+        # solve for exit static conditions
         self.exit.T = self.exit.T_0 * utils.stagnation_temperature_ratio(self.exit.M)
         self.exit.p = self.exit.p_0 * utils.stagnation_temperature_ratio(self.exit.M)
 
-        # calculate total mass flow rate
+        # calculate exit mass flow rate
         dm_dr = (
-            2 * utils.gamma / (1 - hub_tip_ratio**2)
-            * self.exit.p / self.exit.p_0
-            * np.sqrt(self.exit.T_0 / self.exit.T)
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.exit.p / np.sqrt(self.exit.T)
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
-        self.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr)[-1]
+        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr)
 
     def evaluate(self, T_1):
         """Evaluates performance of the stator blade row."""
         # solve for stage reaction
         self.exit.reaction = (
-            (self.inlet.T.value - T_1)
-            / (self.exit.T.value - T_1)
+            (self.inlet.T - T_1)
+            / (self.exit.T - T_1)
         )
 
     def calculate_chord(self, aspect_ratio, diffusion_factor):
@@ -374,5 +366,3 @@ class Stator:
             self.exit.chord * (np.sin(self.exit.metal_angle) - np.sin(self.inlet.metal_angle))
             / (self.exit.metal_angle - self.inlet.metal_angle)
         )
-
-        print(f"self.exit.axial_chord: {self.exit.axial_chord}")

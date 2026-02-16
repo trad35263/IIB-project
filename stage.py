@@ -414,4 +414,4 @@ class Stage:
     def evaluate(self):
         """Evaluates performance of the individual stage."""
         self.rotor.evaluate()
-        self.stator.evaluate(self.rotor.inlet.T.value)
+        self.stator.evaluate(self.rotor.inlet.T)

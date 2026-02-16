@@ -76,7 +76,7 @@ class Defaults:
     ]
 
     # code iteration parameters
-    solver_grid = 61
+    solver_grid = 501
     export_grid = 200
 
     # default dimensional values

@@ -62,7 +62,7 @@ class Engine:
         self.C_th_design = scenario.C_th
         self.hub_tip_ratio = scenario.hub_tip_ratio
         self.diameter = scenario.diameter
-        self.p_atm = scenario.p
+        self.p_atm = scenario.p / scenario.p_0
 
         # store input variables
         self.no_of_stages = int(no_of_stages)
@@ -87,9 +87,6 @@ class Engine:
 
                 # set first stage to default inlet conditions
                 stage.rotor.inlet = Annulus()
-                """stage.rotor.inlet.set_inlet_conditions(
-                    self.M_1, utils.Defaults.inlet_swirl, self.solver_order
-                )"""
 
             # for all other stages
             else:
@@ -138,7 +135,6 @@ class Engine:
             f"{utils.Colours.END}"
         )
         self.design()
-        input()
 
         # store initial guesses
         #x0 = 0.1
@@ -255,46 +251,77 @@ class Engine:
 
     def design(self):
         """Designs the engine system for the given flight scenario and inputs."""
-        # function to solve roots
-        def solve_thrust(vars):
 
-            # create empty array of residuals to be populated
-            residuals = np.zeros_like(vars)
+        xx = []
+        yy = []
+
+        # function to solve roots
+        def solve_thrust(M_1):
 
             # store inlet Mach number and set at rotor inlet
-            self.M_1 = vars[0]
+            self.M_1 = M_1
+            print(f"self.M_1: {self.M_1}")
             self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
-            self.m_dot_1 = utils.mass_flow_function(self.M_1)
+            self.m_dot = utils.mass_flow_function(self.M_1)
 
-            # loop over all blade rows (including nozzle)
-            for index, (blade_row, var) in enumerate(zip(self.blade_rows, vars[1:])):
+            def solve_blade_row(v_x_hub, blade_row):
+                """"""
+                blade_row.design(v_x_hub, self.hub_tip_ratio)
+                return blade_row.exit.rr[-1]**2 - 1
 
-                # design component, setting hub axial velocity
-                blade_row.design(var, self.hub_tip_ratio)
+            def solve_nozzle(v_x_hub):
+                """"""
+                self.nozzle.design(v_x_hub, self.hub_tip_ratio)
+                return self.nozzle.exit.p[-1] - self.p_atm
 
-                # residual is mass flow rate delta
-                residuals[index] = blade_row.m_dot - self.m_dot_1
+            # loop over all blade rows
+            for blade_row in self.blade_rows:
+
+                x0 = [blade_row.inlet.v_x[0]]
+                #sol = least_squares(solve_blade_row, x0 = x0, args = (blade_row,), max_nfev=100)
+                sol = root_scalar(
+                    solve_blade_row, bracket = [1e-3, 0.4],
+                    args = (blade_row,), method = 'brentq', maxiter = 20
+                )
+                print(f"sol: {sol}")
+
+            x0 = [self.nozzle.inlet.v_x[0]]
+            #sol = least_squares(solve_nozzle, x0 = x0, max_nfev=100)
+
+            try:
+
+                sol = root_scalar(
+                    solve_nozzle, bracket = [1e-3, 0.8],
+                    method = 'brentq', maxiter = 20
+                )
+                print(f"sol: {sol}")
+
+            except ValueError as error:
+
+                print(error)
+                return 1e9
 
             # evaluate engine performance
             self.evaluate()
 
-            # final residuals come from nozzle static pressure boundary condition and thrust target
-            residuals[-2] = self.nozzle.exit.p[-1] - self.p_atm
-            residuals[-1] = self.C_th - self.C_th_design
+            xx.append(self.M_1)
+            yy.append(self.C_th)
 
-            print(f"residuals: {residuals}")
+            return self.C_th - self.C_th_design
 
-            return residuals
-        
         # initial guess and solve iteratively
-        x0 = 0.1 * np.ones(len(self.blade_rows) + 2)
-        sol = least_squares(solve_thrust, x0 = x0)
+        #x0 = [0.15]
+        #sol = least_squares(solve_thrust, x0 = x0, max_nfev=100)
+        sol = root_scalar(solve_thrust, x0 = 1e-2, x1 = 1e-1, method = 'secant', maxiter = 20)
+        print(f"sol: {sol}")
+
+        fig, ax = plt.subplots()
+        ax.plot(xx, yy, linestyle = '', marker = '.', markersize = 3)
+        ax.grid()
+        plt.show()
 
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
-        # return for now
-        self.C_th = self.C_th_design
-        return 
         # investigate nozzle performance
         self.nozzle.evaluate(self.hub_tip_ratio)
         self.nozzle_area_ratio = self.nozzle.area_ratio
@@ -304,9 +331,8 @@ class Engine:
             self.nozzle.C_th[-1]
             - utils.mass_flow_function(self.M_1)
             * utils.velocity_function(self.M_flight)
-            - self.nozzle.area_ratio * self.p_atm
+            - self.nozzle_area_ratio * self.p_atm
         )
-        #print(f"self.C_th: {self.C_th}")
 
         # for now, return
         self.pressure_ratio = self.nozzle.p_0_ratio
