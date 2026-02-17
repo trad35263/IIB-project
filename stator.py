@@ -289,12 +289,12 @@ class Stator(Blade_row):
         self.exit.p = self.exit.p_0 * utils.stagnation_temperature_ratio(self.exit.M)
 
         # calculate exit mass flow rate
-        dm_dr = (
+        self.exit.dm_dot_dr = (
             2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
             * self.exit.p / np.sqrt(self.exit.T)
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
-        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr)
+        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
 
     def evaluate(self, T_1):
         """Evaluates performance of the stator blade row."""

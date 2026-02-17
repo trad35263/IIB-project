@@ -60,9 +60,6 @@ class Defaults:
             'reaction', 'Reaction'
         ],
         [
-            'DF', 'Diffusion factor'
-        ],
-        [
             'p_0', 'Stagnation pressure',
             'T_0', 'Stagnation temperature'
         ],
@@ -71,7 +68,8 @@ class Defaults:
             'dr', 'Radial equilibrium residual'
         ],
         [
-            'v_x', 'Axial velocity'
+            'v_x', 'Axial velocity',
+            'v_theta', 'Tangential velocity'
         ]
     ]
 

@@ -557,8 +557,16 @@ class Rotor(Blade_row):
 
     def evaluate(self):
         """Evaluates performance of the rotor blade row."""
+        # find inlet relative dimensionless velocity
+        self.inlet.v_theta_rel = self.inlet.v_x * np.tan(self.inlet.beta)
+        self.inlet.U = self.inlet.v_theta - self.inlet.v_theta_rel
+
+        # find inlet relative dimensionless velocity
+        self.exit.v_theta_rel = self.exit.v_x * np.tan(self.exit.beta)
+        self.exit.U = self.exit.v_theta - self.exit.v_theta_rel
+
         # find flow coefficient
-        self.exit.phi = self.inlet.M * np.cos(self.inlet.alpha) / self.inlet.M_blade
+        self.exit.phi = self.inlet.v_x / self.inlet.U
 
         # find stage loading coefficient
         self.exit.psi = (
@@ -616,7 +624,7 @@ class Rotor(Blade_row):
         exit_angles = utils.rad_to_deg(self.exit.beta)
 
         # calculate deviation coefficient using Howell's correlation for a circular camber line
-        m = 0.23 + exit_angles / 500    # only exit angle? really??
+        m = 0.23 + exit_angles / 500
 
         # calculate exit metal angles and corresponding deviation
         self.exit.metal_angle = (
@@ -632,5 +640,3 @@ class Rotor(Blade_row):
             self.exit.chord * (np.sin(self.exit.metal_angle) - np.sin(self.inlet.metal_angle))
             / (self.exit.metal_angle - self.inlet.metal_angle)
         )
-
-        print(f"self.exit.axial_chord: {self.exit.axial_chord}")

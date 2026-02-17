@@ -363,10 +363,10 @@ class Nozzle:
         utils.debug(f"sol: {sol}")
 
     def design(self, v_x_hub, hub_tip_ratio):
-        """"""
+        """Determines the flowfield through the nozzle and solves for its geometry."""
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
-        self.exit.rr[0] = 1e-3
+        self.exit.rr[0] = 1e-2
 
         # nozzle is isentropic
         self.exit.T_0 = self.inlet.T_0
@@ -411,16 +411,6 @@ class Nozzle:
                 )
                 m_dot_2 = utils.cumulative_trapezoid(r_2_fine, dm_dr_2)
 
-                # determine inlet mass flow rate distribution
-                """dm_dr_2 = (
-                    self.exit.p_0[index] / np.sqrt(self.exit.T_0[index]) * self.exit.M[index]
-                    * np.power(
-                        1 + 0.5 * (utils.gamma - 1) * self.exit.M[index]**2,
-                        0.5 - utils.gamma / (utils.gamma - 1)
-                    ) * np.cos(self.exit.alpha[index]) * r_2_fine
-                )
-                m_dot_2 = utils.cumulative_trapezoid(r_2_fine, dm_dr_2)"""
-
                 # interpolate to find upper bound of corresponding streamtube
                 self.exit.rr[index] = np.interp(dm_dot_1[index - 1], m_dot_2, r_2_fine)
 
@@ -453,14 +443,16 @@ class Nozzle:
         self.exit.T = self.exit.T_0 * utils.stagnation_temperature_ratio(self.exit.M)
         self.exit.p = self.exit.p_0 * utils.stagnation_temperature_ratio(self.exit.M)
 
-        # calculate total mass flow rate
+        # calculate exit mass flow rate
         self.exit.dm_dot_dr = (
-            2 * utils.gamma / (1 - hub_tip_ratio**2)
-            * self.exit.p / self.exit.p_0
-            * np.sqrt(self.exit.T_0 / self.exit.T)
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.exit.p / np.sqrt(self.exit.T)
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
+
+        print(f"self.exit.m_dot: {self.exit.m_dot}")
+        print(f"self.exit.p: {self.exit.p}")
 
     def old_evaluate(self, hub_tip_ratio):
         """Evaluates the performance of the nozzle as part of the engine system."""
@@ -509,12 +501,16 @@ class Nozzle:
         self.area_ratio = self.exit.rr[-1]**2 / (1 - hub_tip_ratio**2)
 
         # find cumulative thrust coefficient distribution
-        dC_th_dr = (
+        """dC_th_dr = (    # with pressure terms
             2 / (1 - hub_tip_ratio**2) * (
                 utils.impulse_function(self.exit.M)
                 - 2 * utils.dynamic_pressure_function(self.exit.M)
                 * (np.sin(self.exit.alpha))**2
             ) * self.exit.p_0 * self.exit.rr
+        )"""
+        dC_th_dr = (    # neglecting pressure terms
+            2 * utils.gamma / (1 - hub_tip_ratio**2)
+            * self.exit.p * self.exit.M**2 * (np.cos(self.exit.alpha))**2 * self.exit.rr
         )
         self.C_th = utils.cumulative_trapezoid(self.exit.rr, dC_th_dr)
 
@@ -528,6 +524,22 @@ class Nozzle:
             utils.cumulative_trapezoid(
                 self.exit.rr, self.exit.dm_dot_dr * self.exit.p_0
             )[-1] / self.exit.m_dot[-1]
+        )
+
+        # store product of radius and tangential velocity for convenience
+        rv_theta = self.exit.rr * self.exit.v_theta
+
+        # calculate necessary derivatives for radial equilibrium
+        ds_dr = np.gradient(self.exit.s, self.exit.rr, edge_order = 2)
+        dv_x_dr = np.gradient(self.exit.v_x, self.exit.rr, edge_order = 2)
+        drv_theta_dr = np.gradient(rv_theta, self.exit.rr, edge_order = 2)
+        dT_0_dr = np.gradient(self.exit.T_0, self.exit.rr, edge_order = 2)
+
+        # evaluate radial equilibrium
+        self.exit.dr = (
+            self.exit.T * ds_dr + self.exit.v_x * dv_x_dr
+            + rv_theta / self.exit.rr * drv_theta_dr
+            - 1 / (utils.gamma - 1) * dT_0_dr
         )
 
 # unused?????

@@ -4,20 +4,25 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.path import Path
 import matplotlib.patches as patches
+
 from scipy.interpolate import make_interp_spline
 from scipy.optimize import root_scalar
-from scipy.optimize import least_squares
 from scipy.io import savemat
+
 from time import perf_counter as timer
 import itertools
 from scipy.interpolate import interp1d
 from datetime import datetime
 import json
 
+import matlab.engine
+from pathlib import Path as FilePath
+
 # import system modules
 import copy
 import inspect
 import os
+import io
 
 # import custom classes
 from stage import Stage
@@ -63,6 +68,12 @@ class Engine:
         self.hub_tip_ratio = scenario.hub_tip_ratio
         self.diameter = scenario.diameter
         self.p_atm = scenario.p / scenario.p_0
+
+        # store quantities
+        self.T_0 = scenario.T_0
+        self.p_0 = scenario.T_0
+        self.A = scenario.A
+        # maybe make a deepcopy of the flight scenario?
 
         # store input variables
         self.no_of_stages = int(no_of_stages)
@@ -134,7 +145,15 @@ class Engine:
             f"{utils.Colours.CYAN}Performing analysis with solver order: {self.solver_order}..."
             f"{utils.Colours.END}"
         )
+
+        # design engine
         self.design()
+
+        # loop over all blade rows
+        for blade_row in self.blade_rows:
+
+            # sever shared references between inlet and exit annuli
+            blade_row.exit = copy.deepcopy(blade_row.exit)
 
         # store initial guesses
         #x0 = 0.1
@@ -307,7 +326,8 @@ class Engine:
             xx.append(self.M_1)
             yy.append(self.C_th)
 
-            return self.C_th - self.C_th_design
+            #return self.C_th - self.C_th_design
+            return self.nozzle.exit.rr[-1]**2 - (1 - self.hub_tip_ratio**2)
 
         # initial guess and solve iteratively
         #x0 = [0.15]
@@ -327,12 +347,19 @@ class Engine:
         self.nozzle_area_ratio = self.nozzle.area_ratio
 
         # determine net thrust coefficient of engine
-        self.C_th = (
+        """self.C_th = (   # including pressure terms
             self.nozzle.C_th[-1]
             - utils.mass_flow_function(self.M_1)
             * utils.velocity_function(self.M_flight)
             - self.nozzle_area_ratio * self.p_atm
+        )"""
+        self.C_th = (   # neglecting pressure terms
+            self.nozzle.C_th[-1]
+            - utils.mass_flow_function(self.M_1)
+            * utils.velocity_function(self.M_flight)
         )
+
+        print(f"utils.mass_flow_function(self.M_1): {utils.mass_flow_function(self.M_1)}")
 
         # for now, return
         self.pressure_ratio = self.nozzle.p_0_ratio
@@ -341,6 +368,12 @@ class Engine:
         self.eta_comp = 1
         self.eta_elec = 1
         self.jet_velocity_ratio = 1
+
+        m_dot = (
+            utils.mass_flow_function(self.M_1) * self.A * self.p_0
+            / np.sqrt(1005 * self.T_0)
+        )
+        print(f"solver m_dot: {m_dot}")
 
         # iterate over all stages
         for stage in self.stages:
@@ -440,11 +473,12 @@ class Engine:
 
     def export(self):
         """Exports the engine's parameters as a .mat file for CFD."""
-        # get dimensional axial and radial coordinates
-        self.dimensional_values()
+        # store variable for calculating blade x-coordinates
+        x_ref = 0
 
-        # create empty dictionary
+        # create empty dictionaries
         self.export_dictionary = {}
+        self.blades_dictionary = {}
 
         # determine dimensionless span distribution to export data across
         span = np.linspace(-0.05, 1.05, utils.Defaults.export_grid)
@@ -459,7 +493,7 @@ class Engine:
             )
             inlet_metal_interp = interp1d(
                 blade_row.inlet.span,
-                blade_row.inlet.metal_angle,
+                utils.rad_to_deg(blade_row.inlet.metal_angle),
                 kind = "linear",
                 bounds_error = False,
                 fill_value = "extrapolate"
@@ -473,7 +507,7 @@ class Engine:
             )
             exit_metal_interp = interp1d(
                 blade_row.exit.span,
-                blade_row.exit.metal_angle,
+                utils.rad_to_deg(blade_row.exit.metal_angle),
                 kind = "linear",
                 bounds_error = False,
                 fill_value = "extrapolate"
@@ -483,21 +517,46 @@ class Engine:
             # interpolate over blade row exit span to get chord distribution
             chord_interp = interp1d(
                 blade_row.exit.span,
-                blade_row.exit.chord,
+                self.diameter / 2 * blade_row.exit.chord,
                 kind = "linear",
                 bounds_error = False,
                 fill_value = "extrapolate"
             )
             chord = chord_interp(span)
 
+            # calculate blade x-coordinate
+            x_ref += max(chord)
+
+            # store inlet and exit midspan radii
+            inlet_radius = self.diameter / 2 * (blade_row.inlet.rr[0] + blade_row.inlet.rr[-1]) / 2
+            exit_radius = self.diameter / 2 * (blade_row.exit.rr[0] + blade_row.exit.rr[-1]) / 2
+
+            # store inlet and exit areas
+            inlet_area = (
+                np.pi * (self.diameter / 2)**2
+                * (blade_row.inlet.rr[-1]**2 - self.hub_tip_ratio**2)
+            )
+            exit_area = (
+                np.pi * (self.diameter / 2)**2
+                * (blade_row.exit.rr[-1]**2 - self.hub_tip_ratio**2)
+            )
+
             # create nested dictionary corresponding to blade row data
-            self.export_dictionary[f"blade_{index + 1}"] = {
+            self.blades_dictionary[f"blade_{index + 1}"] = {
                 "span": span.tolist(),
                 "inlet_metal_angle": inlet_metal_angle.tolist(),
                 "exit_metal_angle": exit_metal_angle.tolist(),
                 "chord": chord.tolist(),
+                "x_ref": x_ref,
+                "inlet_radius": inlet_radius,
+                "exit_radius": exit_radius,
+                "inlet_area": inlet_area,
+                "exit_area": exit_area,
                 "no_of_blades": blade_row.no_of_blades
             }
+
+        # add blades dictionary to export dictionary
+        self.export_dictionary["blades"] = self.blades_dictionary
 
         # add metadata to dictionary
         self.export_dictionary["metadata"] = {
@@ -548,12 +607,19 @@ class Engine:
         with open(json_filename, 'w') as f:
             json.dump(self.export_dictionary, f, indent = 2)
 
+        # print feedback to user
+        print(
+            f"Engine data successfully exported as "
+            f"{utils.Colours.GREEN}{filename}{utils.Colours.END} and "
+            f"{utils.Colours.GREEN}{json_filename}{utils.Colours.END}!"
+        )
+
 # plotting functions ------------------------------------------------------------------------------
 
     def plot_velocity_triangles(self):
         """Plots the Mach triangles and approximate blade shapes for the compressor."""
-        # create plot
-        fig, ax = plt.subplots(figsize = (14, 6))
+        # create plot for displaying velocity triangles
+        fig, ax = plt.subplots(figsize = (10, 6))
 
         scaling = 1
 
@@ -587,9 +653,6 @@ class Engine:
         # array of spanwise position indices to plot
         indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
 
-        # create plot for displaying velocity triangles
-        fig, ax = plt.subplots(figsize = (11, 6))
-
         # set legend labels
         ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
         ax.plot([], [], color = 'C4', label = 'Relative Mach number')
@@ -613,7 +676,7 @@ class Engine:
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',
-            fontsize = 12
+            fontsize = 16
         )
 
         # tight layout
@@ -626,15 +689,14 @@ class Engine:
             for column, blade_row in enumerate(self.blade_rows):
 
                 # plot blade row at chosen spanwise positions
-                #blade_row.plot_blade_row(ax, column, row, index, scaling)
                 blade_row.draw_blades()
-                ax.plot(blade_row.xx[row] + column, blade_row.yy[row] + row)
+                ax.plot(blade_row.xx[row] + column, blade_row.yy[row] + row, color = 'k')
 
                 # add velocity triangles
                 x_te = blade_row.xx[row][0]
                 y_te = blade_row.yy[row][0]
 
-                # annotate inlet velocity triangle
+                # annotate inlet absolute velocity vector
                 ax.annotate(
                     "",
                     xy = (column, row),
@@ -643,12 +705,12 @@ class Engine:
                         row - blade_row.inlet.v_theta[index]
                     ),
                     arrowprops = dict(
-                        arrowstyle = "->", color = 'k',
+                        arrowstyle = "->", color = 'C0',
                         shrinkA = 0, shrinkB = 0, lw = 1.5
                     )
                 )
                 
-                # annotate exit velocity triangle
+                # annotate exit absolute velocity vector
                 ax.annotate(
                     "",
                     xy = (
@@ -657,10 +719,74 @@ class Engine:
                     ),
                     xytext = (column + x_te, row + y_te),
                     arrowprops = dict(
-                        arrowstyle = "->", color = 'k',
+                        arrowstyle = "->", color = 'C0',
                         shrinkA = 0, shrinkB = 0, lw = 1.5
                     )
                 )
+
+                if hasattr(blade_row.exit, "M_rel"):
+                
+                    # annotate inlet relative velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (column, row),
+                        xytext = (
+                            column - blade_row.inlet.v_x[index],
+                            row - blade_row.inlet.v_theta_rel[index]
+                        ),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C4',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+                    
+                    # annotate exit relative velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (
+                            column + x_te + blade_row.exit.v_x[index],
+                            row + y_te + blade_row.exit.v_theta_rel[index]
+                        ),
+                        xytext = (column + x_te, row + y_te),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C4',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+                    
+                    # annotate inlet blade velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (
+                            column - blade_row.inlet.v_x[index],
+                            row - blade_row.inlet.v_theta_rel[index]
+                        ),
+                        xytext = (
+                            column - blade_row.inlet.v_x[index],
+                            row - blade_row.inlet.v_theta[index]
+                        ),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C3',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+                    
+                    # annotate exit blade velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (
+                            column + x_te + blade_row.exit.v_x[index],
+                            row + y_te + blade_row.exit.v_theta[index]
+                        ),
+                        xytext = (
+                            column + x_te + blade_row.exit.v_x[index],
+                            row + y_te + blade_row.exit.v_theta_rel[index]
+                        ),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C3',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
 
             # add brace to plot
             dx = 2 * len(self.stages)
@@ -763,7 +889,9 @@ class Engine:
 
             # create legend
             plt.subplots_adjust(bottom = 0.16)
-            axes[-1].legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
+            axes[-1].legend(
+                loc = 'center', bbox_to_anchor = (0.5, 0.05), bbox_transform = fig.transFigure
+            )
         
         # show plots
         plt.show()
@@ -802,7 +930,7 @@ class Engine:
 
 # obsolete functions
     
-    def old_plot_velocity_triangles(self):
+    def old_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
         # determine factor to scale Mach triangles by
         scaling = 1 / (4 * self.M_1)
@@ -919,7 +1047,7 @@ class Engine:
             path = os.path.join(directory, filename)
             plt.savefig(path, dpi = 300)
 
-    def old_plot_contours(self):
+    def old_contours(self):
         """Creates a plot of a section view of the engine with contours of a specified quantity."""
         # plotting parameters
         alpha = 0.5
@@ -1207,7 +1335,7 @@ class Engine:
         path = os.path.join(directory, filename)
         plt.savefig(path, dpi = 300)
 
-    def old_plot_spanwise_variations(self, quantity_list = utils.Defaults.quantity_list):
+    def old_spanwise_variations(self, quantity_list = utils.Defaults.quantity_list):
         """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
         # loop over all list entries
         for quantities in quantity_list:
@@ -1439,3 +1567,51 @@ class Engine:
             for blade_row in stage.blade_rows:
 
                 blade_row.colour = stage.colour
+
+    def plot_matlab(self):
+        """Creates a spanwise flow angle plot with matlab results overlaid."""
+        eng = matlab.engine.start_matlab()
+        eng.eval("set(0, 'DefaultFigureVisible', 'off')", nargout=0)
+
+        # Resolve path to matlab_folder
+        python_dir = FilePath(__file__).resolve().parent
+        parent_dir = python_dir.parent
+        matlab_dir = parent_dir / "forSlava"
+
+        # add MATLAB folder to MATLAB search path
+        eng.addpath(str(matlab_dir), nargout = 0)
+
+        # create dummy buffers
+        out = io.StringIO()
+        err = io.StringIO()
+
+        # Run script
+        eng.run("DuctedFanDesign_220503", nargout = 0, stdout = out, stderr = err)
+
+        # extract flow angle information
+        a = eng.workspace['a']
+        alpha = np.array(a['alpha'], dtype = float)
+        mdot = eng.workspace['mdot']
+        m_dot = np.array(mdot, dtype = float)
+
+        # Shut down engine
+        eng.quit()
+
+        xx_matlab = np.linspace(0, 1, alpha.shape[0])
+        xx = np.linspace(0, 1, utils.Defaults.solver_grid)
+
+        self.blade_rows[0].inlet.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 2, 1])
+        self.blade_rows[0].exit.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 1, 1])
+        self.blade_rows[0].exit.matlab_angle = np.interp(xx, xx_matlab, alpha[:, 1, 2])
+
+        quantities = [
+            [
+                'matlab_angle', 'MatLab absolute flow angle',
+                'matlab_rel_angle', 'MatLab relative flow angle',
+                'alpha', 'Absolute flow angle (°)',
+                'beta', 'Relative flow angle (°)'
+            ]
+        ]
+
+        self.plot_spanwise(quantities)
+        print(f"{utils.Colours.PURPLE}matlab m_dot: {m_dot}{utils.Colours.END}")

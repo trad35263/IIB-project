@@ -52,10 +52,6 @@ class Blade_row:
         # categorise blade row
         self.categorise(is_rotor)
 
-        # preallocate variables as None
-        #self.inlet = None
-        #self.exit = None
-
     def __str__(self):
         """Prints a string representation of the blade row."""
         string = f"{self.label}\n"
@@ -1406,7 +1402,7 @@ class Blade_row:
             colour = 'C0'
         )
 
-    def draw_blades(self):
+    def draw_blades2(self):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
         # initialise arrays to store blade shape data in
         self.xx = np.zeros((3, 2 * utils.Defaults.export_grid))
@@ -1472,6 +1468,96 @@ class Blade_row:
             self.xx[j] = np.concatenate([xx_upper, xx_lower])
             self.yy[j] = np.concatenate([yy_upper, yy_lower])
 
+            # scale in the x-direction
+            self.xx[j] *= self.exit.axial_chord[index]
+            self.yy[j] *= self.exit.axial_chord[index]
+
         # resize
-        self.xx = self.xx / 2
-        self.yy = self.yy / 2
+        #self.xx = self.xx / 2
+        #self.yy = self.yy / 2
+
+    def draw_blades(self):
+        """Creates a series of x- and y- coordinates based on the blade shape data."""
+
+        self.xx = np.zeros((3, 2 * utils.Defaults.export_grid))
+        self.yy = np.zeros((3, 2 * utils.Defaults.export_grid))
+
+        indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
+
+        for j, index in enumerate(indices):
+
+            # -------------------------------------------------
+            # 1) Construct NORMALISED camber line
+            # -------------------------------------------------
+            r = 1 / (self.exit.metal_angle[index] - self.inlet.metal_angle[index])
+            x0 = -r * np.sin(self.inlet.metal_angle[index])
+            y0 =  r * np.cos(self.inlet.metal_angle[index])
+
+            theta = np.linspace(
+                self.inlet.metal_angle[index],
+                self.exit.metal_angle[index],
+                utils.Defaults.export_grid
+            )
+
+            xx_0 = x0 + r * np.sin(theta)
+            yy_0 = y0 - r * np.cos(theta)
+
+            # -------------------------------------------------
+            # 2) SCALE camber line to physical axial chord
+            # -------------------------------------------------
+            chord_scale = self.exit.axial_chord[index]
+
+            xx_0 *= chord_scale
+            yy_0 *= chord_scale
+
+            # -------------------------------------------------
+            # 3) Recompute arc length on SCALED camber line
+            # -------------------------------------------------
+            ll_0 = np.concatenate([[0], np.cumsum(
+                np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2)
+            )])
+
+            dx_dl = np.gradient(xx_0, ll_0)
+            dy_dl = np.gradient(yy_0, ll_0)
+
+            norm = np.sqrt(dx_dl**2 + dy_dl**2)
+            nx = -dy_dl / norm
+            ny =  dx_dl / norm
+
+            # -------------------------------------------------
+            # 4) Thickness distribution (ABSOLUTE)
+            # -------------------------------------------------
+            zz_0 = utils.aerofoil_data
+            zz_0 = zz_0[:, zz_0[0].argsort()]
+
+            # Important:
+            # Your aerofoil x-data is 0→1 (normalised chord).
+            # We therefore need a normalised arc-length coordinate.
+
+            s_normalised = ll_0 / ll_0[-1]
+
+            xx_upper = np.zeros(xx_0.shape)
+            xx_lower = np.zeros(xx_0.shape)
+            yy_upper = np.zeros(xx_0.shape)
+            yy_lower = np.zeros(xx_0.shape)
+
+            for i, (x, y, s) in enumerate(zip(xx_0, yy_0, s_normalised)):
+
+                dy = np.interp(s, *zz_0)  # <-- thickness unchanged
+
+                xx_upper[i] = x + dy * nx[i]
+                yy_upper[i] = y + dy * ny[i]
+                xx_lower[i] = x - dy * nx[i]
+                yy_lower[i] = y - dy * ny[i]
+
+            # -------------------------------------------------
+            # 5) Combine surfaces
+            # -------------------------------------------------
+            xx_upper = xx_upper[::-1]
+            yy_upper = yy_upper[::-1]
+
+            self.xx[j] = np.concatenate([xx_upper, xx_lower])
+            self.yy[j] = np.concatenate([yy_upper, yy_lower])
+
+
+
