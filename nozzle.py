@@ -18,13 +18,7 @@ import utils
 # create Nozzle class
 
 class Nozzle:
-    """
-    Represents an area contraction/expansion and solves for the conditions at inlet and outlet.
-
-    Used to model the bellmouth inlet to the engine, the exit nozzle, and inter-blade row passages
-    through which there may be a change in area. Assumptions made include conservation of energy,
-    isentropic process, conservation of angular momentum and compressible continuity.
-    """
+    """Represents the engine nozzle and solves for the conditions at inlet and outlet."""
     def __init__(self):
         """Create instance of the Nozzle class."""
         # set label and colour
@@ -396,7 +390,7 @@ class Nozzle:
                 # create fine grid for calculating streamtube upper bound 
                 r_2_fine = np.linspace(
                     self.exit.rr[index - 1],
-                    self.exit.rr[index - 1] + 2 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
+                    self.exit.rr[index - 1] + 10 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
                     utils.Defaults.solver_grid
                 )
 
@@ -450,9 +444,6 @@ class Nozzle:
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
-
-        print(f"self.exit.m_dot: {self.exit.m_dot}")
-        print(f"self.exit.p: {self.exit.p}")
 
     def old_evaluate(self, hub_tip_ratio):
         """Evaluates the performance of the nozzle as part of the engine system."""

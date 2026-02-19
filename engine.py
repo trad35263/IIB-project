@@ -71,7 +71,7 @@ class Engine:
 
         # store quantities
         self.T_0 = scenario.T_0
-        self.p_0 = scenario.T_0
+        self.p_0 = scenario.p_0
         self.A = scenario.A
         # maybe make a deepcopy of the flight scenario?
 
@@ -225,49 +225,6 @@ class Engine:
 
 # design functions --------------------------------------------------------------------------------
 
-    def old_design(self):
-        """Determines appropriate values for blade metal angles for the given requirements."""
-        # iterate over all stages
-        print(f"\nself.M_1: {self.M_1}")
-        for index, stage in enumerate(self.stages):
-
-            # handle all other stages
-            if index != 0:
-
-                # set stage inlet to previous stage exit conditions
-                stage.rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
-
-            # define rotor blade geometry
-            t1 = timer()
-            stage.rotor.design(stage.phi, stage.psi, self.vortex_exponent)
-            t2 = timer()
-            utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-            # stator inlet conditions are rotor exit conditions
-            stage.stator.inlet = copy.deepcopy(stage.rotor.exit)
-
-            # define stator blade geometry
-            t1 = timer()
-            stage.stator.design()
-            t2 = timer()
-            utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-        # nozzle inlet conditions are final stator exit conditions
-        self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
-
-        # design nozzle to match atmospheric pressure in jet periphery
-        self.p_atm = utils.stagnation_pressure_ratio(self.M_flight)
-        t1 = timer()
-        self.nozzle.design(self.p_atm)
-        t2 = timer()
-        utils.debug(f"Nozzle design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-        # evaluate engine performance
-        t1 = timer()
-        self.evaluate()
-        t2 = timer()
-        utils.debug(f"Engine evaluation duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
     def design(self):
         """Designs the engine system for the given flight scenario and inputs."""
 
@@ -326,8 +283,8 @@ class Engine:
             xx.append(self.M_1)
             yy.append(self.C_th)
 
-            #return self.C_th - self.C_th_design
-            return self.nozzle.exit.rr[-1]**2 - (1 - self.hub_tip_ratio**2)
+            return self.C_th - self.C_th_design
+            #return self.nozzle.exit.rr[-1]**2 - (1 - self.hub_tip_ratio**2)
 
         # initial guess and solve iteratively
         #x0 = [0.15]
@@ -374,6 +331,8 @@ class Engine:
             / np.sqrt(1005 * self.T_0)
         )
         print(f"solver m_dot: {m_dot}")
+
+        print(f"self.C_th * self.A * self.p_0: {self.C_th * self.A * self.p_0}")
 
         # iterate over all stages
         for stage in self.stages:
@@ -928,8 +887,115 @@ class Engine:
 
         plt.show()
 
+    def plot_matlab(self):
+        """Creates a spanwise flow angle plot with matlab results overlaid."""
+        eng = matlab.engine.start_matlab()
+        eng.eval("set(0, 'DefaultFigureVisible', 'off')", nargout=0)
+
+        # Resolve path to matlab_folder
+        python_dir = FilePath(__file__).resolve().parent
+        parent_dir = python_dir.parent
+        matlab_dir = parent_dir / "forSlava"
+
+        # add MATLAB folder to MATLAB search path
+        eng.addpath(str(matlab_dir), nargout = 0)
+
+        # create dummy buffers
+        out = io.StringIO()
+        err = io.StringIO()
+
+        # Run script
+        eng.run("DuctedFanDesign_220503", nargout = 0, stdout = out, stderr = err)
+
+        # extract information
+        a = eng.workspace['a']
+        alpha = np.array(a['alpha'], dtype = float)
+        v_x = np.array(a['vx'], dtype = float)
+
+        mdot = eng.workspace['mdot']
+        m_dot = np.array(mdot, dtype = float)
+
+        # Shut down engine
+        eng.quit()
+
+        xx_matlab = np.linspace(0, 1, alpha.shape[0])
+        xx = np.linspace(0, 1, utils.Defaults.solver_grid)
+
+        self.blade_rows[0].inlet.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 2, 1])
+        self.blade_rows[0].exit.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 1, 1])
+        self.blade_rows[0].exit.matlab_angle = np.interp(xx, xx_matlab, alpha[:, 1, 2])
+
+        self.blade_rows[0].inlet.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 0, 1])
+        self.blade_rows[0].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 1, 1])
+        self.blade_rows[1].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 2, 1])
+
+        # calculate solver flow velocity in m_s
+        self.blade_rows[0].inlet.v_x_m_s = self.blade_rows[0].inlet.v_x * np.sqrt(utils.gamma * 287 * self.T_0)
+        for blade_row in self.blade_rows:
+
+            blade_row.exit.v_x_m_s = blade_row.exit.v_x * np.sqrt(utils.gamma * 287 * self.T_0)
+
+        quantities = [
+            [
+                'matlab_angle', 'MatLab absolute flow angle',
+                'matlab_rel_angle', 'MatLab relative flow angle',
+                'alpha', 'Absolute flow angle (°)',
+                'beta', 'Relative flow angle (°)'
+            ],
+            [
+                'matlab_v_x', 'MatLab flow velocity (m/s)',
+                'v_x_m_s', 'Solver flow velocity (m/s)'
+            ]
+        ]
+
+        self.plot_spanwise(quantities)
+        print(f"{utils.Colours.PURPLE}matlab m_dot: {m_dot}{utils.Colours.END}")
+
 # obsolete functions
     
+    def old_design(self):
+        """Determines appropriate values for blade metal angles for the given requirements."""
+        # iterate over all stages
+        print(f"\nself.M_1: {self.M_1}")
+        for index, stage in enumerate(self.stages):
+
+            # handle all other stages
+            if index != 0:
+
+                # set stage inlet to previous stage exit conditions
+                stage.rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
+
+            # define rotor blade geometry
+            t1 = timer()
+            stage.rotor.design(stage.phi, stage.psi, self.vortex_exponent)
+            t2 = timer()
+            utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
+            # stator inlet conditions are rotor exit conditions
+            stage.stator.inlet = copy.deepcopy(stage.rotor.exit)
+
+            # define stator blade geometry
+            t1 = timer()
+            stage.stator.design()
+            t2 = timer()
+            utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
+        # nozzle inlet conditions are final stator exit conditions
+        self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
+
+        # design nozzle to match atmospheric pressure in jet periphery
+        self.p_atm = utils.stagnation_pressure_ratio(self.M_flight)
+        t1 = timer()
+        self.nozzle.design(self.p_atm)
+        t2 = timer()
+        utils.debug(f"Nozzle design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
+        # evaluate engine performance
+        t1 = timer()
+        self.evaluate()
+        t2 = timer()
+        utils.debug(f"Engine evaluation duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
+
     def old_velocity_triangles(self):
         """Function to plot the velocity triangles and pressure and temperature distributions."""
         # determine factor to scale Mach triangles by
@@ -1567,51 +1633,3 @@ class Engine:
             for blade_row in stage.blade_rows:
 
                 blade_row.colour = stage.colour
-
-    def plot_matlab(self):
-        """Creates a spanwise flow angle plot with matlab results overlaid."""
-        eng = matlab.engine.start_matlab()
-        eng.eval("set(0, 'DefaultFigureVisible', 'off')", nargout=0)
-
-        # Resolve path to matlab_folder
-        python_dir = FilePath(__file__).resolve().parent
-        parent_dir = python_dir.parent
-        matlab_dir = parent_dir / "forSlava"
-
-        # add MATLAB folder to MATLAB search path
-        eng.addpath(str(matlab_dir), nargout = 0)
-
-        # create dummy buffers
-        out = io.StringIO()
-        err = io.StringIO()
-
-        # Run script
-        eng.run("DuctedFanDesign_220503", nargout = 0, stdout = out, stderr = err)
-
-        # extract flow angle information
-        a = eng.workspace['a']
-        alpha = np.array(a['alpha'], dtype = float)
-        mdot = eng.workspace['mdot']
-        m_dot = np.array(mdot, dtype = float)
-
-        # Shut down engine
-        eng.quit()
-
-        xx_matlab = np.linspace(0, 1, alpha.shape[0])
-        xx = np.linspace(0, 1, utils.Defaults.solver_grid)
-
-        self.blade_rows[0].inlet.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 2, 1])
-        self.blade_rows[0].exit.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 1, 1])
-        self.blade_rows[0].exit.matlab_angle = np.interp(xx, xx_matlab, alpha[:, 1, 2])
-
-        quantities = [
-            [
-                'matlab_angle', 'MatLab absolute flow angle',
-                'matlab_rel_angle', 'MatLab relative flow angle',
-                'alpha', 'Absolute flow angle (°)',
-                'beta', 'Relative flow angle (°)'
-            ]
-        ]
-
-        self.plot_spanwise(quantities)
-        print(f"{utils.Colours.PURPLE}matlab m_dot: {m_dot}{utils.Colours.END}")

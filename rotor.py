@@ -153,7 +153,7 @@ class Rotor(Blade_row):
                 # determine extra-fine grid from inner streamtube radius to outer radius 
                 r_2_fine = np.linspace(
                     self.exit.rr[index],
-                    self.exit.rr[index] + 2 * (self.inlet.rr[index + 1] - self.inlet.rr[index]),
+                    self.exit.rr[index] + 5 * (self.inlet.rr[index + 1] - self.inlet.rr[index]),
                     utils.Defaults.solver_grid
                 )
 
@@ -380,12 +380,14 @@ class Rotor(Blade_row):
 
         # get variation in inlet blade Mach number
         self.inlet.r_mean = np.sqrt(0.5 * (self.inlet.rr[0]**2 + self.inlet.rr[-1]**2))
+        print(f"self.inlet.r_mean: {self.inlet.r_mean}")
         M_1_blade_mean = self.inlet.M * np.cos(self.inlet.alpha) / self.phi_mean
         T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.T)
         self.inlet.M_blade = (
             M_1_blade_mean * (self.inlet.rr / self.inlet.r_mean)
             * np.sqrt(T_mean / self.inlet.T)
         )
+        # careful - M_1_blade_mean is an array
 
         # get variation in relative Mach number and flow angle via vector algebra
         z_x = self.inlet.M * np.cos(self.inlet.alpha)
@@ -427,7 +429,7 @@ class Rotor(Blade_row):
                 # create fine grid for calculating streamtube upper bound 
                 r_2_fine = np.linspace(
                     self.exit.rr[index - 1],
-                    self.exit.rr[index - 1] + 2 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
+                    self.exit.rr[index - 1] + 5 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
                     utils.Defaults.solver_grid
                 )
 

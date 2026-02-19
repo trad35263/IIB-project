@@ -256,6 +256,19 @@ class MainFrame(wx.Frame):
         root.Add(plot_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
         self.panel.SetSizer(root)
 
+        # create colours dictionary
+        colours = {}
+        colours["dark grey"] = wx.Colour(60, 60, 60)
+        colours["light grey"] = wx.Colour(80, 80, 80)
+        colours["white"] = wx.Colour(255, 255, 255)
+        colours["blue"] = wx.Colour(64, 128, 192)
+
+        # set font
+        font = wx.Font(10, wx.FONTFAMILY_SWISS, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Segoe UI")
+
+        # apply to panel
+        self.apply_styling(self.panel, font, colours)
+
         # show gui
         self.Show()
 
@@ -737,6 +750,62 @@ class MainFrame(wx.Frame):
             # retrieve engine and call export function
             engine = self.flight_scenarios[self.scenario_label].engines[self.engine_label]
             engine.export()
+        
+    def apply_styling(self, parent, font, colours):
+        """Applies styling to a child object for a given parent object."""
+        # wrap in try-except block to ensure gui loads in spite of style errors
+        try:
+            
+            # apply background to frame and main panel
+            self.SetBackgroundColour(colours["dark grey"])
+            self.panel.SetBackgroundColour(colours["dark grey"])
+
+        except Exception:
+
+            pass
+
+        # loop over all children
+        for child in parent.GetChildren():
+
+            # wrap in try-except block to ensure gui loads in spite of style errors
+            try:
+
+                # if child instance is a button
+                if isinstance(child, wx.Button):
+
+                    # set background and border colour
+                    child.SetBackgroundColour(colours["blue"])
+                    child.SetForegroundColour(colours["white"])
+
+                    # set font and increase vertical padding
+                    child.SetFont(font)
+                    child.SetMinSize((-1, 32))
+
+                # if child instance is a text box
+                elif isinstance(child, wx.StaticText):
+
+                    # set background and border colour and font
+                    child.SetBackgroundColour(colours["dark grey"])
+                    child.SetForegroundColour(colours["white"])
+                    child.SetFont(font)
+
+                # if child instance is a drop-down menu
+                elif isinstance(child, wx.ComboBox) or isinstance(child, wx.TextCtrl):
+                    
+                    # set background and border colour and font
+                    child.SetBackgroundColour(colours["light grey"])
+                    child.SetForegroundColour(colours["white"])
+                    child.SetFont(font)
+
+            except Exception:
+
+                pass
+
+            # recurse into nested containers
+            if hasattr(child, "GetChildren"):
+
+                # apply styling function
+                self.apply_styling(child, font, colours)
 
 # create AddScenarioDialog class
 class AddScenarioDialog(wx.Dialog):

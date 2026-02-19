@@ -241,7 +241,7 @@ class Stator(Blade_row):
                 # create fine grid for calculating streamtube upper bound 
                 r_3_fine = np.linspace(
                     self.exit.rr[index - 1],
-                    self.exit.rr[index - 1] + 10 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
+                    self.exit.rr[index - 1] + 5 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
                     utils.Defaults.solver_grid
                 )
 

@@ -70,6 +70,9 @@ class Defaults:
         [
             'v_x', 'Axial velocity',
             'v_theta', 'Tangential velocity'
+        ],
+        [
+            'm_dot', 'Cumulative mass flow rate'
         ]
     ]
 
