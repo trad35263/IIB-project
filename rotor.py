@@ -360,7 +360,7 @@ class Rotor(Blade_row):
 
         # calculate secondary flow variables
         self.inlet.T = self.inlet.T_0 * utils.stagnation_temperature_ratio(self.inlet.M)
-        self.inlet.p = self.inlet.p_0 * utils.stagnation_temperature_ratio(self.inlet.M)
+        self.inlet.p = self.inlet.p_0 * utils.stagnation_pressure_ratio(self.inlet.M)
 
         # store axial velocity
         self.inlet.v_x = self.inlet.M * self.inlet.T
@@ -378,15 +378,19 @@ class Rotor(Blade_row):
         half_gamma_minus_1 = 0.5 * (utils.gamma - 1)
         gamma_ratio = utils.gamma / (utils.gamma - 1)
 
-        # get variation in inlet blade Mach number
+        # get mean-line radius and conditions
         self.inlet.r_mean = np.sqrt(0.5 * (self.inlet.rr[0]**2 + self.inlet.rr[-1]**2))
-        print(f"self.inlet.r_mean: {self.inlet.r_mean}")
-        M_1_blade_mean = self.inlet.M * np.cos(self.inlet.alpha) / self.phi_mean
+        M_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.M)
         T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.T)
+        alpha_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.alpha)
+
+        # get variation in inlet blade Mach number
+        M_blade_mean = M_mean * np.cos(alpha_mean) / self.phi_mean
         self.inlet.M_blade = (
-            M_1_blade_mean * (self.inlet.rr / self.inlet.r_mean)
+            M_blade_mean * (self.inlet.rr / self.inlet.r_mean)
             * np.sqrt(T_mean / self.inlet.T)
         )
+
         # careful - M_1_blade_mean is an array
 
         # get variation in relative Mach number and flow angle via vector algebra

@@ -69,11 +69,8 @@ class Engine:
         self.diameter = scenario.diameter
         self.p_atm = scenario.p / scenario.p_0
 
-        # store quantities
-        self.T_0 = scenario.T_0
-        self.p_0 = scenario.p_0
-        self.A = scenario.A
-        # maybe make a deepcopy of the flight scenario?
+        # store flight scenario (deepcopy to avoid circular reference)
+        self.scenario = copy.deepcopy(scenario)
 
         # store input variables
         self.no_of_stages = int(no_of_stages)
@@ -116,35 +113,8 @@ class Engine:
         self.nozzle.inlet = self.stages[-1].stator.exit
         self.nozzle.exit = Annulus()
 
-        xx = []
-        yy = []
-
-        # set up root-solving function for thrust coefficient
-        def solve_thrust(var):
-            """Iterates through engine designs until a given thrust is achieved."""
-            # apply bounds to var use as inlet Mach number
-            self.M_1 = utils.bound(np.squeeze(var))
-            xx.append(var)
-
-            # design engine, store inside scenario and calculate residual
-            self.design()
-            scenario.engine = self
-            residual = self.C_th - self.C_th_design
-
-            # return thrust coefficient residual
-            print(f"self.C_th: {self.C_th}")
-            yy.append(self.C_th)
-            #return 0
-            return residual
-
-        # increment number of annuli for analysis, starting with mean-line only
+        # start timer
         t1 = timer()
-
-        # print user feedback
-        print(
-            f"{utils.Colours.CYAN}Performing analysis with solver order: {self.solver_order}..."
-            f"{utils.Colours.END}"
-        )
 
         # design engine
         self.design()
@@ -155,20 +125,6 @@ class Engine:
             # sever shared references between inlet and exit annuli
             blade_row.exit = copy.deepcopy(blade_row.exit)
 
-        # store initial guesses
-        #x0 = 0.1
-        #x1 = 0.2
-
-        # solve iteratively
-        """sol = root_scalar(
-            solve_thrust, x0 = x0, x1 = x1, method = "secant", xtol = 1e-4, rtol = 1e-4
-        )"""
-
-        """fig, ax = plt.subplots()
-        ax.plot(xx, yy, linestyle = '', marker = '.', markersize = 6)
-        ax.axhline(self.C_th_design)
-        plt.show()"""
-
         # end timer and print feedback
         t2 = timer()
         print(
@@ -176,13 +132,6 @@ class Engine:
             f"{utils.Colours.END}"
         )
         print(self)
-
-        # comment out for now - bring me back!
-        # loop over all blade rows
-        #for blade_row in self.blade_rows:
-
-            # run subroutine to determine blade metal angles and pitch-to-chord
-            #blade_row.empirical_design()
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
@@ -227,75 +176,169 @@ class Engine:
 
     def design(self):
         """Designs the engine system for the given flight scenario and inputs."""
+        # create empty arrays to store guesses
+        self.M_1_guesses = []
+        self.C_th_guesses = []
 
-        xx = []
-        yy = []
-
-        # function to solve roots
+        # root-finding function
         def solve_thrust(M_1):
-
+            """Returns the thrust residual of the engine for a given inlet Mach number."""
             # store inlet Mach number and set at rotor inlet
+            self.M_1_guesses.append(M_1)
             self.M_1 = M_1
-            print(f"self.M_1: {self.M_1}")
             self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
             self.m_dot = utils.mass_flow_function(self.M_1)
 
             def solve_blade_row(v_x_hub, blade_row):
-                """"""
+                """Returns the relevant residual for a blade row for a given hub axial velocity."""
+                # design blade row and return residual
                 blade_row.design(v_x_hub, self.hub_tip_ratio)
-                return blade_row.exit.rr[-1]**2 - 1
+                residual = blade_row.exit.rr[-1]**2 - 1
+                blade_row.v_x_guesses.append(v_x_hub)
+                blade_row.residual_guesses.append(residual)
+                return residual
 
             def solve_nozzle(v_x_hub):
-                """"""
+                """Returns the residual for a nozzle for a given centreline axial velocity."""
+                # design nozzle and return residual
                 self.nozzle.design(v_x_hub, self.hub_tip_ratio)
-                return self.nozzle.exit.p[-1] - self.p_atm
+                residual = self.nozzle.exit.p[-1] - self.p_atm
+                self.nozzle.v_x_guesses.append(v_x_hub)
+                self.nozzle.residual_guesses.append(residual)
+                return residual
 
             # loop over all blade rows
             for blade_row in self.blade_rows:
 
-                x0 = [blade_row.inlet.v_x[0]]
-                #sol = least_squares(solve_blade_row, x0 = x0, args = (blade_row,), max_nfev=100)
+                # empty lists of blade row guesses
+                blade_row.v_x_guesses = []
+                blade_row.residual_guesses = []
+
+                # set initial guess
+                x0 = blade_row.inlet.v_x[0]
+                x1 = 0.9 * x0
+
+                # solve for blade row exit conditions
                 sol = root_scalar(
-                    solve_blade_row, bracket = [1e-3, 0.4],
-                    args = (blade_row,), method = 'brentq', maxiter = 20
+                    solve_blade_row, x0 = x0, x1 = x1, method = 'secant', maxiter = 20,
+                    args = (blade_row,)
                 )
-                print(f"sol: {sol}")
 
-            x0 = [self.nozzle.inlet.v_x[0]]
-            #sol = least_squares(solve_nozzle, x0 = x0, max_nfev=100)
-
+            # wrap in try-except loop to discard nozzle design failures
             try:
 
-                sol = root_scalar(
-                    solve_nozzle, bracket = [1e-3, 0.8],
-                    method = 'brentq', maxiter = 20
-                )
-                print(f"sol: {sol}")
+                # empty lists of blade row guesses
+                self.nozzle.v_x_guesses = []
+                self.nozzle.residual_guesses = []
 
+                # set initial guess
+                x0 = self.nozzle.inlet.v_x[0]
+                x1 = 0.9 * x0
+
+                # solve for nozzle exit conditions
+                sol = root_scalar(
+                    solve_nozzle, x0 = x0, x1 = x1, method = 'secant', maxiter = 20
+                )
+
+            # catch exceptions
             except ValueError as error:
 
+                # return arbitrarily large residual
                 print(error)
                 return 1e9
 
             # evaluate engine performance
             self.evaluate()
+            self.C_th_guesses.append(self.C_th)
 
-            xx.append(self.M_1)
-            yy.append(self.C_th)
-
+            # return difference between actual and design thrust
             return self.C_th - self.C_th_design
-            #return self.nozzle.exit.rr[-1]**2 - (1 - self.hub_tip_ratio**2)
 
-        # initial guess and solve iteratively
-        #x0 = [0.15]
-        #sol = least_squares(solve_thrust, x0 = x0, max_nfev=100)
-        sol = root_scalar(solve_thrust, x0 = 1e-2, x1 = 1e-1, method = 'secant', maxiter = 20)
+        # calculate initial guess
+        self.initial_guess()
+        x0 = self.M_1
+        x1 = 0.99 * x0
+
+        # solve iteratively
+        sol = root_scalar(
+            solve_thrust, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
+        )
         print(f"sol: {sol}")
 
-        fig, ax = plt.subplots()
-        ax.plot(xx, yy, linestyle = '', marker = '.', markersize = 3)
-        ax.grid()
-        plt.show()
+    def initial_guess(self):
+        """Calculates an initial inlet Mach number guess for the solver."""
+        # start timer
+        t1 = timer()
+
+        # set up grid of inlet Mach number and span
+        self.M_1_initial = np.linspace(0, 1, utils.Defaults.solver_grid)
+        rr = np.linspace(self.hub_tip_ratio, 1, utils.Defaults.solver_grid)
+
+        M_1_grid, rr_grid = np.meshgrid(self.M_1_initial, rr)
+        velocity_function_1 = utils.velocity_function(M_1_grid)
+
+        # calculate geometric mean radius
+        r_mean = np.sqrt(0.5 * (1 + self.hub_tip_ratio**2))
+
+        # calculate compressor stagnation temperature ratio
+        T_03_T_01 = (
+            1 + self.psi * velocity_function_1**2 * np.power(
+                r_mean / rr_grid, self.vortex_exponent - 1
+            ) / self.phi**2
+        )
+
+        # find static temperature ratio required to satisfy jet boundary condition
+        T_j_T_0j = utils.stagnation_temperature_ratio(self.scenario.M) / T_03_T_01
+
+        # get list of stagnation temperature ratios to interpolate
+        T_T_0 = utils.stagnation_temperature_ratio(self.M_1_initial)
+
+        # calculate jet Mach number required to satisfy jet boundary condition
+        M_j = np.interp(T_j_T_0j, T_T_0[::-1], self.M_1_initial[::-1])
+
+        # calculate mass flow functions at inlet and in jet
+        mass_flow_function_1 = utils.mass_flow_function(M_1_grid)
+        mass_flow_function_j = utils.mass_flow_function(M_j)
+
+        # calculate nozzle area ratio per streamline assuming isentropic compressor
+        sigma_grid = (
+            mass_flow_function_1 * np.power(T_03_T_01, 0.5 - utils.gamma / (utils.gamma - 1))
+            / mass_flow_function_j
+        )
+
+        # calculate inlet streamtube areas (array has length N - 1)
+        A_1i = np.pi * np.array([r_1i**2 - r_1i_1**2 for (r_1i, r_1i_1) in zip(rr[1:], rr[:-1])])
+
+        # calculate mid-point average of streamline area ratio values
+        sigma_grid_midpoint = 0.5 * (sigma_grid[1:, :] + sigma_grid[:-1, :])
+
+        # calculate exit streamtube areas
+        A_ji_grid = A_1i[:, None] * sigma_grid_midpoint
+        A_ji_grid_cumulative = np.cumsum(A_ji_grid, axis = 0)
+
+        # calculate exit streamline radii
+        rr_j = np.sqrt(A_ji_grid_cumulative / np.pi)
+        rr_j = np.vstack([np.zeros((1, rr_j.shape[1])), rr_j])
+
+        # calculate thrust coefficient
+        M_j_2_r = M_j**2 * rr_j
+        self.C_th_initial = np.zeros(utils.Defaults.solver_grid)
+        for index in range(utils.Defaults.solver_grid):
+            self.C_th_initial[index] = (
+                2 * utils.gamma / (1 - self.hub_tip_ratio**2)
+                * (rr_j[-1, index] / rr[-1])**2
+                * utils.stagnation_pressure_ratio(self.scenario.M)
+                * utils.cumulative_trapezoid(rr_j[:, index], M_j_2_r[:, index])[-1]
+                - utils.mass_flow_function(self.M_1_initial[index])
+                * utils.velocity_function(self.scenario.M)
+            )
+
+        # interpolate to find actual inlet Mach number
+        self.M_1 = np.interp(self.C_th_design, self.C_th_initial[1:], self.M_1_initial[1:])
+
+        # end timer
+        t2 = timer()
+        print(f"Initial guess calculated in {t2 - t1:.4g}s!")
 
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
@@ -327,12 +370,12 @@ class Engine:
         self.jet_velocity_ratio = 1
 
         m_dot = (
-            utils.mass_flow_function(self.M_1) * self.A * self.p_0
-            / np.sqrt(1005 * self.T_0)
+            utils.mass_flow_function(self.M_1) * self.scenario.A * self.scenario.p_0
+            / np.sqrt(utils.c_p * self.scenario.T_0)
         )
         print(f"solver m_dot: {m_dot}")
 
-        print(f"self.C_th * self.A * self.p_0: {self.C_th * self.A * self.p_0}")
+        print(f"self.C_th * self.scenario.A * self.scenario.p_0: {self.C_th * self.scenario.A * self.scenario.p_0}")
 
         # iterate over all stages
         for stage in self.stages:
@@ -889,10 +932,11 @@ class Engine:
 
     def plot_matlab(self):
         """Creates a spanwise flow angle plot with matlab results overlaid."""
+        # run matlab engine
         eng = matlab.engine.start_matlab()
         eng.eval("set(0, 'DefaultFigureVisible', 'off')", nargout=0)
 
-        # Resolve path to matlab_folder
+        # path to matlab_folder
         python_dir = FilePath(__file__).resolve().parent
         parent_dir = python_dir.parent
         matlab_dir = parent_dir / "forSlava"
@@ -904,37 +948,77 @@ class Engine:
         out = io.StringIO()
         err = io.StringIO()
 
-        # Run script
+        # run script rejecting terminal outputs
         eng.run("DuctedFanDesign_220503", nargout = 0, stdout = out, stderr = err)
 
         # extract information
         a = eng.workspace['a']
+        m_dot = eng.workspace['mdot']
+        rho = eng.workspace['ro']
+
+        # convert to numpy arrays
         alpha = np.array(a['alpha'], dtype = float)
         v_x = np.array(a['vx'], dtype = float)
+        m_dot = np.array(m_dot, dtype = float)
+        rho = np.array(rho, dtype = float)[0][0]
 
-        mdot = eng.workspace['mdot']
-        m_dot = np.array(mdot, dtype = float)
-
-        # Shut down engine
+        # shut down engine
         eng.quit()
 
+        # create array of x-values on matlab grid and solver grid
         xx_matlab = np.linspace(0, 1, alpha.shape[0])
         xx = np.linspace(0, 1, utils.Defaults.solver_grid)
 
-        self.blade_rows[0].inlet.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 2, 1])
+        # get array of radii from array of spans
+        rr = self.hub_tip_ratio + (1 - self.hub_tip_ratio) * xx
+
+        # store matlab flow angles
+        self.blade_rows[0].inlet.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 0, 1])
         self.blade_rows[0].exit.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 1, 1])
         self.blade_rows[0].exit.matlab_angle = np.interp(xx, xx_matlab, alpha[:, 1, 2])
 
-        self.blade_rows[0].inlet.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 0, 1])
-        self.blade_rows[0].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 1, 1])
-        self.blade_rows[1].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 2, 1])
+        # store matlab axial velocity
+        self.blade_rows[0].inlet.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 0, 0])
+        self.blade_rows[0].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 1, 0])
+        self.blade_rows[1].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 2, 0])
 
-        # calculate solver flow velocity in m_s
-        self.blade_rows[0].inlet.v_x_m_s = self.blade_rows[0].inlet.v_x * np.sqrt(utils.gamma * 287 * self.T_0)
+        # loop over all blade rows
         for blade_row in self.blade_rows:
 
-            blade_row.exit.v_x_m_s = blade_row.exit.v_x * np.sqrt(utils.gamma * 287 * self.T_0)
+            # calculate cumulative (dimensional) mass flow rate
+            dm_dr = 2 * rho * blade_row.exit.matlab_v_x * rr * self.scenario.A / (1 - self.hub_tip_ratio**2)
+            blade_row.exit.m_dot_matlab = utils.cumulative_trapezoid(dm_dr, rr)
+            blade_row.exit.m_dot_kg_s = (
+                blade_row.exit.m_dot * self.scenario.A * self.scenario.p_0 / np.sqrt(utils.c_p * self.scenario.T_0)
+            )
 
+            # calculate dimensional density variation
+            blade_row.exit.rho_kg_m_3 = (
+                blade_row.exit.p / (utils.R * blade_row.exit.T) * self.scenario.p_0 / self.scenario.T_0
+            )
+            blade_row.exit.rho_matlab = rho * np.ones(utils.Defaults.solver_grid)
+
+            # calculate solver flow velocity in m_s
+            blade_row.exit.v_x_m_s = blade_row.exit.v_x * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+
+        # calculate cumulative (dimensional) mass flow rate at inlet
+        dm_dr = 2 * rho * self.blade_rows[0].inlet.matlab_v_x * rr * self.scenario.A / (1 - self.hub_tip_ratio**2)
+        self.blade_rows[0].inlet.m_dot_matlab = utils.cumulative_trapezoid(dm_dr, rr)
+        self.blade_rows[0].inlet.m_dot_kg_s = (
+            self.blade_rows[0].inlet.m_dot * self.scenario.A * self.scenario.p_0 / np.sqrt(utils.c_p * self.scenario.T_0)
+        )
+
+        # calculate dimensional density variation at inlet
+        self.blade_rows[0].inlet.rho_kg_m_3 = (
+            self.blade_rows[0].inlet.p / (utils.R * self.blade_rows[0].inlet.T) * self.scenario.p_0 / self.scenario.T_0
+        )
+
+        # calculate solver flow velocity in m/s at inlet
+        self.blade_rows[0].inlet.v_x_m_s = (
+            self.blade_rows[0].inlet.v_x * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+        )
+
+        # define quantities to plot
         quantities = [
             [
                 'matlab_angle', 'MatLab absolute flow angle',
@@ -943,13 +1027,51 @@ class Engine:
                 'beta', 'Relative flow angle (°)'
             ],
             [
-                'matlab_v_x', 'MatLab flow velocity (m/s)',
-                'v_x_m_s', 'Solver flow velocity (m/s)'
+                'matlab_v_x', 'MatLab axial flow velocity (m/s)',
+                'v_x_m_s', 'Axial flow velocity (m/s)'
+            ],
+            [
+                'm_dot_matlab', 'MatLab cumulative mass flow rate (kg/s)',
+                'm_dot_kg_s', 'Cumulative mass flow rate (kg/s)'
+            ],
+            [
+                'rho_matlab', 'MatLab density (kg/m^3)',
+                'rho_kg_m_3', 'Density (kg/m^3)'
             ]
         ]
 
+        # plot spanwise variation
         self.plot_spanwise(quantities)
-        print(f"{utils.Colours.PURPLE}matlab m_dot: {m_dot}{utils.Colours.END}")
+
+    def plot_convergence(self):
+        """Plots the thrust calculation convergence history for the engine."""
+        # create plot
+        fig, ax = plt.subplots(figsize = (10, 6))
+
+        # plot initial guess curve
+        ax.plot(self.M_1_initial, self.C_th_initial, label = "Initial", color = 'C0')
+
+        # plot actual guesses as individual datapoints
+        ax.plot(
+            self.M_1_guesses, self.C_th_guesses, linestyle = '', marker = '.', markersize = 8,
+            label = "Guesses", color = 'C3'
+        )
+
+        # plot target thrust
+        ax.axhline(self.C_th_design, label = "Design", color = 'C4')
+
+        # set axis limits
+        x_min = np.min(self.M_1_guesses)
+        x_max = np.max(self.M_1_guesses)
+        y_min = np.min(self.C_th_guesses)
+        y_max = np.max(self.C_th_guesses)
+        ax.set_xlim(x_min - 0.1 * (x_max - x_min), x_max + 0.1 * (x_max - x_min))
+        ax.set_ylim(y_min - 0.1 * (y_max - y_min), y_max + 0.1 * (y_max - y_min))
+
+        # configure and show plot
+        ax.grid()
+        ax.legend()
+        plt.show()
 
 # obsolete functions
     

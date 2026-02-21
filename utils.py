@@ -8,6 +8,8 @@ from scipy.interpolate import make_interp_spline
 # 0.1 global variables
 
 gamma = 1.4
+c_p = 1005
+R = 287
 
 # 0.2 define Defaults class
 
@@ -16,7 +18,6 @@ class Defaults:
     # default flight scenario parameters
     label = ""
     diameter = 0.14
-    #hub_tip_ratio = 0.025 / 0.070
     hub_tip_ratio = 0.3077
     flight_scenarios = {
         "Take-off": ["Take-off", 0, 10, diameter, hub_tip_ratio, 10],
@@ -73,28 +74,25 @@ class Defaults:
         ],
         [
             'm_dot', 'Cumulative mass flow rate'
+        ],
+        [
+            'T', 'Static temperature',
+            'p', 'Static pressure'
         ]
     ]
 
     # code iteration parameters
     solver_grid = 101
     export_grid = 200
+    maxiter = 50
 
     # default dimensional values
     altitude = 10000
     flight_speed = 30
     thrust = 20
 
-    # placeholder for now
-    #blade_row_axial_depth = 0.5
-
     # specify inlet swirl
     inlet_swirl = 0
-
-    # specify maximum permissible diffusion factor
-    #DF_limit = 0.4
-    #pitch_to_chord_limit = 1
-    #AR_target = 2.5
 
     # whether or not debug mode is active
     debug = False

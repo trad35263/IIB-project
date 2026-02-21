@@ -435,7 +435,7 @@ class Nozzle:
 
         # get exit static conditions
         self.exit.T = self.exit.T_0 * utils.stagnation_temperature_ratio(self.exit.M)
-        self.exit.p = self.exit.p_0 * utils.stagnation_temperature_ratio(self.exit.M)
+        self.exit.p = self.exit.p_0 * utils.stagnation_pressure_ratio(self.exit.M)
 
         # calculate exit mass flow rate
         self.exit.dm_dot_dr = (
