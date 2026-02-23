@@ -8,7 +8,6 @@ import traceback
 # import custom classes
 from flight_scenario import Flight_scenario
 from engine import Engine
-from geometry import Geometry
 
 # mainframe class
 class MainFrame(wx.Frame):
@@ -44,13 +43,15 @@ class MainFrame(wx.Frame):
     # create list of engine label-pairs to display
     engine_display_labels = (
         engine_input_labels + [
-            ["Pressure Ratio", "pressure_ratio"],
-            ["Nozzle Area Ratio", "nozzle_area_ratio"],
             ["Inlet Mach Number", "M_1"],
+            ["Temperature Ratio", "T_0_ratio"],
+            ["Pressure Ratio", "p_0_ratio"],
+            ["Nozzle Area Ratio", "nozzle_area_ratio"],
+            ["Jet Velocity Ratio", "jet_velocity_ratio"],
             ["Compressor Efficiency", "eta_comp"],
             ["Nozzle Efficiency", "eta_nozz"],
             ["Propulsive Efficiency", "eta_prop"],
-            ["Jet Velocity Ratio", "jet_velocity_ratio"]
+            ["Overall Efficiency", "eta_overall"]
         ]
     )
     
@@ -66,6 +67,18 @@ class MainFrame(wx.Frame):
         geometry_input_labels + [
         ]
     )
+    
+    # create list of label-pairs required to create an off_design object
+    off_design_input_labels = [
+        ["Min. Flow Coefficient", "phi_min"],
+        ["Max. Flow Coefficient", "phi_max"]
+    ]
+
+    # create list of off_design label-pairs to display
+    off_design_display_labels = (
+        off_design_input_labels + [
+        ]
+    )
     def __init__(self):
         """Creates instance of the MainFrame class."""
         # create gui and specify title and size
@@ -77,10 +90,6 @@ class MainFrame(wx.Frame):
 
         # store Flight_scenario instances as dictionary
         self.flight_scenarios = {}
-        
-        # store panel and sizer references for dynamic grid updates
-        self.panel = None
-        self.geometry_column = None
 
         # loop over key-value pairs of default input arguments
         for key, values in utils.Defaults.flight_scenarios.items():
@@ -116,6 +125,14 @@ class MainFrame(wx.Frame):
         )
         self.geometry_dropdown.Bind(wx.EVT_COMBOBOX, self.change_geometry)
 
+        # create dropdown listing off-design options and bind to event function
+        self.off_design_dropdown = wx.ComboBox(
+            self.panel,
+            choices = [],
+            style = wx.CB_READONLY
+        )
+        self.off_design_dropdown.Bind(wx.EVT_COMBOBOX, self.change_off_design)
+
         # create button to add new flight scenarios and bind to event function
         self.add_scenario_button = wx.Button(self.panel, label = "Add Flight Scenario")
         self.add_scenario_button.Bind(wx.EVT_BUTTON, self.add_scenario)
@@ -127,8 +144,12 @@ class MainFrame(wx.Frame):
         # create button to add new geometries and bind to event function
         self.add_geometry_button = wx.Button(self.panel, label = "Add Geometry")
         self.add_geometry_button.Bind(wx.EVT_BUTTON, self.add_geometry)
+        
+        # create button to calculate off-design and bind to event function
+        self.add_off_design_button = wx.Button(self.panel, label = "Off-design")
+        self.add_off_design_button.Bind(wx.EVT_BUTTON, self.add_off_design)
 
-        # create buttons for each Engine class method
+        # create buttons for each Engine plotting function
         methods = [name for name, f in Engine.__dict__.items() if callable(f) and "plot" in name]
         buttons = [wx.Button(self.panel, label = method) for method in methods]
         for button in buttons:
@@ -144,6 +165,7 @@ class MainFrame(wx.Frame):
         self.scenario_display_texts = []
         self.engine_display_texts = []
         self.geometry_display_texts = []
+        self.off_design_display_texts = []
 
         # create a 2-column grid for flight scenario details
         self.scenario_grid = wx.FlexGridSizer(
@@ -159,6 +181,11 @@ class MainFrame(wx.Frame):
         # create a 2-column grid for geometry details
         self.geometry_grid = wx.FlexGridSizer(
             rows = len(self.geometry_display_labels), cols = 2, hgap = 10, vgap = 5
+        )
+
+        # create a 2-column grid for off-design details
+        self.off_design_grid = wx.FlexGridSizer(
+            rows = len(self.off_design_display_labels), cols = 2, hgap = 10, vgap = 5
         )
 
         # loop over label-pairs for scenarios
@@ -206,25 +233,63 @@ class MainFrame(wx.Frame):
             self.geometry_display_texts.append(text)
             self.geometry_grid.Add(text)
 
-        # create left-hand scenario column
-        scenario_column = wx.BoxSizer(wx.VERTICAL)
+        # loop over label-pairs for off-design
+        for (display, attribute) in self.off_design_display_labels:
+
+            # add text and store value
+            self.off_design_grid.Add(wx.StaticText(self.panel, label = display))
+            text = wx.StaticText(self.panel, label = "")
+
+            # store text object and add to grid
+            self.off_design_display_texts.append(text)
+            self.off_design_grid.Add(text)
+
+        # create scenario column
+        self.scenario_column = wx.BoxSizer(wx.VERTICAL)
 
         # assign button, dropdown and grid to left-hand column
-        scenario_column.Add(self.add_scenario_button, 0, wx.ALL | wx.CENTER, 8)
-        scenario_column.Add(self.scenario_dropdown, 0, wx.ALL | wx.EXPAND, 8)
-        scenario_column.Add(self.scenario_grid, 0, wx.ALL | wx.CENTER, 8)
-        scenario_column.AddStretchSpacer()
+        self.scenario_column.Add(self.add_scenario_button, 0, wx.ALL | wx.CENTER, 8)
+        self.scenario_column.Add(self.scenario_dropdown, 0, wx.ALL | wx.EXPAND, 8)
+        self.scenario_column.Add(self.scenario_grid, 0, wx.ALL | wx.CENTER, 8)
+        self.scenario_column.AddStretchSpacer()
 
-        # create central engine column
-        engine_column = wx.BoxSizer(wx.VERTICAL)
+        # toggle slider at the very bottom of the scenario column
+        self.toggle_slider = wx.Slider(
+            self.panel, value = 0, minValue = 0, maxValue = 1, style = wx.SL_HORIZONTAL
+        )
+        self.toggle_slider.Bind(wx.EVT_SLIDER, self.toggle)
+
+        # place slider and label in a horizontal row where the slider expands
+        slider_row = wx.BoxSizer(wx.HORIZONTAL)
+        slider_row.Add(self.toggle_slider, 1, wx.ALL | wx.EXPAND, 0)
+        debug_label = wx.StaticText(self.panel, label = "Debug Mode")
+        slider_row.Add(debug_label, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL, 8)
+        self.scenario_column.Add(slider_row, 0, wx.ALL | wx.EXPAND, 8)
+
+        # create engine column
+        self.engine_column = wx.BoxSizer(wx.VERTICAL)
 
         # assign button, dropdown and grid to centre column
-        engine_column.Add(self.add_engine_button, 0, wx.ALL | wx.CENTER, 8)
-        engine_column.Add(self.engine_dropdown, 0, wx.ALL | wx.EXPAND, 8)
-        engine_column.Add(self.engine_grid, 0, wx.ALL | wx.CENTER, 8)
-        engine_column.AddStretchSpacer()
+        self.engine_column.Add(self.add_engine_button, 0, wx.ALL | wx.CENTER, 8)
+        self.engine_column.Add(self.engine_dropdown, 0, wx.ALL | wx.EXPAND, 8)
+        self.engine_column.Add(self.engine_grid, 0, wx.ALL | wx.CENTER, 8)
+        self.engine_column.AddStretchSpacer()
 
-        # create right-hand column
+        # create central geometry column
+        self.geometry_column = wx.BoxSizer(wx.VERTICAL)
+
+        # assemble root sizer: add the new geometry column between centre and right
+        self.geometry_column.Add(self.add_geometry_button, 0, wx.ALL | wx.CENTER, 8)
+        self.geometry_column.Add(self.geometry_dropdown, 0, wx.ALL | wx.EXPAND, 8)
+        self.geometry_column.Add(self.geometry_grid, 0, wx.ALL | wx.CENTER, 8)
+
+        # off-design button and its grid
+        self.geometry_column.Add(self.add_off_design_button, 0, wx.ALL | wx.CENTER, 8)
+        self.geometry_column.Add(self.off_design_dropdown, 0, wx.ALL | wx.EXPAND, 8)
+        self.geometry_column.Add(self.off_design_grid, 0, wx.ALL | wx.CENTER, 8)
+        self.geometry_column.AddStretchSpacer()
+
+        # create plotting column
         plot_column = wx.BoxSizer(wx.VERTICAL)
 
         # assign buttons to right-hand column
@@ -238,36 +303,26 @@ class MainFrame(wx.Frame):
         # add export button at the bottom
         plot_column.Add(self.export_button, 0, wx.ALL | wx.EXPAND, 8)
 
-        # create central geometry column
-        self.geometry_column = wx.BoxSizer(wx.VERTICAL)
-        geometry_column = self.geometry_column
-
-        # assemble root sizer: add the new geometry column between centre and right
-        geometry_column.Add(self.add_geometry_button, 0, wx.ALL | wx.CENTER, 8)
-        geometry_column.Add(self.geometry_dropdown, 0, wx.ALL | wx.EXPAND, 8)
-        geometry_column.Add(self.geometry_grid, 0, wx.ALL | wx.CENTER, 8)
-        geometry_column.AddStretchSpacer()
-
         # create root sizer
         root = wx.BoxSizer(wx.HORIZONTAL)
-        root.Add(scenario_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
-        root.Add(engine_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
-        root.Add(geometry_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+        root.Add(self.scenario_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+        root.Add(self.engine_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+        root.Add(self.geometry_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
         root.Add(plot_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
         self.panel.SetSizer(root)
 
         # create colours dictionary
-        colours = {}
-        colours["dark grey"] = wx.Colour(60, 60, 60)
-        colours["light grey"] = wx.Colour(80, 80, 80)
-        colours["white"] = wx.Colour(255, 255, 255)
-        colours["blue"] = wx.Colour(64, 128, 192)
+        self.colours = {}
+        self.colours["dark grey"] = wx.Colour(32, 32, 32)
+        self.colours["light grey"] = wx.Colour(96, 96, 96)
+        self.colours["white"] = wx.Colour(255, 255, 255)
+        self.colours["blue"] = wx.Colour(96, 128, 216)
 
         # set font
-        font = wx.Font(10, wx.FONTFAMILY_SWISS, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Segoe UI")
+        self.font = wx.Font(11, wx.FONTFAMILY_SWISS, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Segoe UI")
 
         # apply to panel
-        self.apply_styling(self.panel, font, colours)
+        self.apply_styling(self.panel)
 
         # show gui
         self.Show()
@@ -425,7 +480,7 @@ class MainFrame(wx.Frame):
         self.Layout()
 
     def add_engine(self, event):
-        """Executes the creation of an engine corresponding to the selected flight scenario."""
+        """Creates an engine corresponding to the selected flight scenario."""
         # create dialog box
         dialog = AddEngineDialog(self)
 
@@ -528,7 +583,12 @@ class MainFrame(wx.Frame):
         self.geometry_display_texts.clear()
 
     def add_geometry(self, event):
-        """Shell for adding a new geometry entry (dialog not implemented)."""
+        """Adds a new engine geometry input."""
+        # check if an engine has already been created
+        if len(self.flight_scenarios[self.scenario_label].engines) == 0:
+
+            return
+        
         # create dialog box
         dialog = AddGeometryDialog(self)
 
@@ -545,9 +605,11 @@ class MainFrame(wx.Frame):
                 aspect_ratio = float(dialog.arguments[0].GetValue())
                 diffusion_factor = float(dialog.arguments[1].GetValue())
                 deviation_constant = float(dialog.arguments[2].GetValue())
-                geometry = Geometry(
-                    aspect_ratio, diffusion_factor, deviation_constant
-                )
+                geometry = {
+                    "aspect_ratio": aspect_ratio,
+                    "diffusion_factor": diffusion_factor,
+                    "deviation_constant": deviation_constant,
+                }
                 engine.geometries.append(geometry)
                 engine.geometry = geometry
                 engine.empirical_design()
@@ -570,9 +632,9 @@ class MainFrame(wx.Frame):
 
         # set geometry dropdown to the most recent option
         self.geometry_dropdown.SetSelection(self.geometry_dropdown.GetCount() - 1)
+        self.geometry_label = len(engine.geometries) - 1
 
         # rebuild geometry grid
-        self.geometry_label = len(engine.geometries) - 1
         self.rebuild_geometry_grid()
 
     def change_geometry(self, event):
@@ -583,9 +645,6 @@ class MainFrame(wx.Frame):
         geometry = engine.geometries[self.geometry_label]
         engine.geometry = geometry
         engine.empirical_design()
-        """for (blade_row, no_of_blades) in zip(engine.blade_rows, geometry.no_of_blades):
-
-            blade_row.no_of_blades = no_of_blades"""
         
         # rebuild geometry grid
         self.rebuild_geometry_grid()
@@ -632,7 +691,7 @@ class MainFrame(wx.Frame):
 
                     text = wx.StaticText(
                         self.panel,
-                        label = f"{getattr(engine.geometries[self.geometry_label], attribute)}"
+                        label = f"{engine.geometries[self.geometry_label][attribute]}"
                     )
 
             else:
@@ -642,30 +701,6 @@ class MainFrame(wx.Frame):
             # store text object and add to grid
             self.geometry_display_texts.append(text)
             self.geometry_grid.Add(text)
-
-        # loop over pairs of geometry labels and text boxes
-        """for (label, text) in zip(self.geometry_display_labels, self.geometry_display_texts):
-
-            # get new value to display from relevant Engine instance
-            if len(engine.geometries) == 0:
-
-                value = ""
-
-            else:
-
-                value = getattr(engine.geometries[-1], label[1])
-
-            # for string values
-            if isinstance(value, str):
-
-                # display as is
-                text.SetLabel(f"{value}")
-
-            # for numeric values
-            else:
-
-                # display to 4 significant figures
-                text.SetLabel(f"{value:.4g}")"""
         
         # add rows for each stage
         for index in range(no_of_stages):
@@ -716,7 +751,89 @@ class MainFrame(wx.Frame):
         self.geometry_column.Insert(2, self.geometry_grid, 0, wx.ALL | wx.CENTER, 8)
         
         # refresh layout
+        self.apply_styling(self.panel)
         self.panel.Layout()
+
+    def add_off_design(self, event):
+        """Specifies an off-design scenario to calculate."""
+        # check if an engine has already been created
+        if len(self.flight_scenarios[self.scenario_label].engines) == 0:
+
+            return
+
+        # check if geometry has already been calculated
+        engine = self.flight_scenarios[self.scenario_label].engines[self.engine_label]
+        if len(engine.geometries) == 0:
+
+            return
+        
+        # create dialog box
+        dialog = AddOffDesignDialog(self)
+        
+        # if user presses OK
+        if dialog.ShowModal() == wx.ID_OK:
+
+            # try-except block
+            try:
+
+                # create and store new object
+                phi_min = float(dialog.arguments[0].GetValue())
+                phi_max = float(dialog.arguments[1].GetValue())
+                off_design = {
+                    "phi_min": phi_min,
+                    "phi_max": phi_max
+                }
+                engine.off_designs.append(off_design)
+                engine.off_design = off_design
+                engine.calculate_off_design()
+
+                # add new entry to dropdown
+                self.off_design_dropdown.Append(
+                    f"[{len(engine.off_designs) - 1}]        "
+                    f"phi_min: {phi_min} | phi_max: {phi_max}"
+                )
+
+            # catch non-numeric inputs
+            except ValueError as error:
+
+                # display error
+                wx.MessageBox("Please enter a valid numeric input.", "Invalid Input")
+                traceback.print_exc()
+
+        # close dialog box
+        dialog.Destroy()
+
+        # set geometry dropdown to the most recent option
+        self.off_design_dropdown.SetSelection(self.off_design_dropdown.GetCount() - 1)
+        self.off_design_label = len(engine.off_designs) - 1
+
+        # loop over pairs of scenario labels and text boxes
+        for (label, text) in zip(self.off_design_display_labels, self.off_design_display_texts):
+
+            # get new value to display from relevant off-design dictionary
+            #print(f"engine.off_designs: {engine.off_designs}")
+            #print(f"engine.off_designs[self.off_design_label]: {engine.off_designs[self.off_design_label]}")
+            #print(f"engine.off_designs[self.off_design_label][label]: {engine.off_designs[self.off_design_label][label]}")
+            value = engine.off_designs[self.off_design_label][label[1]]
+
+            # for string values
+            if isinstance(value, str):
+
+                # display as is
+                text.SetLabel(f"{value}")
+
+            # for numeric values
+            else:
+
+                # display to 4 significant figures
+                text.SetLabel(f"{value:.4g}")
+
+    def change_off_design(self, event):
+        """Executes on each change of the off-design dropdown menu."""
+        # get latest label from off-design dropdown
+        self.off_design_label = int(self.off_design_dropdown.GetValue().split(']')[0][1:])
+        engine = self.flight_scenarios[self.scenario_label].engines[self.engine_label]
+        engine.off_design = engine.off_designs[self.off_design_label]
 
     def display_plot(self, event):
         """Displays a given plot for the selected Engine class instance."""
@@ -750,9 +867,26 @@ class MainFrame(wx.Frame):
             # retrieve engine and call export function
             engine = self.flight_scenarios[self.scenario_label].engines[self.engine_label]
             engine.export()
+
+    def toggle(self, event):
+        """Toggles debug mode."""
+        # toggle debug mode inside the Defaults class
+        if utils.Defaults.debug == False:
+
+            utils.Defaults.debug = True
         
-    def apply_styling(self, parent, font, colours):
+        else:
+
+            utils.Defaults.debug = False
+
+        print(f"{utils.Colours.PURPLE}Debug mode: {utils.Defaults.debug}{utils.Colours.END}")
+
+    def apply_styling(self, parent):
         """Applies styling to a child object for a given parent object."""
+        # store font and colour dictionaries
+        font = self.font
+        colours = self.colours
+
         # wrap in try-except block to ensure gui loads in spite of style errors
         try:
             
@@ -797,6 +931,17 @@ class MainFrame(wx.Frame):
                     child.SetForegroundColour(colours["white"])
                     child.SetFont(font)
 
+                # if child instance is a slider
+                elif isinstance(child, wx.Slider):
+
+                    # set background and border colour and increase height
+                    try:
+                        child.SetBackgroundColour(colours["dark grey"])
+                        child.SetForegroundColour(colours["white"])
+                        child.SetMinSize((-1, 36))
+                    except Exception:
+                        pass
+
             except Exception:
 
                 pass
@@ -805,7 +950,7 @@ class MainFrame(wx.Frame):
             if hasattr(child, "GetChildren"):
 
                 # apply styling function
-                self.apply_styling(child, font, colours)
+                self.apply_styling(child)
 
 # create AddScenarioDialog class
 class AddScenarioDialog(wx.Dialog):
@@ -955,6 +1100,54 @@ class AddGeometryDialog(wx.Dialog):
 
         # store as ordered list of arguments
         self.arguments = [getattr(self, input_label[1]) for input_label in parent.geometry_input_labels]
+
+# create AddOffDesignDialog class
+class AddOffDesignDialog(wx.Dialog):
+    """Creates a dialog box for creating or editing off-design specifications."""
+    def __init__(self, parent):
+        """Creates an instance of the AddOffDesignDialog class."""
+        super().__init__(
+            parent,
+            title = "Off-design",
+            size = (800, 250)
+        )
+        panel = wx.Panel(self)
+
+        # loop over all input label-pairs
+        for input_label in parent.off_design_input_labels:
+
+            # set the relevant attribute to a newly created text box
+            default = getattr(utils.Defaults, input_label[1], "")
+            setattr(self, input_label[1], wx.TextCtrl(panel, value = f"{default}"))
+
+        # layout in grid form
+        grid = wx.FlexGridSizer(
+            rows = len(parent.off_design_input_labels), cols = 2, hgap = 10, vgap = 8
+        )
+        grid.AddMany([
+            item for input_label in parent.off_design_input_labels
+            for item in (
+                wx.StaticText(panel, label = input_label[0]),
+                getattr(self, input_label[1]),
+            )
+        ])
+
+        # panel-level sizer (for the form)
+        panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
+        panel.SetSizer(panel_sizer)
+
+        # dialog-level buttons
+        buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
+
+        # dialog root sizer
+        dialog_sizer = wx.BoxSizer(wx.VERTICAL)
+        dialog_sizer.Add(panel, 1, wx.EXPAND | wx.ALL, 5)
+        dialog_sizer.Add(buttons, 0, wx.EXPAND | wx.ALL, 10)
+        self.SetSizerAndFit(dialog_sizer)
+
+        # store as ordered list of arguments
+        self.arguments = [getattr(self, input_label[1]) for input_label in parent.off_design_input_labels]
 
 # main function
 def main():

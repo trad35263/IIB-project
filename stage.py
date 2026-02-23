@@ -1,13 +1,15 @@
 # import modules
 
 import utils
-from blade_row import Blade_row
+#from blade_row import Blade_row
 from rotor import Rotor
 from stator import Stator
 from flow_state import Flow_state
 
 import numpy as np
 from scipy.optimize import root_scalar
+
+import copy
 
 # define Stage class
 
@@ -68,6 +70,124 @@ class Stage:
         string += "\n"
 
         return string
+
+    def evaluate(self):
+        """Evaluates performance of the individual stage."""
+        # evaluate rotor and stator performance
+        self.rotor.evaluate()
+        self.stator.evaluate(self.rotor.inlet.T)
+
+    def calculate_off_design(self, hub_tip_ratio, phi):
+        """Calculates the off-design performance of the stage."""
+        # make copy of rotor so it can be edited freely
+        rotor_copy = copy.deepcopy(self.rotor)
+
+        # function to solve for zero residuals of
+        def solve_rotor(v_x_hub):
+            """Returns the relevant residual for a blade row for a given hub axial velocity."""
+            # design blade row and return residual
+            rotor_copy.calculate_off_design(v_x_hub, hub_tip_ratio, phi)
+            residual = self.rotor.exit.rr[-1]**2 - rotor_copy.exit.rr[-1]**2
+            return residual
+        
+        # set initial guess
+        x0 = rotor_copy.inlet.v_x[0]
+        x1 = 0.9 * x0
+
+        # solve for blade row exit conditions
+        sol = root_scalar(solve_rotor, x0 = x0, x1 = x1, method = 'secant', maxiter = 20)
+        utils.debug(f"sol: {sol}")
+
+        # calculate new stage loading array
+        psi = (
+            (rotor_copy.exit.T_0 - rotor_copy.inlet.T_0)
+            / ((utils.gamma - 1) * rotor_copy.inlet.M_blade**2 * rotor_copy.inlet.T)
+        )
+
+        print(f"psi: {psi}")
+
+# obsolete
+
+    def evaluate2(self):
+        """Determines the distribution and mean values of non-dimensional stage parameters."""
+        # loop over inlet-exit pairs for the stage's rotor
+        for (inlet, exit) in zip(self.rotor.inlet, self.rotor.exit):
+
+            # determine local flow coefficient
+            inlet.phi = (
+                inlet.flow_state.M * np.cos(inlet.flow_state.alpha) / inlet.M_blade
+            )
+
+            # determine local stage loading coefficient
+            inlet.psi = (
+                (
+                    exit.flow_state.M * np.sin(exit.flow_state.alpha)
+                    * exit.r / inlet.r * np.sqrt(
+                        exit.flow_state.T / inlet.flow_state.T
+                    ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
+                ) / inlet.M_blade
+            )
+
+            # temp
+            inlet.M_x = inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+            exit.M_x = exit.flow_state.M * np.cos(exit.flow_state.alpha)
+
+            # store dimensionless mass flow rate
+            inlet.m = (
+                inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+                * np.sqrt(inlet.flow_state.T) * inlet.A * inlet.flow_state.rho
+            )
+            exit.m = (
+                exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                * np.sqrt(exit.flow_state.T) * exit.A * exit.flow_state.rho
+            )
+
+        # calculate total dimensionless mass flow rates
+        m_sum_inlet = np.sum([inlet.m for inlet in self.rotor.inlet])
+        m_sum_exit = np.sum([exit.m for exit in self.rotor.exit])
+
+        # loop over rotor inlet-exit pairs
+        for (inlet, exit) in zip(self.rotor.inlet, self.rotor.exit):
+
+            # normalise mass flow rates
+            inlet.m /= m_sum_inlet
+            exit.m /= m_sum_exit
+
+        # loop over rotor inlet-exit and stator exit triples
+        for (inlet, rotor_exit, exit) in zip(self.rotor.inlet, self.rotor.exit, self.stator.exit):
+
+            # determine local reaction
+            inlet.reaction = (
+                (rotor_exit.flow_state.T - inlet.flow_state.T)
+                / (exit.flow_state.T - inlet.flow_state.T)
+            )
+            
+            # temp
+            exit.M_x = exit.flow_state.M * np.cos(exit.flow_state.alpha)
+
+        # loop over stator inlet-exit pairs
+        for (inlet, exit) in zip(self.stator.inlet, self.stator.exit):
+
+            # store dimensionless mass flow rate
+            inlet.m = (
+                inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
+                * np.sqrt(inlet.flow_state.T) * inlet.A * inlet.flow_state.rho
+            )
+            exit.m = (
+                exit.flow_state.M * np.cos(exit.flow_state.alpha)
+                * np.sqrt(exit.flow_state.T) * exit.A * exit.flow_state.rho
+            )
+
+        # calculate total dimensionless mass flow rates
+        m_sum_inlet = np.sum([inlet.m for inlet in self.stator.inlet])
+        m_sum_exit = np.sum([exit.m for exit in self.stator.exit])
+
+        # loop over stator inlet-exit pairs
+        for (inlet, exit) in zip(self.stator.inlet, self.stator.exit):
+
+            # normalise mass flow rates
+            inlet.m /= m_sum_inlet
+            exit.m /= m_sum_exit
 
     def define_blade_geometry(self, last_stage=False):
         """Determines the blade geometry of the stage for a given inlet flow state."""
@@ -329,89 +449,3 @@ class Stage:
             (utils.gamma - 1) * np.log(self.stator.exit.p_0 / self.rotor.inlet.p_0)
             / (utils.gamma * np.log(self.stator.exit.T_0 / self.rotor.inlet.T_0))
         )
-
-    def evaluate2(self):
-        """Determines the distribution and mean values of non-dimensional stage parameters."""
-        # loop over inlet-exit pairs for the stage's rotor
-        for (inlet, exit) in zip(self.rotor.inlet, self.rotor.exit):
-
-            # determine local flow coefficient
-            inlet.phi = (
-                inlet.flow_state.M * np.cos(inlet.flow_state.alpha) / inlet.M_blade
-            )
-
-            # determine local stage loading coefficient
-            inlet.psi = (
-                (
-                    exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                    * exit.r / inlet.r * np.sqrt(
-                        exit.flow_state.T / inlet.flow_state.T
-                    ) - inlet.flow_state.M * np.sin(inlet.flow_state.alpha)
-                ) / inlet.M_blade
-            )
-
-            # temp
-            inlet.M_x = inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
-            exit.M_x = exit.flow_state.M * np.cos(exit.flow_state.alpha)
-
-            # store dimensionless mass flow rate
-            inlet.m = (
-                inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
-                * np.sqrt(inlet.flow_state.T) * inlet.A * inlet.flow_state.rho
-            )
-            exit.m = (
-                exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                * np.sqrt(exit.flow_state.T) * exit.A * exit.flow_state.rho
-            )
-
-        # calculate total dimensionless mass flow rates
-        m_sum_inlet = np.sum([inlet.m for inlet in self.rotor.inlet])
-        m_sum_exit = np.sum([exit.m for exit in self.rotor.exit])
-
-        # loop over rotor inlet-exit pairs
-        for (inlet, exit) in zip(self.rotor.inlet, self.rotor.exit):
-
-            # normalise mass flow rates
-            inlet.m /= m_sum_inlet
-            exit.m /= m_sum_exit
-
-        # loop over rotor inlet-exit and stator exit triples
-        for (inlet, rotor_exit, exit) in zip(self.rotor.inlet, self.rotor.exit, self.stator.exit):
-
-            # determine local reaction
-            inlet.reaction = (
-                (rotor_exit.flow_state.T - inlet.flow_state.T)
-                / (exit.flow_state.T - inlet.flow_state.T)
-            )
-            
-            # temp
-            exit.M_x = exit.flow_state.M * np.cos(exit.flow_state.alpha)
-
-        # loop over stator inlet-exit pairs
-        for (inlet, exit) in zip(self.stator.inlet, self.stator.exit):
-
-            # store dimensionless mass flow rate
-            inlet.m = (
-                inlet.flow_state.M * np.cos(inlet.flow_state.alpha)
-                * np.sqrt(inlet.flow_state.T) * inlet.A * inlet.flow_state.rho
-            )
-            exit.m = (
-                exit.flow_state.M * np.cos(exit.flow_state.alpha)
-                * np.sqrt(exit.flow_state.T) * exit.A * exit.flow_state.rho
-            )
-
-        # calculate total dimensionless mass flow rates
-        m_sum_inlet = np.sum([inlet.m for inlet in self.stator.inlet])
-        m_sum_exit = np.sum([exit.m for exit in self.stator.exit])
-
-        # loop over stator inlet-exit pairs
-        for (inlet, exit) in zip(self.stator.inlet, self.stator.exit):
-
-            # normalise mass flow rates
-            inlet.m /= m_sum_inlet
-            exit.m /= m_sum_exit
-
-    def evaluate(self):
-        """Evaluates performance of the individual stage."""
-        self.rotor.evaluate()
-        self.stator.evaluate(self.rotor.inlet.T)

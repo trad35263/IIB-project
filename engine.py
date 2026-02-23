@@ -26,6 +26,7 @@ import io
 
 # import custom classes
 from stage import Stage
+from rotor import Rotor
 from nozzle import Nozzle
 from flow_state import Flow_state
 from annulus import Annulus
@@ -136,8 +137,9 @@ class Engine:
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
 
-        # initialise empty list of Geometry objects
+        # initialise empty list of geometry and off-design dictionaries
         self.geometries = []
+        self.off_designs = []
 
     def __str__(self):
         """Prints a string representation of the stage."""
@@ -342,40 +344,93 @@ class Engine:
 
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
-        # investigate nozzle performance
+        # investigate nozzle performance and extract properties
         self.nozzle.evaluate(self.hub_tip_ratio)
+        self.T_0_ratio = self.nozzle.T_0_ratio
+        self.p_0_ratio = self.nozzle.p_0_ratio
         self.nozzle_area_ratio = self.nozzle.area_ratio
 
-        # determine net thrust coefficient of engine
-        """self.C_th = (   # including pressure terms
+        # calculate thrust coefficient (including pressure terms)
+        self.C_th = (
             self.nozzle.C_th[-1]
             - utils.mass_flow_function(self.M_1)
             * utils.velocity_function(self.M_flight)
             - self.nozzle_area_ratio * self.p_atm
-        )"""
-        self.C_th = (   # neglecting pressure terms
-            self.nozzle.C_th[-1]
-            - utils.mass_flow_function(self.M_1)
-            * utils.velocity_function(self.M_flight)
         )
 
-        print(f"utils.mass_flow_function(self.M_1): {utils.mass_flow_function(self.M_1)}")
+        # calculate jet velocity ratio
+        rho_v_2_r = (
+            self.nozzle.exit.p * self.nozzle.exit.M**2
+            * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
+        )
+        self.jet_velocity_ratio = (
+            utils.mass_flow_function(self.M_1) * utils.velocity_function(self.scenario.M)
+            / (
+                2 * utils.gamma * self.nozzle_area_ratio * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1], rho_v_2_r
+                )[-1]
+            )
+        )
 
-        # for now, return
-        self.pressure_ratio = self.nozzle.p_0_ratio
-        self.eta_prop = 1
-        self.eta_nozz = 1
-        self.eta_comp = 1
+        # calculate compressor (isentropic) efficiency
+        h_03s_h_01_r = (
+            self.nozzle.exit.p * self.nozzle.exit.M / np.sqrt(self.nozzle.exit.T)
+            * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
+            * self.nozzle.exit.rr
+        )
+        h_03_h_01_r = (
+            self.nozzle.exit.p * self.nozzle.exit.M / np.sqrt(self.nozzle.exit.T)
+            * (self.nozzle.exit.T_0 - 1) * self.nozzle.exit.rr
+        )
+        self.eta_comp = (
+            utils.cumulative_trapezoid(self.nozzle.exit.rr, h_03s_h_01_r)[-1]
+            / utils.cumulative_trapezoid(self.nozzle.exit.rr, h_03_h_01_r)[-1]
+        )
+
+        # calculate nozzle efficiency
+        rho_v_3_r = (
+            self.nozzle.exit.p * self.nozzle.exit.M**3 * np.sqrt(self.nozzle.exit.T)
+            * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
+        )
+        self.eta_nozz = (
+            (
+                2 * utils.gamma * (utils.gamma - 1) * self.nozzle_area_ratio
+                * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1], rho_v_3_r
+                )[-1]
+                - np.sqrt(utils.gamma - 1) * utils.mass_flow_function(self.M_1)
+                * utils.velocity_function(self.scenario.M)**2
+            ) / (
+                4 * utils.gamma * self.nozzle_area_ratio * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1],
+                    h_03s_h_01_r / self.nozzle.exit.rr[-1]
+                )[-1]
+            )
+        )
+
+        # calculate propulsive efficiency
+        self.eta_prop = (
+            2 * self.C_th * utils.velocity_function(self.scenario.M)
+            / ( 
+                2 * self.nozzle_area_ratio * utils.gamma * np.sqrt(utils.gamma - 1)
+                * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1], rho_v_3_r
+                )[-1]
+                - utils.mass_flow_function(self.M_1) * utils.velocity_function(self.scenario.M)**2
+            )
+        )
+
+        # calculate overall efficiency
         self.eta_elec = 1
-        self.jet_velocity_ratio = 1
-
-        m_dot = (
-            utils.mass_flow_function(self.M_1) * self.scenario.A * self.scenario.p_0
-            / np.sqrt(utils.c_p * self.scenario.T_0)
+        self.eta_overall = (
+            0.5 * np.sqrt(utils.gamma - 1) / utils.gamma * self.C_th
+            * utils.velocity_function(self.scenario.M) / (
+                self.nozzle_area_ratio * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1],
+                    h_03_h_01_r / self.nozzle.exit.rr[-1]
+                )[-1]
+            )
         )
-        print(f"solver m_dot: {m_dot}")
-
-        print(f"self.C_th * self.scenario.A * self.scenario.p_0: {self.C_th * self.scenario.A * self.scenario.p_0}")
 
         # iterate over all stages
         for stage in self.stages:
@@ -383,34 +438,12 @@ class Engine:
             # investigate stage performance
             stage.evaluate()
 
-        # sum thrust coefficients
-        """self.C_th = np.sum([exit.C_th * exit.m for exit in self.nozzle.exit])
-
-        # find mass-averaged propulsive efficiency
-        self.eta_prop = np.sum([exit.eta_prop * exit.m for exit in self.nozzle.exit])
-
-        # find mass-averaged nozzle efficiency
-        self.eta_nozz = np.sum([exit.eta_nozz * exit.m for exit in self.nozzle.exit])
-
-        # find mass-averaged compressor (isentropic) efficiency
-        self.eta_comp = np.sum([exit.eta_comp * exit.m for exit in self.nozzle.exit])
-
-        # take electric efficiency as 1 for now
-        self.eta_elec = 1
-        
-        # find mass-averaged jet velocity ratio
-        self.jet_velocity_ratio = np.sum([exit.jet_velocity_ratio * exit.m for exit in self.nozzle.exit])
-
-        # store miscellaneous engine quantities
-        self.nozzle_area_ratio = self.nozzle.A_exit / np.sum(inlet.A for inlet in self.blade_rows[0].inlet)
-        self.pressure_ratio = np.sum([exit.m * exit.flow_state.p_0 for exit in self.nozzle.exit])"""
-
     def empirical_design(self):
         """Determines the actual geometry of the engine."""
         # store relevant geometry parameters separately for convenience
-        aspect_ratio = self.geometry.aspect_ratio
-        diffusion_factor = self.geometry.diffusion_factor
-        deviation_constant = self.geometry.deviation_constant
+        aspect_ratio = self.geometry["aspect_ratio"]
+        diffusion_factor = self.geometry["diffusion_factor"]
+        deviation_constant = self.geometry["deviation_constant"]
 
         # loop over all blade rows
         for blade_row in self.blade_rows:
@@ -420,8 +453,21 @@ class Engine:
             blade_row.calculate_deviation(deviation_constant)
 
         # store list containing number of blades for each row
-        self.geometry.no_of_blades = [blade_row.no_of_blades for blade_row in self.blade_rows]
+        self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
 
+    def calculate_off_design(self):
+        """Calculates the off-design performance characterstics of each stage."""
+        # loop over each stage
+        for stage in self.stages:
+
+            # for different values of flow coefficient between the given bounds
+            phi_min = self.off_design["phi_min"]
+            phi_max = self.off_design["phi_max"]
+            for phi in [phi_min, phi_max]:
+
+                # calculate off-design performance for stage
+                stage.calculate_off_design(self.hub_tip_ratio, phi)
+        
     def dimensional_values(self):
         """Convert some values back to dimensional values for export to CFD."""
         # get mean of mean-line chords for each blade row
@@ -543,6 +589,29 @@ class Engine:
                 * (blade_row.exit.rr[-1]**2 - self.hub_tip_ratio**2)
             )
 
+            # calculate blade rpm
+            if isinstance(blade_row, Rotor):
+
+                rpm = (
+                    blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1]) * np.sqrt(
+                        utils.gamma * utils.R * self.scenario.T_0
+                    ) / (0.5 * self.diameter)
+                )
+                rpm = utils.rad_s_to_rpm(rpm)
+
+            else:
+
+                rpm = 0
+
+            v_x = (
+                0.5 * (blade_row.inlet.v_x[0] + blade_row.inlet.v_x[-1])
+                * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+            )
+
+            print(f"self.scenario.T_0: {self.scenario.T_0}")
+            print(f"blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1]): {blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1])}")
+            print(f"rpm: {rpm}")
+
             # create nested dictionary corresponding to blade row data
             self.blades_dictionary[f"blade_{index + 1}"] = {
                 "span": span.tolist(),
@@ -554,6 +623,9 @@ class Engine:
                 "exit_radius": exit_radius,
                 "inlet_area": inlet_area,
                 "exit_area": exit_area,
+                "area_ratio": exit_area / inlet_area,
+                "rpm": rpm,
+                "v_x": v_x,
                 "no_of_blades": blade_row.no_of_blades
             }
 
@@ -581,9 +653,9 @@ class Engine:
             "stage_loading_coefficient": self.psi,
 
             # export geometry information
-            "aspect_ratio": self.geometry.aspect_ratio,
-            "diffusion_factor": self.geometry.diffusion_factor,
-            "deviation_constant": self.geometry.deviation_constant,
+            "aspect_ratio": self.geometry["aspect_ratio"],
+            "diffusion_factor": self.geometry["diffusion_factor"],
+            "deviation_constant": self.geometry["deviation_constant"],
 
             # export solver outputs
             "inlet_mach_number": self.M_1,
@@ -1065,13 +1137,20 @@ class Engine:
         x_max = np.max(self.M_1_guesses)
         y_min = np.min(self.C_th_guesses)
         y_max = np.max(self.C_th_guesses)
-        ax.set_xlim(x_min - 0.1 * (x_max - x_min), x_max + 0.1 * (x_max - x_min))
-        ax.set_ylim(y_min - 0.1 * (y_max - y_min), y_max + 0.1 * (y_max - y_min))
+        margin = 0.5
+        ax.set_xlim(x_min - margin * (x_max - x_min), x_max + margin * (x_max - x_min))
+        ax.set_ylim(y_min - margin * (y_max - y_min), y_max + margin * (y_max - y_min))
 
         # configure and show plot
+        ax.set_xlabel("Inlet Mach number")
+        ax.set_ylabel("Thrust Coefficient")
         ax.grid()
         ax.legend()
         plt.show()
+
+    def plot_off_design(self):
+        """"""
+        pass
 
 # obsolete functions
     

@@ -39,6 +39,10 @@ class Defaults:
     deviation_constant = 0.23
     max_blades = 20
 
+    # default off_design parameters
+    phi_min = 0.2
+    phi_max = 0.8
+
     # default plotting parameters
     quantity_list = [
         [
@@ -83,7 +87,7 @@ class Defaults:
 
     # code iteration parameters
     solver_grid = 101
-    export_grid = 200
+    export_grid = 51
     maxiter = 50
 
     # default dimensional values
@@ -241,6 +245,10 @@ def rad_to_deg(x):
 def deg_to_rad(x):
     """Converts a float from degrees (°) into radians."""
     return np.pi * x / 180
+
+def rad_s_to_rpm(x):
+    """Converts a float from rad/s to rpm."""
+    return x * 60 / (2 * np.pi)
 
 # 0.7 debugging function
 

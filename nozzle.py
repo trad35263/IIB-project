@@ -492,16 +492,12 @@ class Nozzle:
         self.area_ratio = self.exit.rr[-1]**2 / (1 - hub_tip_ratio**2)
 
         # find cumulative thrust coefficient distribution
-        """dC_th_dr = (    # with pressure terms
+        dC_th_dr = (    # with pressure terms
             2 / (1 - hub_tip_ratio**2) * (
                 utils.impulse_function(self.exit.M)
                 - 2 * utils.dynamic_pressure_function(self.exit.M)
                 * (np.sin(self.exit.alpha))**2
             ) * self.exit.p_0 * self.exit.rr
-        )"""
-        dC_th_dr = (    # neglecting pressure terms
-            2 * utils.gamma / (1 - hub_tip_ratio**2)
-            * self.exit.p * self.exit.M**2 * (np.cos(self.exit.alpha))**2 * self.exit.rr
         )
         self.C_th = utils.cumulative_trapezoid(self.exit.rr, dC_th_dr)
 

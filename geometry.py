@@ -2,6 +2,8 @@
 import numpy as np
 import utils
 
+###     DEPRECATED
+
 # create Geometry class
 class Geometry:
     """
