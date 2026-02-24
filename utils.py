@@ -26,7 +26,7 @@ class Defaults:
     }
 
     # default engine input parameters
-    no_of_stages = 1
+    no_of_stages = 2
     vortex_exponent = 0.5
     solver_order = 2
     Y_p = 0.02

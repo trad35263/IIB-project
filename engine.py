@@ -15,7 +15,7 @@ from scipy.interpolate import interp1d
 from datetime import datetime
 import json
 
-import matlab.engine
+#import matlab.engine
 from pathlib import Path as FilePath
 
 # import system modules
@@ -573,7 +573,7 @@ class Engine:
             chord = chord_interp(span)
 
             # calculate blade x-coordinate
-            x_ref += max(chord)
+            x_ref += 2 * max(chord)
 
             # store inlet and exit midspan radii
             inlet_radius = self.diameter / 2 * (blade_row.inlet.rr[0] + blade_row.inlet.rr[-1]) / 2

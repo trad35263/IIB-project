@@ -21,6 +21,41 @@ def main():
     """colours = utils.Colours()
     print(colours)"""
 
+    # create a flight scenario with default parameters
+    flight_scenario = Flight_scenario(
+        "default",
+        utils.Defaults.altitude,
+        utils.Defaults.flight_speed,
+        utils.Defaults.diameter,
+        utils.Defaults.hub_tip_ratio,
+        utils.Defaults.thrust
+    )
+
+    # create an engine with default parameters
+    engine = Engine(
+        flight_scenario,
+        utils.Defaults.no_of_stages,
+        utils.Defaults.vortex_exponent,
+        utils.Defaults.solver_order,
+        utils.Defaults.Y_p,
+        utils.Defaults.phi,
+        utils.Defaults.psi
+    )
+    print(engine)
+
+    # add geometry
+    engine.geometry = {
+        "aspect_ratio": utils.Defaults.aspect_ratio,
+        "diffusion_factor": utils.Defaults.diffusion_factor,
+        "deviation_constant": utils.Defaults.deviation_constant
+    }
+
+    # calculate blade angles and export engine
+    engine.empirical_design()
+    engine.export()
+
+    return
+
     if utils.Defaults.no_of_stages == None:
 
         # determine from user how many stages to construct the engine with
