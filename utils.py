@@ -35,13 +35,16 @@ class Defaults:
 
     # default geometry parameters
     aspect_ratio = 2.5
-    diffusion_factor = 0.4
+    diffusion_factor = 0.3
     deviation_constant = 0.23
     max_blades = 20
 
     # default off_design parameters
-    phi_min = 0.2
-    phi_max = 0.8
+    phi_min = 0.4
+    phi_max = 1
+
+    # default figure size tuple
+    figsize = (10, 6)
 
     # default plotting parameters
     quantity_list = [
@@ -55,9 +58,8 @@ class Defaults:
             'metal_angle', 'Metal angle (°)'
         ],
         [
-            'pitch_to_chord', 'Pitch-to-chord ratio',
-            'pitch', 'Pitch',
-            'chord', 'Chord'
+            'chord', 'Chord',
+            'axial_chord', 'Axial chord'
         ],
         [
             'phi', 'Flow coefficient',
@@ -69,25 +71,21 @@ class Defaults:
             'T_0', 'Stagnation temperature'
         ],
         [
-            'dpsi', 'Stage loading residual',
-            'dr', 'Radial equilibrium residual'
-        ],
-        [
             'v_x', 'Axial velocity',
             'v_theta', 'Tangential velocity'
         ],
         [
-            'm_dot', 'Cumulative mass flow rate'
+            'diffusion_factor', 'Diffusion factor'
         ],
         [
-            'T', 'Static temperature',
-            'p', 'Static pressure'
-        ]
+            'deviation', 'Deviation angle (°)'
+        ],
     ]
 
     # code iteration parameters
     solver_grid = 101
     export_grid = 51
+    off_design_grid = 10
     maxiter = 50
 
     # default dimensional values

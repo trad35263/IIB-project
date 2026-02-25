@@ -15,7 +15,7 @@ from scipy.interpolate import interp1d
 from datetime import datetime
 import json
 
-#import matlab.engine
+import matlab.engine
 from pathlib import Path as FilePath
 
 # import system modules
@@ -195,7 +195,7 @@ class Engine:
                 """Returns the relevant residual for a blade row for a given hub axial velocity."""
                 # design blade row and return residual
                 blade_row.design(v_x_hub, self.hub_tip_ratio)
-                residual = blade_row.exit.rr[-1]**2 - 1
+                residual = blade_row.exit.rr[-1]**2 - 0.95 * blade_row.inlet.rr[-1]**2
                 blade_row.v_x_guesses.append(v_x_hub)
                 blade_row.residual_guesses.append(residual)
                 return residual
@@ -443,14 +443,14 @@ class Engine:
         # store relevant geometry parameters separately for convenience
         aspect_ratio = self.geometry["aspect_ratio"]
         diffusion_factor = self.geometry["diffusion_factor"]
-        deviation_constant = self.geometry["deviation_constant"]
+        design_parameter = self.geometry["design_parameter"]
+        print(f"design_parameter: {design_parameter}")
 
         # loop over all blade rows
         for blade_row in self.blade_rows:
 
             # calculate chord distribution and deviation
-            blade_row.calculate_chord(aspect_ratio, diffusion_factor)
-            blade_row.calculate_deviation(deviation_constant)
+            blade_row.calculate_chord(aspect_ratio, diffusion_factor, design_parameter)
 
         # store list containing number of blades for each row
         self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
@@ -463,9 +463,10 @@ class Engine:
             # for different values of flow coefficient between the given bounds
             phi_min = self.off_design["phi_min"]
             phi_max = self.off_design["phi_max"]
-            for phi in [phi_min, phi_max]:
+            for phi in np.linspace(phi_min, phi_max, utils.Defaults.off_design_grid):
 
-                # calculate off-design performance for stage
+                # create copy of stage and calculate off-design performance
+                #stage_copy = copy.deepcopy(stage)
                 stage.calculate_off_design(self.hub_tip_ratio, phi)
         
     def dimensional_values(self):
@@ -514,10 +515,6 @@ class Engine:
         xx_mm = np.linspace(-0.1, len(self.blade_rows) + 0.1, utils.Defaults.export_grid)
         r_casing_mm = r_casing_spline(xx_mm)
         r_hub_mm = r_hub_spline(xx_mm)
-
-        print(f"xx_mm: {xx_mm}")
-        print(f"r_casing_mm: {r_casing_mm}")
-        print(f"r_hub_mm: {r_hub_mm}")
 
     def export(self):
         """Exports the engine's parameters as a .mat file for CFD."""
@@ -607,10 +604,6 @@ class Engine:
                 0.5 * (blade_row.inlet.v_x[0] + blade_row.inlet.v_x[-1])
                 * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
             )
-
-            print(f"self.scenario.T_0: {self.scenario.T_0}")
-            print(f"blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1]): {blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1])}")
-            print(f"rpm: {rpm}")
 
             # create nested dictionary corresponding to blade row data
             self.blades_dictionary[f"blade_{index + 1}"] = {
@@ -975,24 +968,33 @@ class Engine:
         # create plot
         fig, ax = plt.subplots(figsize = (14, 6))
 
-        # initialise empty list to hold x- and y-values
-        xx = [0, 1]
-        yy = []
+        # initialise empty grid to store streamline radii
+        yy = np.zeros((utils.Defaults.solver_grid, len(self.blade_rows) + 2))
 
         # store rotor inlet values
-        yy.append(self.blade_rows[0].inlet.rr)
+        yy[:, 0] = self.blade_rows[0].inlet.rr
 
         # loop over all blade rows
         for index, blade_row in enumerate(self.blade_rows):
 
-            xx.append(index + 2)
-            yy.append(blade_row.exit.rr)
+            # store exit streamline radii for blade row
+            yy[:, index + 1] = blade_row.exit.rr
+
+            # draw blade row
+            x_1 = index + 0.5 - blade_row.exit.axial_chord / 2
+            x_2 = index + 0.5 + blade_row.exit.axial_chord / 2
+            x = np.concatenate((x_1, x_2[::-1]))
+            y = np.concatenate((
+                (blade_row.inlet.rr + blade_row.exit.rr) / 2,
+                (blade_row.inlet.rr + blade_row.exit.rr)[::-1] / 2
+            ))
+            ax.plot(x, y)
 
         # store nozzle exit values
-        yy.append(self.nozzle.exit.rr)
+        yy[:, -1] = self.nozzle.exit.rr
 
-        # transpose y-array
-        yy = np.transpose(yy)
+        # array of x-coordinates
+        xx = np.arange(len(self.blade_rows) + 2)
 
         # plot each streamline separately
         for streamline in yy:
@@ -1000,6 +1002,7 @@ class Engine:
             # plot streamline
             ax.plot(xx, streamline, linewidth = 1, color = 'k')
 
+        # show plot
         plt.show()
 
     def plot_matlab(self):
@@ -1150,7 +1153,75 @@ class Engine:
 
     def plot_off_design(self):
         """"""
-        pass
+        # loop over all stages
+        for stage in self.stages:
+
+            # create plot
+            fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+            # plot characteristc for hub
+            ax.plot(
+                [stage_copy.rotor.exit.phi[0] for stage_copy in stage.off_designs],
+                [stage_copy.rotor.exit.psi[0] for stage_copy in stage.off_designs],
+                label = "Hub", color = "C0"
+            )
+            ax.plot(
+                [stage.rotor.exit.phi[0]],
+                [stage.rotor.exit.psi[0]],
+                linestyle = '', marker = '.', markersize = 8,
+                color = "C0"
+            )
+
+            ax.plot(
+                [
+                    stage_copy.rotor.exit.phi[int(np.floor(utils.Defaults.solver_grid / 2))]
+                    for stage_copy in stage.off_designs
+                ],
+                [
+                    stage_copy.rotor.exit.psi[int(np.floor(utils.Defaults.solver_grid / 2))]
+                    for stage_copy in stage.off_designs
+                ],
+                label = "Mid-span", color = "C1"
+            )
+            ax.plot(
+                [stage.rotor.exit.phi[int(np.floor(utils.Defaults.solver_grid / 2))]],
+                [stage.rotor.exit.psi[int(np.floor(utils.Defaults.solver_grid / 2))]],
+                linestyle = '', marker = '.', markersize = 8,
+                color = "C1"
+            )
+
+            # plot characterstic for tip
+            ax.plot(
+                [stage_copy.rotor.exit.phi[-1] for stage_copy in stage.off_designs],
+                [stage_copy.rotor.exit.psi[-1] for stage_copy in stage.off_designs],
+                label = "Tip", color = "C2"
+            )
+            ax.plot(
+                [stage.rotor.exit.phi[-1]],
+                [stage.rotor.exit.psi[-1]],
+                linestyle = '', marker = '.', markersize = 8,
+                color = "C2"
+            )
+
+            # configure plot
+            ax.grid()
+            ax.legend()
+            ax.set_xlabel("Flow Coefficient")
+            ax.set_ylabel("Stage Loading Coefficient")
+
+            # set title
+            ax.text(
+                0.5, 1.02,
+                f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+                f"$ \\phi $ = {self.phi:.3g}, $ \\psi $ = {self.psi:.3g}, n = {self.vortex_exponent:.3g}",
+                transform = ax.transAxes,
+                ha = 'center',
+                va = 'bottom',
+                fontsize = 16
+            )
+
+        # show all plots
+        plt.show()
 
 # obsolete functions
     

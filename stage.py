@@ -39,6 +39,7 @@ class Stage:
         self.psi = psi
         self.vortex_exponent = vortex_exponent
         self.Y_p = Y_p
+        self.index = index
 
         # create list of blade rows
         self.blade_rows = []
@@ -50,6 +51,9 @@ class Stage:
         # create stator
         self.stator = Stator(self.Y_p)
         self.blade_rows.append(self.stator)
+
+        # store off-design calculations in a dictionary
+        self.off_designs = []
 
     def __str__(self):
         """Prints a string representation of the stage."""
@@ -79,10 +83,11 @@ class Stage:
 
     def calculate_off_design(self, hub_tip_ratio, phi):
         """Calculates the off-design performance of the stage."""
-        # make copy of rotor so it can be edited freely
+        # make copy of blade rows so they can be edited freely
         rotor_copy = copy.deepcopy(self.rotor)
+        stator_copy = copy.deepcopy(self.stator)
 
-        # function to solve for zero residuals of
+        # rotor-solving function to find zero-residual conditions for
         def solve_rotor(v_x_hub):
             """Returns the relevant residual for a blade row for a given hub axial velocity."""
             # design blade row and return residual
@@ -95,16 +100,38 @@ class Stage:
         x1 = 0.9 * x0
 
         # solve for blade row exit conditions
-        sol = root_scalar(solve_rotor, x0 = x0, x1 = x1, method = 'secant', maxiter = 20)
+        sol = root_scalar(
+            solve_rotor, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
+        )
         utils.debug(f"sol: {sol}")
 
-        # calculate new stage loading array
-        psi = (
-            (rotor_copy.exit.T_0 - rotor_copy.inlet.T_0)
-            / ((utils.gamma - 1) * rotor_copy.inlet.M_blade**2 * rotor_copy.inlet.T)
-        )
+        # set stator inlet conditions to rotor exit conditions, preserving blade metal angles
+        stator_inlet_metal_angle = self.stator.inlet.metal_angle
+        stator_copy.inlet = copy.deepcopy(rotor_copy.exit)
+        stator_copy.inlet.metal_angle = stator_inlet_metal_angle
 
-        print(f"psi: {psi}")
+        # stator-solving function to find zero-residual conditions for
+        def solve_stator(v_x_hub):
+            """Finds the residual for an off-design stator for a given hub axial velocity."""
+            # design blade row and return residual
+            stator_copy.design(v_x_hub, hub_tip_ratio)
+            residual = self.stator.exit.rr[-1]**2 - stator_copy.exit.rr[-1]**2
+            return residual
+        
+        # set initial guess
+        x0 = stator_copy.inlet.v_x[0]
+        x1 = 0.9 * x0
+
+        # solve for blade row exit conditions
+        sol = root_scalar(solve_stator, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter)
+        utils.debug(f"sol: {sol}")
+
+        # store as copy of stage
+        stage = Stage(self.phi, self.psi, self.vortex_exponent, self.Y_p, self.index)
+        stage.rotor = rotor_copy
+        stage.stator = stator_copy
+        stage.evaluate()
+        self.off_designs.append(stage)
 
 # obsolete
 

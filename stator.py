@@ -9,6 +9,7 @@ from annulus import Annulus
 from coefficients import Coefficients
 import utils
 from blade_row import Blade_row
+import matplotlib.pyplot as plt
 
 # define Stator class
 class Stator(Blade_row):
@@ -304,19 +305,54 @@ class Stator(Blade_row):
             / (self.exit.T - T_1)
         )
 
-    def calculate_chord(self, aspect_ratio, diffusion_factor):
+    def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
-        # get nominal pitch-to-chord distribution
+        # calculate pitch-to-chord distribution for constant diffusion factor
         self.exit.pitch_to_chord = (
             2 * (
                 diffusion_factor - 1 + self.exit.M / self.inlet.M
                 * np.sqrt(self.exit.T / self.inlet.T)
             ) / (
-                np.sin(np.abs(self.inlet.alpha))
-                - self.exit.M / self.inlet.M
-                * np.sqrt(self.exit.T / self.inlet.T)
-                * np.sin(np.abs(self.exit.alpha))
+                np.sin(np.abs(self.inlet.alpha)) - self.exit.M / self.inlet.M * np.sqrt(
+                    self.exit.T / self.inlet.T
+                ) * np.sin(np.abs(self.exit.alpha))
             )
+        )
+
+        # calculate corresponding deviation
+        self.calculate_deviation()
+
+        # get mean-line deviation value
+        self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
+        delta_mean = np.interp(self.exit.r_mean, self.exit.rr, self.exit.deviation)
+
+        # calculate pitch-to-chord distribution for constant deviation
+        pitch_to_chord_deviation = (
+            (
+                utils.rad_to_deg(delta_mean) / (
+                    (0.23 + np.abs(utils.rad_to_deg(self.exit.alpha)) / 500)
+                    * utils.rad_to_deg(self.inlet.alpha + delta_mean - self.exit.alpha)
+                )
+            )**2
+        )
+
+        # blend pitch-to-chord distributions according to diffusion parameter
+        p = design_parameter
+        self.exit.pitch_to_chord = (
+            (1 - p) * self.exit.pitch_to_chord + p * pitch_to_chord_deviation
+        )
+
+        # recalculate deviation
+        self.calculate_deviation()
+
+        # calculate actual diffusion factor distribution
+        self.exit.diffusion_factor = (
+            1 - self.exit.M / self.inlet.M * np.sqrt(self.exit.T / self.inlet.T)
+            + 0.5 * (
+                np.sin(np.abs(self.inlet.alpha)) - self.exit.M / self.inlet.M * np.sqrt(
+                    self.exit.T / self.inlet.T
+                ) * np.sin(np.abs(self.exit.alpha))
+            ) * self.exit.pitch_to_chord
         )
 
         # calculate minimum number of blades to achieve aspect ratio
@@ -329,7 +365,6 @@ class Stator(Blade_row):
 
             # calculate mean-line aspect ratio
             r_mean = 0.5 * (self.exit.rr[0] + self.exit.rr[-1])
-            #pitch_mean = np.interp(r_mean, self.exit.rr, self.exit.pitch)
             chord_mean = np.interp(r_mean, self.exit.rr, self.exit.chord)
             AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
 
@@ -344,29 +379,143 @@ class Stator(Blade_row):
         # calculate true aspect ratio distribution
         self.exit.aspect_ratio = (self.exit.rr[-1] - self.exit.rr[0]) / self.exit.chord
 
-    def calculate_deviation(self, deviation_constant):
-        """Calculates the deviation distribution using Carter and Howell."""
-        # store inlet metal angles
-        self.inlet.metal_angle = self.inlet.alpha
-
-        # store inlet and exit angles in degrees for convenience
-        inlet_angles = utils.rad_to_deg(self.inlet.alpha)
-        exit_angles = utils.rad_to_deg(self.exit.alpha)
-
-        # calculate deviation coefficient using Howell's correlation for a circular camber line
-        m = 0.23 + exit_angles / 500
-
-        # calculate exit metal angles and corresponding deviation
-        self.exit.metal_angle = (
-            utils.deg_to_rad(
-                exit_angles - m * inlet_angles * np.sqrt(self.exit.pitch_to_chord)
-                / (1 + m * np.sqrt(self.exit.pitch_to_chord))
-            )
-        )
-        self.exit.deviation = self.exit.alpha - self.exit.metal_angle
-
         # calculate axial chord distribution
         self.exit.axial_chord = (
             self.exit.chord * (np.sin(self.exit.metal_angle) - np.sin(self.inlet.metal_angle))
             / (self.exit.metal_angle - self.inlet.metal_angle)
         )
+
+    def calculate_deviation(self):
+        """Calculates the deviation distribution using Carter and Howell."""
+        # store inlet metal angles
+        self.inlet.metal_angle = self.inlet.alpha
+
+        # store inlet and exit angles in degrees for convenience
+        inlet_angle = utils.rad_to_deg(self.inlet.alpha)
+        exit_angle = utils.rad_to_deg(self.exit.alpha)
+
+        # calculate deviation coefficient using Howell's correlation for a circular camber line
+        m = 0.23 + np.abs(exit_angle) / 500
+
+        # calculate camber angle
+        metal_angle_1 = (
+            (m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle - exit_angle)
+            / (m * np.sqrt(self.exit.pitch_to_chord) - 1)
+        )
+        metal_angle_2 = (
+            (-m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle - exit_angle)
+            / (-m * np.sqrt(self.exit.pitch_to_chord) - 1)
+        )
+
+        # calculate exit metal angles and corresponding deviation
+        self.exit.metal_angle = utils.deg_to_rad(metal_angle_1)
+        """self.exit.metal_angle = (
+            utils.deg_to_rad(
+                exit_angles - m * inlet_angles * np.sqrt(self.exit.pitch_to_chord)
+                / (1 - m * np.sqrt(self.exit.pitch_to_chord))
+            )
+        )"""
+        self.exit.deviation = self.exit.alpha - self.exit.metal_angle
+
+
+    # this maybe is NOT necessary?
+    def calculate_off_design(self, v_x_hub, hub_tip_ratio):
+        """Calculates the off-design exit conditions for the stator blade row."""
+        # hub dimensionless axial velocity and radius are known
+        self.exit.v_x[0] = v_x_hub
+        self.exit.rr[0] = self.inlet.rr[0]
+
+        # stagnation temperature is conserved across stator row
+        self.exit.T_0 = self.inlet.T_0
+        
+        # find exit stagnation pressure via stagnation pressure loss coefficient
+        self.exit.p_0 = (
+            self.inlet.p_0 * (1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(self.inlet.M)))
+        )
+
+        # find corresponding change in dimensionless entropy
+        self.exit.s = self.inlet.s - np.log(self.exit.p_0 / self.inlet.p_0) / utils.gamma
+
+        # calculate exit angle distribution from Howell and Carter correlation
+        """inlet_angles = utils.rad_to_deg(self.inlet.metal_angle)
+        exit_angles = utils.rad_to_deg(self.exit.metal_angle)
+        self.exit.alpha = utils.deg_to_rad(
+            exit_angles - 0.23 * (exit_angles - inlet_angles) * np.sqrt(self.exit.pitch_to_chord)
+            / (1 + 1 / 500 * (exit_angles - inlet_angles) * np.sqrt(self.exit.pitch_to_chord))
+        )"""
+        # leave exit angle as is
+
+        # determine inlet mass flow rate distribution
+        self.inlet.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.inlet.p / np.sqrt(self.inlet.T)
+            * self.inlet.M * np.cos(self.inlet.alpha) * self.inlet.rr
+        )
+        self.inlet.m_dot = utils.cumulative_trapezoid(self.inlet.rr, self.inlet.dm_dot_dr)
+
+        # get mass flow rate through each streamtube
+        dm_dot_2 = np.diff(self.inlet.m_dot)
+
+        # loop over each streamtube
+        for index in range(utils.Defaults.solver_grid):
+                
+            # for all cases except hub streamline
+            if index > 0:
+                
+                # create fine grid for calculating streamtube upper bound 
+                r_3_fine = np.linspace(
+                    self.exit.rr[index - 1],
+                    self.exit.rr[index - 1] + 5 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
+                    utils.Defaults.solver_grid
+                )
+
+                # determine local exit mass flow rate distribution
+                dm_dr_3 = (
+                    2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+                    * self.exit.p_0[index - 1] / np.sqrt(self.exit.T_0[index - 1])
+                    * self.exit.M[index - 1] * np.power(
+                        1 + 0.5 * (utils.gamma - 1) * self.exit.M[index - 1]**2,
+                        0.5 - utils.gamma / (utils.gamma - 1)
+                    ) * np.cos(self.exit.alpha[index - 1]) * r_3_fine
+                )
+                m_dot_3 = utils.cumulative_trapezoid(r_3_fine, dm_dr_3)
+
+                # interpolate to find upper bound of corresponding streamtube
+                self.exit.rr[index] = np.interp(dm_dot_2[index - 1], m_dot_3, r_3_fine)
+
+                # calculate derivatives required for radial equilibrium
+                dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
+                ds = self.exit.s[index] - self.exit.s[index - 1]
+                dtan_2_alpha = (np.tan(self.exit.alpha[index]))**2 - (np.tan(self.exit.alpha[index - 1]))**2
+
+                # calculate dimensionless axial velocity via difference equation
+                self.exit.v_x[index] = (
+                    self.exit.v_x[index - 1] + (
+                        dT_0 / (utils.gamma - 1)
+                        - self.exit.T[index - 1] * ds
+                        - self.exit.v_x[index - 1]**2 * (
+                            (np.tan(self.exit.alpha[index - 1]))**2 / self.exit.rr[index - 1]
+                            * (self.exit.rr[index] - self.exit.rr[index - 1])
+                            + 0.5 * dtan_2_alpha
+                        )
+                    ) / self.exit.v_x[index - 1]
+                )
+
+            # solve for exit tangential velocity from axial velocity and flow angle
+            self.exit.v_theta[index] = self.exit.v_x[index] * np.tan(self.exit.alpha[index])
+
+            # solve for Mach number
+            v_squared = (self.exit.v_x[index] / np.cos(self.exit.alpha[index]))**2
+            self.exit.M[index] = np.sqrt(v_squared / (1 - 0.5 * (utils.gamma - 1) * v_squared))
+
+        # solve for exit static conditions
+        self.exit.T = self.exit.T_0 * utils.stagnation_temperature_ratio(self.exit.M)
+        self.exit.p = self.exit.p_0 * utils.stagnation_pressure_ratio(self.exit.M)
+
+        # calculate exit mass flow rate
+        self.exit.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.exit.p / np.sqrt(self.exit.T)
+            * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
+        )
+        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)

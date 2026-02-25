@@ -58,8 +58,7 @@ class MainFrame(wx.Frame):
     # create list of label-pairs required to create a geometry object
     geometry_input_labels = [
         ["Aspect Ratio", "aspect_ratio"],
-        ["Diffusion Factor", "diffusion_factor"],
-        ["Deviation Constant", "deviation_constant"]
+        ["Diffusion Factor", "diffusion_factor"]
     ]
 
     # create list of geometry label-pairs to display
@@ -85,7 +84,7 @@ class MainFrame(wx.Frame):
         super().__init__(
             parent = None,
             title = "High Speed Solver",
-            size = (1400, 600)
+            size = (1400, 800)
         )
 
         # store Flight_scenario instances as dictionary
@@ -316,7 +315,7 @@ class MainFrame(wx.Frame):
         self.colours["dark grey"] = wx.Colour(32, 32, 32)
         self.colours["light grey"] = wx.Colour(96, 96, 96)
         self.colours["white"] = wx.Colour(255, 255, 255)
-        self.colours["blue"] = wx.Colour(96, 128, 216)
+        self.colours["blue"] = wx.Colour(96, 160, 255)
 
         # set font
         self.font = wx.Font(11, wx.FONTFAMILY_SWISS, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Segoe UI")
@@ -604,11 +603,12 @@ class MainFrame(wx.Frame):
                 # create and store new object
                 aspect_ratio = float(dialog.arguments[0].GetValue())
                 diffusion_factor = float(dialog.arguments[1].GetValue())
-                deviation_constant = float(dialog.arguments[2].GetValue())
+                design_parameter = float(dialog.arguments[2].GetValue()) / 100
+                print(f"design_parameter: {design_parameter}")
                 geometry = {
                     "aspect_ratio": aspect_ratio,
                     "diffusion_factor": diffusion_factor,
-                    "deviation_constant": deviation_constant,
+                    "design_parameter": design_parameter,
                 }
                 engine.geometries.append(geometry)
                 engine.geometry = geometry
@@ -617,7 +617,7 @@ class MainFrame(wx.Frame):
                 # add new entry to dropdown
                 self.geometry_dropdown.Append(
                     f"[{len(engine.geometries) - 1}]        "
-                    f"AR: {aspect_ratio} | DF: {diffusion_factor} | m: {deviation_constant}"
+                    f"AR: {aspect_ratio} | DF: {diffusion_factor} | p: {design_parameter}"
                 )
 
             # catch non-numeric inputs
@@ -988,6 +988,11 @@ class AddScenarioDialog(wx.Dialog):
         panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
         panel.SetSizer(panel_sizer)
 
+        # apply mainframe styling to this dialog (background + children)
+        self.SetBackgroundColour(parent.colours["dark grey"])
+        panel.SetBackgroundColour(parent.colours["dark grey"])
+        parent.apply_styling(self)
+
         # dialog-level buttons
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
 
@@ -1039,6 +1044,11 @@ class AddEngineDialog(wx.Dialog):
         panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
         panel.SetSizer(panel_sizer)
 
+        # apply mainframe styling to this dialog (background + children)
+        self.SetBackgroundColour(parent.colours["dark grey"])
+        panel.SetBackgroundColour(parent.colours["dark grey"])
+        parent.apply_styling(self)
+
         # Dialog-level buttons
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
 
@@ -1089,8 +1099,26 @@ class AddGeometryDialog(wx.Dialog):
         panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
         panel.SetSizer(panel_sizer)
 
+        # apply mainframe styling to this dialog (background + children)
+        self.SetBackgroundColour(parent.colours["dark grey"])
+        panel.SetBackgroundColour(parent.colours["dark grey"])
+        parent.apply_styling(self)
+
         # dialog-level buttons
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
+
+        # slider row: Diffusion Factor [slider fills space] Deviation
+        slider_row = wx.BoxSizer(wx.HORIZONTAL)
+        diff_label = wx.StaticText(panel, label = "Diffusion Factor")
+        self.geometry_slider = wx.Slider(panel, value = 0, minValue = 0, maxValue = 100, style = wx.SL_HORIZONTAL)
+        dev_label = wx.StaticText(panel, label = "Deviation")
+        slider_row.Add(diff_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
+        slider_row.Add(self.geometry_slider, 1, wx.ALL | wx.EXPAND, 6)
+        slider_row.Add(dev_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
+        panel_sizer.Add(slider_row, 0, wx.EXPAND)
+
+        # re-apply styling so newly-created labels and slider get themed
+        parent.apply_styling(self)
 
         # dialog root sizer
         dialog_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -1100,6 +1128,7 @@ class AddGeometryDialog(wx.Dialog):
 
         # store as ordered list of arguments
         self.arguments = [getattr(self, input_label[1]) for input_label in parent.geometry_input_labels]
+        self.arguments.append(self.geometry_slider)
 
 # create AddOffDesignDialog class
 class AddOffDesignDialog(wx.Dialog):
@@ -1136,6 +1165,14 @@ class AddOffDesignDialog(wx.Dialog):
         panel_sizer = wx.BoxSizer(wx.VERTICAL)
         panel_sizer.Add(grid, 1, wx.ALL | wx.EXPAND, 15)
         panel.SetSizer(panel_sizer)
+
+        # apply mainframe styling to this dialog (background + children)
+        try:
+            self.SetBackgroundColour(parent.colours["dark grey"])
+            panel.SetBackgroundColour(parent.colours["dark grey"])
+            parent.apply_styling(self)
+        except Exception:
+            pass
 
         # dialog-level buttons
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)

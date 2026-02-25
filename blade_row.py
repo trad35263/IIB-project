@@ -38,19 +38,19 @@ class Blade_row:
     def __init__(self, Y_p, is_rotor = False, phi = None, psi = None, vortex_exponent = None):
         """Create instance of the Blade_row class."""
         # store input variables
-        self.Y_p = Y_p
-        self.phi = phi
-        self.psi = psi
-        self.vortex_exponent = vortex_exponent
+        #self.Y_p = Y_p
+        #self.phi = phi
+        #self.psi = psi
+        #self.vortex_exponent = vortex_exponent
         
         # hub radius is set by global hub-tip ratio
-        self.r_hub = utils.Defaults.hub_tip_ratio
+        #self.r_hub = utils.Defaults.hub_tip_ratio
 
         # assign the default colour of black
-        self.colour = 'k'
+        #self.colour = 'k'
 
         # categorise blade row
-        self.categorise(is_rotor)
+        #self.categorise(is_rotor)
 
     def __str__(self):
         """Prints a string representation of the blade row."""
