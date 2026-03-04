@@ -45,8 +45,6 @@ class Engine:
         Number of stages in the compressor.
     vortex_exponent : float
         Vortex exponent describing the distribution of stage loading across a rotor.
-    solver_order : int
-        Order of polynomial fits to be considered when solving the flowfield.
     phi : float
         Flow coefficient.
     psi : float
@@ -56,11 +54,10 @@ class Engine:
             self,
             scenario,
             no_of_stages = utils.Defaults.no_of_stages,
-            vortex_exponent = utils.Defaults.vortex_exponent,
-            solver_order = utils.Defaults.solver_order,
-            Y_p = utils.Defaults.Y_p,
             phi = utils.Defaults.phi,
-            psi = utils.Defaults.psi
+            psi = utils.Defaults.psi,
+            vortex_exponent = utils.Defaults.vortex_exponent,
+            Y_p = utils.Defaults.Y_p
         ):
         """Creates an instance of the Engine class."""
         # store variables from input scenario
@@ -76,7 +73,6 @@ class Engine:
         # store input variables
         self.no_of_stages = int(no_of_stages)
         self.vortex_exponent = vortex_exponent
-        self.solver_order = int(solver_order)
         self.Y_p = Y_p
         self.phi = phi
         self.psi = psi
@@ -94,15 +90,16 @@ class Engine:
             # handle first stage
             if index == 0:
 
-                # set first stage to default inlet conditions
+                # set first stage to be independent Annulus object
                 stage.rotor.inlet = Annulus()
 
             # for all other stages
             else:
 
-                # set rotor exit conditions to previous stage stator exit conditions
+                # set rotor inlet conditions to previous stage stator exit conditions
                 stage.rotor.inlet = self.stages[index - 1].stator.exit
 
+            # create empty Annulus objects for blade row exits
             stage.rotor.exit = Annulus()
             stage.stator.exit = Annulus()
 
@@ -114,9 +111,6 @@ class Engine:
         self.nozzle.inlet = self.stages[-1].stator.exit
         self.nozzle.exit = Annulus()
 
-        # start timer
-        t1 = timer()
-
         # design engine
         self.design()
 
@@ -126,20 +120,14 @@ class Engine:
             # sever shared references between inlet and exit annuli
             blade_row.exit = copy.deepcopy(blade_row.exit)
 
-        # end timer and print feedback
-        t2 = timer()
-        print(
-            f"Engine design completed after {utils.Colours.GREEN}{t2 - t1:.3g}s:"
-            f"{utils.Colours.END}"
-        )
-        print(self)
+        # calculate dimensional values
+        self.dimensional_values()
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
 
         # initialise empty list of geometry and off-design dictionaries
         self.geometries = []
-        self.off_designs = []
 
     def __str__(self):
         """Prints a string representation of the stage."""
@@ -178,6 +166,9 @@ class Engine:
 
     def design(self):
         """Designs the engine system for the given flight scenario and inputs."""
+        # start timer
+        t1 = timer()
+
         # create empty arrays to store guesses
         self.M_1_guesses = []
         self.C_th_guesses = []
@@ -195,7 +186,7 @@ class Engine:
                 """Returns the relevant residual for a blade row for a given hub axial velocity."""
                 # design blade row and return residual
                 blade_row.design(v_x_hub, self.hub_tip_ratio)
-                residual = blade_row.exit.rr[-1]**2 - 0.95 * blade_row.inlet.rr[-1]**2
+                residual = blade_row.exit.rr[-1]**2 - 1 * blade_row.inlet.rr[-1]**2
                 blade_row.v_x_guesses.append(v_x_hub)
                 blade_row.residual_guesses.append(residual)
                 return residual
@@ -225,6 +216,7 @@ class Engine:
                     solve_blade_row, x0 = x0, x1 = x1, method = 'secant', maxiter = 20,
                     args = (blade_row,)
                 )
+                utils.debug(f"sol: {sol}")
 
             # wrap in try-except loop to discard nozzle design failures
             try:
@@ -241,6 +233,7 @@ class Engine:
                 sol = root_scalar(
                     solve_nozzle, x0 = x0, x1 = x1, method = 'secant', maxiter = 20
                 )
+                utils.debug(f"sol: {sol}")
 
             # catch exceptions
             except ValueError as error:
@@ -266,6 +259,14 @@ class Engine:
             solve_thrust, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
         )
         print(f"sol: {sol}")
+
+        # end timer and print feedback
+        t2 = timer()
+        print(
+            f"Engine design completed after {utils.Colours.GREEN}{t2 - t1:.3g}s:"
+            f"{utils.Colours.END}"
+        )
+        print(self)
 
     def initial_guess(self):
         """Calculates an initial inlet Mach number guess for the solver."""
@@ -438,38 +439,56 @@ class Engine:
             # investigate stage performance
             stage.evaluate()
 
-    def empirical_design(self):
-        """Determines the actual geometry of the engine."""
-        # store relevant geometry parameters separately for convenience
-        aspect_ratio = self.geometry["aspect_ratio"]
-        diffusion_factor = self.geometry["diffusion_factor"]
-        design_parameter = self.geometry["design_parameter"]
-        print(f"design_parameter: {design_parameter}")
-
-        # loop over all blade rows
-        for blade_row in self.blade_rows:
-
-            # calculate chord distribution and deviation
-            blade_row.calculate_chord(aspect_ratio, diffusion_factor, design_parameter)
-
-        # store list containing number of blades for each row
-        self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
-
-    def calculate_off_design(self):
-        """Calculates the off-design performance characterstics of each stage."""
-        # loop over each stage
-        for stage in self.stages:
-
-            # for different values of flow coefficient between the given bounds
-            phi_min = self.off_design["phi_min"]
-            phi_max = self.off_design["phi_max"]
-            for phi in np.linspace(phi_min, phi_max, utils.Defaults.off_design_grid):
-
-                # create copy of stage and calculate off-design performance
-                #stage_copy = copy.deepcopy(stage)
-                stage.calculate_off_design(self.hub_tip_ratio, phi)
-        
     def dimensional_values(self):
+        """Converts dimensionless values back to dimensional ones after the design process."""
+        # calculate mass flow rate
+        self.m_dot = (
+            utils.mass_flow_function(self.M_1) * self.scenario.A * self.scenario.p_0
+            / np.sqrt(utils.c_p * self.scenario.T_0)
+        )
+
+        # calculate blade related quantities
+        for index, stage in enumerate(self.stages):
+
+            # store rotor and stator for convenience
+            rotor = stage.rotor
+            stator = stage.stator
+
+            # calculate rpm value of rotor
+            U_blade = (
+                rotor.exit.M_blade[-1]
+                * np.sqrt(utils.gamma * utils.R * rotor.exit.T[-1] * self.scenario.T_0)
+            )
+            omega_blade = U_blade / (rotor.exit.rr[-1] * self.scenario.diameter / 2)
+            rpm_blade = utils.rad_s_to_rpm(omega_blade)
+
+
+            # calculate required motor power input
+            dP_dr = (
+                np.pi * self.scenario.diameter**2 / 2 * utils.gamma * np.sqrt(
+                    utils.c_p / (utils.gamma - 1)
+                ) * self.scenario.p_0 * np.sqrt(self.scenario.T_0)
+                * rotor.inlet.p * rotor.inlet.M * np.cos(rotor.inlet.alpha)
+                * (rotor.exit.T_0 - rotor.inlet.T_0) / np.sqrt(rotor.inlet.T) * rotor.inlet.rr
+            )
+            P = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]
+
+            # engine geometry has been calculated
+            if hasattr(self, "geometry"):
+
+                # calculate minimum dimensional chord length in mm for both rotor and stator
+                self.geometry[f"rotor_{index + 1}_min_chord"] = (
+                    1000 * np.min(rotor.exit.chord) * self.scenario.diameter / 2
+                )
+                self.geometry[f"stator_{index + 1}_min_chord"] = (
+                    1000 * np.min(stator.exit.chord) * self.scenario.diameter / 2
+                )
+
+            # store values as class attributes
+            setattr(self, f"rotor_{index + 1}_rpm", rpm_blade)
+            setattr(self, f"rotor_{index + 1}_power", P)
+
+    def dimensional_values2(self):
         """Convert some values back to dimensional values for export to CFD."""
         # get mean of mean-line chords for each blade row
         chords = [np.interp(
@@ -515,6 +534,43 @@ class Engine:
         xx_mm = np.linspace(-0.1, len(self.blade_rows) + 0.1, utils.Defaults.export_grid)
         r_casing_mm = r_casing_spline(xx_mm)
         r_hub_mm = r_hub_spline(xx_mm)
+
+    def empirical_design(self):
+        """Determines the actual geometry of the engine."""
+        # store relevant geometry parameters separately for convenience
+        aspect_ratio = self.geometry["aspect_ratio"]
+        diffusion_factor = self.geometry["diffusion_factor"]
+        design_parameter = self.geometry["design_parameter"]
+
+        # loop over all blade rows
+        for blade_row in self.blade_rows:
+
+            # calculate chord distribution and deviation
+            blade_row.calculate_chord(aspect_ratio, diffusion_factor, design_parameter)
+
+        # store list containing number of blades for each row
+        self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
+
+        # store separately for gui purposes
+        for index, value in enumerate(self.geometry["no_of_blades"]):
+
+            self.geometry[f"no_of_blades{index}"] = value
+
+        # recalculate dimensional values
+        self.dimensional_values()
+
+    def calculate_off_design(self):
+        """Calculates the off-design performance characterstics of each stage."""
+        # loop over each stage
+        for stage in self.stages:
+
+            # for different values of flow coefficient between the given bounds
+            phi_min = self.geometry["off_design"]["phi_min"]
+            phi_max = self.geometry["off_design"]["phi_max"]
+            for phi in np.linspace(phi_min, phi_max, utils.Defaults.off_design_grid):
+
+                # calculate stage off-design performance
+                stage.calculate_off_design(self.hub_tip_ratio, phi)
 
     def export(self):
         """Exports the engine's parameters as a .mat file for CFD."""
@@ -640,7 +696,6 @@ class Engine:
             # export original input information
             "no_of_stages": self.no_of_stages,
             "vortex_exponent": self.vortex_exponent,
-            "solver_order": self.solver_order,
             "pressure_loss_coefficient": self.Y_p,
             "flow_coefficient": self.phi,
             "stage_loading_coefficient": self.psi,

@@ -31,7 +31,7 @@ class Rotor(Blade_row):
     """
     def __init__(self, Y_p, phi, psi, vortex_exponent):
         """Create instance of the Rotor class."""
-        #
+        # initialise parent Blade_row class
         super().__init__(Y_p, phi, psi, vortex_exponent)
 
         # store input variables
@@ -775,6 +775,15 @@ class Rotor(Blade_row):
                 ) * np.sin(np.abs(self.exit.beta))
             )
         )
+
+        # check for negative pitch-to-chord
+        if np.any(self.exit.pitch_to_chord < 0):
+
+            print(
+                f"{utils.Colours.RED}Warning: negative pitch-to-chord ratio{utils.Colours.END}.\n"
+                f"Consider increasing the diffusion factor of the design."
+            )
+
 
         # calculate corresponding deviation
         self.calculate_deviation()

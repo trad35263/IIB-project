@@ -151,8 +151,9 @@ def invert(function, target, bracket = [0, 1], method = "brentq"):
     method : str, default 'brentq'
         Root-finding method ('brentq', 'bisect', 'secant', 'newton', etc.)
     """
+    pass
     # define residual function
-    def residual(x):
+    """def residual(x):
 
         return function(x) - target
 
@@ -170,7 +171,7 @@ def invert(function, target, bracket = [0, 1], method = "brentq"):
         print(f"target: {target}")
         raise RuntimeError("Inversion failed to converge.")
     
-    return sol.root
+    return sol.root"""
 
 # 0.4 upload NACA aerofoil for visualisation purposes
 
@@ -291,6 +292,71 @@ def cumulative_trapezoid(x, y, initial = 0):
     result[0] = initial
     result[1:] = np.cumsum(mids * dx) + initial
     return result
+
+# create Labels class
+class Labels:
+    """Stores various labels used in the gui for displaying engine design information."""
+    # list of label-pairs required to create a scenario object
+    scenario_input_labels = [
+        ["Label", "label"],
+        ["Altitude (m)", "altitude"],
+        ["Flight Speed (m/s)", "flight_speed"],
+        ["Diameter (m)", "diameter"],
+        ["Hub-tip Ratio", "hub_tip_ratio"],
+        ["Thrust (N)", "thrust"]
+    ]
+
+    # list of scenario label-pairs to display (computed/output values)
+    scenario_output_labels = [
+        ["Mach Number", "M"],
+        ["Thrust Coefficient", "C_th"]
+    ]
+    
+    # list of label-pairs required to create an engine object
+    engine_input_labels = [
+        ["No. of Stages", "no_of_stages"],
+        ["Flow Coefficient", "phi"],
+        ["Stage Loading Coefficient", "psi"],
+        ["Vortex Exponent", "vortex_exponent"],
+        ["Stagnation Pressure Loss Coefficient", "Y_p"]
+    ]
+
+    # list of engine label-pairs to display (computed/output values)
+    engine_output_labels = [
+        ["Inlet Mach Number", "M_1"],
+        ["Temperature Ratio", "T_0_ratio"],
+        ["Pressure Ratio", "p_0_ratio"],
+        ["Nozzle Area Ratio", "nozzle_area_ratio"],
+        ["Jet Velocity Ratio", "jet_velocity_ratio"],
+        ["Compressor Efficiency", "eta_comp"],
+        ["Nozzle Efficiency", "eta_nozz"],
+        ["Propulsive Efficiency", "eta_prop"],
+        ["Overall Efficiency", "eta_overall"]
+    ]
+
+    # list of extra (dimensional) label-pairs to display
+    engine_extra_labels = [
+        ["Mass flow rate (kg/s)", "m_dot"]
+    ]
+    
+    # list of label-pairs required to create a geometry object
+    geometry_input_labels = [
+        ["Aspect Ratio", "aspect_ratio"],
+        ["Diffusion Factor", "diffusion_factor"]
+    ]
+    geometry_output_labels = []
+
+    # list of label-pairs required to create an off_design object
+    off_design_input_labels = [
+        ["Min. Flow Coefficient", "phi_min"],
+        ["Max. Flow Coefficient", "phi_max"]
+    ]
+    off_design_output_labels = []
+
+###################################################################################################
+###################################################################################################
+
+# hand calculations
 
 M_infinity = 0.05877
 M_1 = 0.152
