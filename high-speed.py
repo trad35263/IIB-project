@@ -10,7 +10,6 @@ import numpy as np
 from engine import Engine
 from flow_state import Flow_state
 from flight_scenario import Flight_scenario
-from output import Output
 import utils
 
 # main function
@@ -35,11 +34,10 @@ def main():
     engine = Engine(
         flight_scenario,
         utils.Defaults.no_of_stages,
-        utils.Defaults.vortex_exponent,
-        utils.Defaults.solver_order,
-        utils.Defaults.Y_p,
         utils.Defaults.phi,
-        utils.Defaults.psi
+        utils.Defaults.psi,
+        utils.Defaults.vortex_exponent,
+        utils.Defaults.Y_p
     )
     print(engine)
 
@@ -47,7 +45,7 @@ def main():
     engine.geometry = {
         "aspect_ratio": utils.Defaults.aspect_ratio,
         "diffusion_factor": utils.Defaults.diffusion_factor,
-        "deviation_constant": utils.Defaults.deviation_constant
+        "design_parameter": utils.Defaults.design_parameter
     }
 
     # calculate blade angles and export engine

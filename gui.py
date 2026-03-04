@@ -499,10 +499,16 @@ class MainFrame(wx.Frame):
                 [f"Rotor {index + 1} min. chord (mm)", f"rotor_{index + 1}_min_chord"]
             )
             self.geometry.labels[1].append(
+                [f"Rotor {index + 1} max. chord (mm)", f"rotor_{index + 1}_max_chord"]
+            )
+            self.geometry.labels[1].append(
                 [f"Stator {index + 1} blades", f"no_of_blades{2 * index + 1}"]
             )
             self.geometry.labels[1].append(
                 [f"Stator {index + 1} min. chord (mm)", f"stator_{index + 1}_min_chord"]
+            )
+            self.geometry.labels[1].append(
+                [f"Stator {index + 1} max. chord (mm)", f"stator_{index + 1}_max_chord"]
             )
         
         # refresh all grids
@@ -601,10 +607,16 @@ class MainFrame(wx.Frame):
                 [f"Rotor {index + 1} min. chord (mm)", f"rotor_{index + 1}_min_chord"]
             )
             self.geometry.labels[1].append(
+                [f"Rotor {index + 1} max. chord (mm)", f"rotor_{index + 1}_max_chord"]
+            )
+            self.geometry.labels[1].append(
                 [f"Stator {index + 1} blades", f"no_of_blades{2 * index + 1}"]
             )
             self.geometry.labels[1].append(
                 [f"Stator {index + 1} min. chord (mm)", f"stator_{index + 1}_min_chord"]
+            )
+            self.geometry.labels[1].append(
+                [f"Stator {index + 1} max. chord (mm)", f"stator_{index + 1}_max_chord"]
             )
         
         # refresh all grids
@@ -1024,7 +1036,10 @@ class AddGeometryDialog(wx.Dialog):
         # slider row: Diffusion Factor [slider fills space] Deviation
         slider_row = wx.BoxSizer(wx.HORIZONTAL)
         diffusion_label = wx.StaticText(panel, label = "Diffusion Factor")
-        self.geometry_slider = wx.Slider(panel, value = 0, minValue = 0, maxValue = 100, style = wx.SL_HORIZONTAL)
+        self.geometry_slider = wx.Slider(
+            panel, value = int(100 * utils.Defaults.design_parameter), minValue = 0, maxValue = 100,
+            style = wx.SL_HORIZONTAL
+        )
         deviation_label = wx.StaticText(panel, label = "Deviation")
         slider_row.Add(diffusion_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
         slider_row.Add(self.geometry_slider, 1, wx.ALL | wx.EXPAND, 6)

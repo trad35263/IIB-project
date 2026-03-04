@@ -484,6 +484,14 @@ class Engine:
                     1000 * np.min(stator.exit.chord) * self.scenario.diameter / 2
                 )
 
+                # calculate maximum dimensional chord length in mm for both rotor and stator
+                self.geometry[f"rotor_{index + 1}_max_chord"] = (
+                    1000 * np.max(rotor.exit.chord) * self.scenario.diameter / 2
+                )
+                self.geometry[f"stator_{index + 1}_max_chord"] = (
+                    1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2
+                )
+
             # store values as class attributes
             setattr(self, f"rotor_{index + 1}_rpm", rpm_blade)
             setattr(self, f"rotor_{index + 1}_power", P)
@@ -582,7 +590,7 @@ class Engine:
         self.blades_dictionary = {}
 
         # determine dimensionless span distribution to export data across
-        span = np.linspace(-0.05, 1.05, utils.Defaults.export_grid)
+        span = np.linspace(-0.02, 1.02, utils.Defaults.export_grid)
 
         # loop over all blade rows
         for index, blade_row in enumerate(self.blade_rows):
@@ -618,15 +626,15 @@ class Engine:
             # interpolate over blade row exit span to get chord distribution
             chord_interp = interp1d(
                 blade_row.exit.span,
-                self.diameter / 2 * blade_row.exit.chord,
+                blade_row.exit.chord * self.scenario.diameter / 2,
                 kind = "linear",
                 bounds_error = False,
                 fill_value = "extrapolate"
             )
             chord = chord_interp(span)
 
-            # calculate blade x-coordinate
-            x_ref += 2 * max(chord)
+            # calculate blade x-coordinate as maximum axial chord + 20% margin from previous blade
+            x_ref += 1.2 * max(blade_row.exit.axial_chord) * self.scenario.diameter / 2
 
             # store inlet and exit midspan radii
             inlet_radius = self.diameter / 2 * (blade_row.inlet.rr[0] + blade_row.inlet.rr[-1]) / 2
@@ -642,9 +650,10 @@ class Engine:
                 * (blade_row.exit.rr[-1]**2 - self.hub_tip_ratio**2)
             )
 
-            # calculate blade rpm
+            # blade row is a rotor
             if isinstance(blade_row, Rotor):
 
+                # calculate rotor rpm
                 rpm = (
                     blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1]) * np.sqrt(
                         utils.gamma * utils.R * self.scenario.T_0
@@ -652,10 +661,13 @@ class Engine:
                 )
                 rpm = utils.rad_s_to_rpm(rpm)
 
+            # blade row is a stator
             else:
 
+                # set rpm to zero
                 rpm = 0
 
+            # calculate mean inlet velocity used for Turbostream initial guess
             v_x = (
                 0.5 * (blade_row.inlet.v_x[0] + blade_row.inlet.v_x[-1])
                 * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
@@ -683,7 +695,7 @@ class Engine:
 
         # add metadata to dictionary
         self.export_dictionary["metadata"] = {
-            # export data-time information
+            # export date-time information
             "export_date": datetime.now().strftime("%Y-%m-%d"),
             "export_time": datetime.now().strftime("%H:%M:%S"),
             "export_timestamp": datetime.now().isoformat(),
@@ -703,13 +715,14 @@ class Engine:
             # export geometry information
             "aspect_ratio": self.geometry["aspect_ratio"],
             "diffusion_factor": self.geometry["diffusion_factor"],
-            "deviation_constant": self.geometry["deviation_constant"],
+            "design_parameter": self.geometry["design_parameter"],
 
-            # export solver outputs
+            # export engine calculated values
             "inlet_mach_number": self.M_1,
             "nozzle_area_ratio": self.nozzle_area_ratio,
+            "mass_flow_rate":  self.m_dot,
 
-            # export solver details
+            # export solver grid details
             "solver_grid_points": utils.Defaults.solver_grid,
             "export_grid_points": utils.Defaults.export_grid
         }
