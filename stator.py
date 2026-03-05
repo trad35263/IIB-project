@@ -1,7 +1,6 @@
 # import modules
 import numpy as np
 from scipy.optimize import least_squares
-#from scipy.integrate import cumulative_simpson
 from time import perf_counter as timer
 
 # import custom classes
@@ -204,6 +203,14 @@ class Stator(Blade_row):
 
     def design(self, v_x_hub, hub_tip_ratio):
         """Solves for the stator exit conditions and blade geometry."""
+        # start timer
+        t1 = timer()
+
+        # impose bounds on hub velocity guess
+        print(f"v_x_hub: {v_x_hub}")    
+        v_x_hub = utils.bound(v_x_hub)
+        print(f"v_x_hub: {v_x_hub}")
+
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
         self.exit.rr[0] = self.inlet.rr[0]
@@ -242,7 +249,7 @@ class Stator(Blade_row):
                 # create fine grid for calculating streamtube upper bound 
                 r_3_fine = np.linspace(
                     self.exit.rr[index - 1],
-                    self.exit.rr[index - 1] + 5 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
+                    self.exit.rr[index - 1] + 10 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
                     utils.Defaults.solver_grid
                 )
 
@@ -261,7 +268,7 @@ class Stator(Blade_row):
                 self.exit.rr[index] = np.interp(dm_dot_2[index - 1], m_dot_3, r_3_fine)
 
                 # calculate derivatives required for radial equilibrium
-                dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
+                """dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
                 ds = self.exit.s[index] - self.exit.s[index - 1]
                 dtan_2_alpha = (np.tan(self.exit.alpha[index]))**2 - (np.tan(self.exit.alpha[index - 1]))**2
 
@@ -276,14 +283,47 @@ class Stator(Blade_row):
                             + 0.5 * dtan_2_alpha
                         )
                     ) / self.exit.v_x[index - 1]
+                )"""
+
+                # VERSION 2
+                # calculate derivatives required for radial equilibrium
+                dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
+                ds = self.exit.s[index] - self.exit.s[index - 1]
+                d_tan_alpha = np.tan(self.exit.alpha[index]) - np.tan(self.exit.alpha[index - 1])
+
+                # calculate all v_x terms together
+                v_x_term = (
+                    dT_0 / (utils.gamma - 1)
+                    - self.exit.T[index - 1] * ds
+                    - self.exit.v_x[index - 1]**2 * np.tan(self.exit.alpha[index - 1])**2
+                    * (self.exit.rr[index] / self.exit.rr[index - 1] - 1)
+                    - self.exit.v_x[index - 1]**2 * np.tan(self.exit.alpha[index - 1])
+                    * d_tan_alpha
+                )
+
+                # calculate dimensionless axial velocity at new radial position
+                self.exit.v_x[index] = (
+                    v_x_term / (self.exit.v_x[index - 1] * (1 + np.tan(self.exit.alpha[index - 1])**2))
+                    + self.exit.v_x[index - 1]
                 )
 
             # solve for exit tangential velocity from axial velocity and flow angle
             self.exit.v_theta[index] = self.exit.v_x[index] * np.tan(self.exit.alpha[index])
 
-            # solve for Mach number
-            v_squared = (self.exit.v_x[index] / np.cos(self.exit.alpha[index]))**2
-            self.exit.M[index] = np.sqrt(v_squared / (1 - 0.5 * (utils.gamma - 1) * v_squared))
+            # extract Mach number from dimensionless velocity information
+            M_2_T_T_0 = (
+                (self.exit.v_x[index]**2 + self.exit.v_theta[index]**2)
+                / self.exit.T_0[index]
+            )
+            self.exit.M[index] = np.sqrt(M_2_T_T_0 / (1 - M_2_T_T_0 * (utils.gamma - 1) / 2))
+
+        if np.any(self.exit.M > 1):
+
+            print(f"self.exit.M: {self.exit.M}")
+            print(f"self.exit.rr: {self.exit.rr}")
+
+            print(f"{utils.Colours.RED}Stator error!{utils.Colours.END}")
+            input()
 
         # solve for exit static conditions
         self.exit.T = self.exit.T_0 * utils.stagnation_temperature_ratio(self.exit.M)
@@ -296,6 +336,12 @@ class Stator(Blade_row):
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
+
+        # end timer
+        t2 = timer()
+        utils.debug(
+            f"Stator design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+        )
 
     def evaluate(self, T_1):
         """Evaluates performance of the stator blade row."""
@@ -369,7 +415,7 @@ class Stator(Blade_row):
             AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
 
             # check if aspect ratio criterion is met
-            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_blades:
+            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_no_of_blades:
 
                 break
 

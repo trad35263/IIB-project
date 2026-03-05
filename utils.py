@@ -15,29 +15,35 @@ R = 287
 
 class Defaults:
     """Container for default values relating to the engine system."""
+    # default dimensional values
+    altitude = 3000
+    flight_speed = 180
+    thrust = 100
+
     # default flight scenario parameters
     label = ""
     diameter = 0.14
-    hub_tip_ratio = 0.3077
+    hub_tip_ratio = 0.3
     flight_scenarios = {
+        "High speed": ["High speed", 3000, 180, diameter, hub_tip_ratio, 100],
         "Take-off": ["Take-off", 0, 10, diameter, hub_tip_ratio, 10],
         "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
-        "Cruise": ["Cruise", 3000, 40, diameter, hub_tip_ratio, 20]
+        "Cruise": ["Cruise", altitude, 40, diameter, hub_tip_ratio, 20]
     }
 
     # default engine input parameters
     no_of_stages = 2
     vortex_exponent = 0.5
-    solver_order = 2
     Y_p = 0.02
     phi = 0.6
-    psi = 0.1596
+    psi = 0.4
 
     # default geometry parameters
     aspect_ratio = 2.5
     diffusion_factor = 0.3
     design_parameter = 0.5
-    max_blades = 20
+    min_no_of_blades = 6
+    max_no_of_blades = 20
 
     # default off_design parameters
     phi_min = 0.4
@@ -88,19 +94,14 @@ class Defaults:
     off_design_grid = 10
     maxiter = 50
 
-    # default dimensional values
-    altitude = 10000
-    flight_speed = 30
-    thrust = 20
-
     # specify inlet swirl
     inlet_swirl = 0
 
     # whether or not debug mode is active
-    debug = False
-    loading_bar = True
+    debug = True
+    #loading_bar = True
 
-    nfev = 500
+    #nfev = 500
 
 # 0.3 compressible flow perfect gas relations
 
@@ -259,13 +260,13 @@ def debug(string):
 
 # 0.8 logistic curve
 
-def bound(x, a = 0.01, b = 0.5, c = 0.6):
+def bound(x, a = 0.01, b = 0.5, c = 0.7):
     """Bounds a value between 0 and c using a logistic curve."""
     # check if x is too small
     if x < a:
 
         # return lower bound
-        return a * np.exp((x - a) / a)
+        return a * np.exp((x - a) / a) + 1e-3
 
     # check if x is too large
     elif x > b:

@@ -366,10 +366,22 @@ class Rotor(Blade_row):
         self.inlet.v_x = self.inlet.M * self.inlet.T
 
         # store grid of equally-spaced radial positions to consider
-        self.inlet.rr = np.linspace(hub_tip_ratio, 1, utils.Defaults.solver_grid)
+        #self.inlet.rr = np.linspace(hub_tip_ratio, 1, utils.Defaults.solver_grid)
+
+        # use quadratic variation of radial positions to consider
+        self.inlet.rr = (
+            hub_tip_ratio
+            + (1 - hub_tip_ratio) * (np.linspace(0, 1, utils.Defaults.solver_grid))**2
+        )
 
     def design(self, v_x_hub, hub_tip_ratio):
         """Solves for the rotor exit conditions and blade geometry."""
+        # start timer
+        t1 = timer()
+
+        # impose bounds on hub velocity guess
+        v_x_hub = utils.bound(v_x_hub)
+
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
         self.exit.rr[0] = self.inlet.rr[0]
@@ -390,8 +402,6 @@ class Rotor(Blade_row):
             M_blade_mean * (self.inlet.rr / self.inlet.r_mean)
             * np.sqrt(T_mean / self.inlet.T)
         )
-
-        # careful - M_1_blade_mean is an array
 
         # get variation in relative Mach number and flow angle via vector algebra
         z_x = self.inlet.M * np.cos(self.inlet.alpha)
@@ -525,6 +535,13 @@ class Rotor(Blade_row):
             )
             self.exit.M[index] = np.sqrt(M_2_T_T_0 / (1 - M_2_T_T_0 * (utils.gamma - 1) / 2))
 
+            if np.any(self.exit.M > 1):
+
+                print(f"self.exit.M: {self.exit.M}")
+
+                print(f"{utils.Colours.RED}Rotor error!{utils.Colours.END}")
+                input()
+
             # get flow angle from dimensionless velocity information
             self.exit.alpha[index] = np.arctan2(self.exit.v_theta[index], self.exit.v_x[index])
 
@@ -560,6 +577,12 @@ class Rotor(Blade_row):
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr_2)
+
+        # end timer
+        t2 = timer()
+        utils.debug(
+            f"Rotor design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+        )
 
     def calculate_off_design(self, v_x_hub, hub_tip_ratio, phi):
         """Solves for the rotor exit conditions, given blade geometry."""
@@ -784,7 +807,6 @@ class Rotor(Blade_row):
                 f"Consider increasing the diffusion factor of the design."
             )
 
-
         # calculate corresponding deviation
         self.calculate_deviation()
 
@@ -822,7 +844,7 @@ class Rotor(Blade_row):
         )
 
         # calculate minimum number of blades to achieve aspect ratio
-        self.no_of_blades = 2
+        self.no_of_blades = utils.Defaults.min_no_of_blades
         while True:
 
             # calculate pitch and chord distributions
@@ -835,7 +857,7 @@ class Rotor(Blade_row):
             AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
 
             # check if aspect ratio criterion is met
-            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_blades:
+            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_no_of_blades:
 
                 break
 

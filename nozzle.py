@@ -7,6 +7,7 @@ from scipy.interpolate import make_interp_spline
 from scipy.integrate import cumulative_simpson
 from scipy.integrate import simpson
 import copy
+from time import perf_counter as timer
 
 from annulus import Annulus
 from coefficients import Coefficients
@@ -358,6 +359,14 @@ class Nozzle:
 
     def design(self, v_x_hub, hub_tip_ratio):
         """Determines the flowfield through the nozzle and solves for its geometry."""
+        # start timer
+        t1 = timer()
+
+        # impose bounds on hub velocity guess
+        print(f"v_x_hub: {v_x_hub}")
+        v_x_hub = utils.bound(v_x_hub)
+        print(f"v_x_hub: {v_x_hub}")
+
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
         self.exit.rr[0] = 1e-2
@@ -444,6 +453,12 @@ class Nozzle:
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
+
+        # end timer
+        t2 = timer()
+        utils.debug(
+            f"Nozzle design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+        )
 
     def old_evaluate(self, hub_tip_ratio):
         """Evaluates the performance of the nozzle as part of the engine system."""

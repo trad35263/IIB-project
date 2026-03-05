@@ -177,18 +177,20 @@ class Engine:
         def solve_thrust(M_1):
             """Returns the thrust residual of the engine for a given inlet Mach number."""
             # store inlet Mach number and set at rotor inlet
-            self.M_1_guesses.append(M_1)
             self.M_1 = M_1
+            self.M_1_guesses.append(self.M_1)
             self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
             self.m_dot = utils.mass_flow_function(self.M_1)
+            utils.debug(f"self.M_1: {self.M_1}")
 
             def solve_blade_row(v_x_hub, blade_row):
                 """Returns the relevant residual for a blade row for a given hub axial velocity."""
                 # design blade row and return residual
                 blade_row.design(v_x_hub, self.hub_tip_ratio)
-                residual = blade_row.exit.rr[-1]**2 - 1 * blade_row.inlet.rr[-1]**2
+                residual = blade_row.exit.rr[-1]**2 - 0.9 * blade_row.inlet.rr[-1]**2
                 blade_row.v_x_guesses.append(v_x_hub)
                 blade_row.residual_guesses.append(residual)
+                utils.debug(f"residual: {residual}")
                 return residual
 
             def solve_nozzle(v_x_hub):
@@ -198,6 +200,7 @@ class Engine:
                 residual = self.nozzle.exit.p[-1] - self.p_atm
                 self.nozzle.v_x_guesses.append(v_x_hub)
                 self.nozzle.residual_guesses.append(residual)
+                utils.debug(f"residual: {residual}")
                 return residual
 
             # loop over all blade rows
@@ -218,6 +221,15 @@ class Engine:
                 )
                 utils.debug(f"sol: {sol}")
 
+                if sol.converged == False:
+
+                    fig, ax = plt.subplots()
+                    ax.plot(blade_row.v_x_guesses, blade_row.residual_guesses, label = "Guesses")
+                    ax.grid()
+                    ax.legend()
+                    ax.set_xlim(-1, 1)
+                    plt.show()
+
             # wrap in try-except loop to discard nozzle design failures
             try:
 
@@ -227,6 +239,7 @@ class Engine:
 
                 # set initial guess
                 x0 = self.nozzle.inlet.v_x[0]
+                x0 = self.scenario.M
                 x1 = 0.9 * x0
 
                 # solve for nozzle exit conditions
@@ -265,6 +278,8 @@ class Engine:
         )
         print(f"sol: {sol}")
 
+        print(f"self.blade_rows[-1].exit.rr: {self.blade_rows[-1].exit.rr}")
+
         # end timer and print feedback
         t2 = timer()
         print(
@@ -299,22 +314,14 @@ class Engine:
             )
         )
 
-        print(f"T_03_T_01: {T_03_T_01}")
-
         # find static temperature ratio required to satisfy jet boundary condition
         T_j_T_0j = utils.stagnation_temperature_ratio(self.scenario.M) / T_03_T_01
-
-        print(f"T_j_T_0j: {T_j_T_0j}")
 
         # get list of stagnation temperature ratios to interpolate
         T_T_0 = utils.stagnation_temperature_ratio(self.M_1_initial)
 
-        print(f"T_T_0: {T_T_0}")
-
         # calculate jet Mach number required to satisfy jet boundary condition
         M_j = np.interp(T_j_T_0j, T_T_0[::-1], self.M_1_initial[::-1])
-
-        print(f"M_j: {M_j}")
 
         # calculate mass flow functions at inlet and in jet
         mass_flow_function_1 = utils.mass_flow_function(M_1_grid)
@@ -360,12 +367,12 @@ class Engine:
         mask = np.concatenate([[False], self.C_th_initial[1:] >= C_th_max[:-1]])
 
         # plot
-        fig, ax = plt.subplots()
+        """fig, ax = plt.subplots()
         ax.plot(self.M_1_initial, self.C_th_initial)
         ax.plot(self.M_1_initial, C_th_max)
         ax.plot(self.M_1_initial[mask], self.C_th_initial[mask])
         ax.grid()
-        plt.show()
+        plt.show()"""
 
         # thrust cannot be produced
         if np.max(self.C_th_initial[mask]) < self.C_th_design:
@@ -381,11 +388,8 @@ class Engine:
 
         # temp code
         index = int(np.interp(self.M_1, self.M_1_initial, np.arange(utils.Defaults.solver_grid)))
-        print(f"index: {index}")
         self.M_j_initial = M_j[:, index]
-        print(f"self.M_j_initial: {self.M_j_initial}")
         self.rr_j_initial = rr_j[:, index]
-        print(f"self.rr_j_initial: {self.rr_j_initial}")
 
         # find nozzle area ratio
         nozzle_area_ratio = self.rr_j_initial[-1]**2 / (1 - self.scenario.hub_tip_ratio**2)
@@ -501,7 +505,7 @@ class Engine:
             / np.sqrt(utils.c_p * self.scenario.T_0)
         )
 
-        # calculate blade related quantities
+        # loop over each stage
         for index, stage in enumerate(self.stages):
 
             # store rotor and stator for convenience
@@ -516,7 +520,6 @@ class Engine:
             omega_blade = U_blade / (rotor.exit.rr[-1] * self.scenario.diameter / 2)
             rpm_blade = utils.rad_s_to_rpm(omega_blade)
 
-
             # calculate required motor power input
             dP_dr = (
                 np.pi * self.scenario.diameter**2 / 2 * utils.gamma * np.sqrt(
@@ -526,6 +529,10 @@ class Engine:
                 * (rotor.exit.T_0 - rotor.inlet.T_0) / np.sqrt(rotor.inlet.T) * rotor.inlet.rr
             )
             P = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]
+
+            # store values as class attributes
+            setattr(self, f"rotor_{index + 1}_rpm", rpm_blade)
+            setattr(self, f"rotor_{index + 1}_power", P)
 
             # engine geometry has been calculated
             if hasattr(self, "geometry"):
@@ -545,10 +552,6 @@ class Engine:
                 self.geometry[f"stator_{index + 1}_max_chord"] = (
                     1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2
                 )
-
-            # store values as class attributes
-            setattr(self, f"rotor_{index + 1}_rpm", rpm_blade)
-            setattr(self, f"rotor_{index + 1}_power", P)
 
     def dimensional_values2(self):
         """Convert some values back to dimensional values for export to CFD."""
@@ -752,7 +755,7 @@ class Engine:
             # export date-time information
             "export_date": datetime.now().strftime("%Y-%m-%d"),
             "export_time": datetime.now().strftime("%H:%M:%S"),
-            "export_timestamp": datetime.now().isoformat(),
+            "export_timestamp": datetime.now().replace(microsecond = 0).isoformat(),
 
             # export flight scenario details
             "flight_mach_number": self.M_flight,
