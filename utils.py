@@ -50,7 +50,7 @@ class Defaults:
     quantity_list = [
         [
             'M', 'Mach number',
-            'M_rel', 'Relative Mach number'
+            'M_rel', 'Relative Mach number',
         ],
         [
             'alpha', 'Flow angle (°)',

@@ -251,6 +251,11 @@ class Engine:
 
         # calculate initial guess
         self.initial_guess()
+
+        # temp code
+        self.nozzle.exit.M_j_initial = self.M_j_initial
+        self.nozzle.exit.rr_j_initial = self.rr_j_initial
+
         x0 = self.M_1
         x1 = 0.99 * x0
 
@@ -277,6 +282,7 @@ class Engine:
         self.M_1_initial = np.linspace(0, 1, utils.Defaults.solver_grid)
         rr = np.linspace(self.hub_tip_ratio, 1, utils.Defaults.solver_grid)
 
+        # create mesh grid and calculate inlet velocity function at all points
         M_1_grid, rr_grid = np.meshgrid(self.M_1_initial, rr)
         velocity_function_1 = utils.velocity_function(M_1_grid)
 
@@ -285,19 +291,30 @@ class Engine:
 
         # calculate compressor stagnation temperature ratio
         T_03_T_01 = (
-            1 + self.psi * velocity_function_1**2 * np.power(
-                r_mean / rr_grid, self.vortex_exponent - 1
-            ) / self.phi**2
+            np.power(
+                1 + self.psi * velocity_function_1**2 * np.power(
+                    r_mean / rr_grid, self.vortex_exponent + 1
+                ) / (self.phi * r_mean / rr_grid)**2,
+                self.no_of_stages
+            )
         )
+
+        print(f"T_03_T_01: {T_03_T_01}")
 
         # find static temperature ratio required to satisfy jet boundary condition
         T_j_T_0j = utils.stagnation_temperature_ratio(self.scenario.M) / T_03_T_01
 
+        print(f"T_j_T_0j: {T_j_T_0j}")
+
         # get list of stagnation temperature ratios to interpolate
         T_T_0 = utils.stagnation_temperature_ratio(self.M_1_initial)
 
+        print(f"T_T_0: {T_T_0}")
+
         # calculate jet Mach number required to satisfy jet boundary condition
         M_j = np.interp(T_j_T_0j, T_T_0[::-1], self.M_1_initial[::-1])
+
+        print(f"M_j: {M_j}")
 
         # calculate mass flow functions at inlet and in jet
         mass_flow_function_1 = utils.mass_flow_function(M_1_grid)
@@ -309,11 +326,11 @@ class Engine:
             / mass_flow_function_j
         )
 
+        # calculate mid-point average of streamline area ratio values (array has length N - 1)
+        sigma_grid_midpoint = 0.5 * (sigma_grid[1:, :] + sigma_grid[:-1, :])
+
         # calculate inlet streamtube areas (array has length N - 1)
         A_1i = np.pi * np.array([r_1i**2 - r_1i_1**2 for (r_1i, r_1i_1) in zip(rr[1:], rr[:-1])])
-
-        # calculate mid-point average of streamline area ratio values
-        sigma_grid_midpoint = 0.5 * (sigma_grid[1:, :] + sigma_grid[:-1, :])
 
         # calculate exit streamtube areas
         A_ji_grid = A_1i[:, None] * sigma_grid_midpoint
@@ -327,21 +344,58 @@ class Engine:
         M_j_2_r = M_j**2 * rr_j
         self.C_th_initial = np.zeros(utils.Defaults.solver_grid)
         for index in range(utils.Defaults.solver_grid):
+
             self.C_th_initial[index] = (
                 2 * utils.gamma / (1 - self.hub_tip_ratio**2)
-                * (rr_j[-1, index] / rr[-1])**2
                 * utils.stagnation_pressure_ratio(self.scenario.M)
                 * utils.cumulative_trapezoid(rr_j[:, index], M_j_2_r[:, index])[-1]
                 - utils.mass_flow_function(self.M_1_initial[index])
                 * utils.velocity_function(self.scenario.M)
             )
 
+        # calculate the running maximum
+        C_th_max = np.maximum.accumulate(self.C_th_initial)
+
+        # mask all values below the running maximum, including the M_1 = 0 value
+        mask = np.concatenate([[False], self.C_th_initial[1:] >= C_th_max[:-1]])
+
+        # plot
+        fig, ax = plt.subplots()
+        ax.plot(self.M_1_initial, self.C_th_initial)
+        ax.plot(self.M_1_initial, C_th_max)
+        ax.plot(self.M_1_initial[mask], self.C_th_initial[mask])
+        ax.grid()
+        plt.show()
+
+        # thrust cannot be produced
+        if np.max(self.C_th_initial[mask]) < self.C_th_design:
+
+            print(
+                f"{utils.Colours.RED}Error! Maximum thrust coefficient is "
+                f"{np.max(self.C_th_initial[mask])}{utils.Colours.END}"
+                )
+
         # interpolate to find actual inlet Mach number
-        self.M_1 = np.interp(self.C_th_design, self.C_th_initial[1:], self.M_1_initial[1:])
+        self.M_1 = np.interp(self.C_th_design, self.C_th_initial[mask], self.M_1_initial[mask])
+        utils.debug(f"self.M_1: {self.M_1}")
+
+        # temp code
+        index = int(np.interp(self.M_1, self.M_1_initial, np.arange(utils.Defaults.solver_grid)))
+        print(f"index: {index}")
+        self.M_j_initial = M_j[:, index]
+        print(f"self.M_j_initial: {self.M_j_initial}")
+        self.rr_j_initial = rr_j[:, index]
+        print(f"self.rr_j_initial: {self.rr_j_initial}")
+
+        # find nozzle area ratio
+        nozzle_area_ratio = self.rr_j_initial[-1]**2 / (1 - self.scenario.hub_tip_ratio**2)
 
         # end timer
         t2 = timer()
-        print(f"Initial guess calculated in {t2 - t1:.4g}s!")
+        print(
+            f"Initial guess calculated in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+            f"\nM_1: {self.M_1} | Nozzle area ratio: {nozzle_area_ratio}"
+        )
 
     def evaluate(self):
         """Determine key performance metrics for the engine system."""
@@ -949,6 +1003,18 @@ class Engine:
 
             # create plot with an axis for each blade row inlet and exit and reshape axes
             fig, axes = plt.subplots(ncols = len(self.blade_rows) + 2, figsize = (14, 6))
+
+            # plot initial guess of nozzle - temp code
+            span = (
+                (self.nozzle.exit.rr_j_initial - self.nozzle.exit.rr_j_initial[0])
+                / (self.nozzle.exit.rr_j_initial[-1] - self.nozzle.exit.rr_j_initial[0])
+            )
+            axes[-1].plot(
+                self.nozzle.exit.M_j_initial,
+                span,
+                label = "Initial",
+                color = 'k'
+            )
 
             # assign values for capturing appropriate axis limits
             x_min = 1e12
