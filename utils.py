@@ -16,15 +16,16 @@ R = 287
 class Defaults:
     """Container for default values relating to the engine system."""
     # default dimensional values
-    altitude = 3000
-    flight_speed = 180
-    thrust = 100
+    altitude = 0
+    flight_speed = 60
+    thrust = 30
 
     # default flight scenario parameters
     label = ""
-    diameter = 0.14
+    diameter = 0.2
     hub_tip_ratio = 0.3
     flight_scenarios = {
+        "Default": ["Default", altitude, flight_speed, diameter, hub_tip_ratio, thrust],
         "High speed": ["High speed", 3000, 180, diameter, hub_tip_ratio, 100],
         "Take-off": ["Take-off", 0, 10, diameter, hub_tip_ratio, 10],
         "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
@@ -36,7 +37,8 @@ class Defaults:
     vortex_exponent = 0.5
     Y_p = 0.02
     phi = 0.6
-    psi = 0.4
+    psi = 0.15
+    area_ratio = 1
 
     # default geometry parameters
     aspect_ratio = 2.5
@@ -98,10 +100,7 @@ class Defaults:
     inlet_swirl = 0
 
     # whether or not debug mode is active
-    debug = True
-    #loading_bar = True
-
-    #nfev = 500
+    debug = False
 
 # 0.3 compressible flow perfect gas relations
 
@@ -319,7 +318,8 @@ class Labels:
         ["Flow Coefficient", "phi"],
         ["Stage Loading Coefficient", "psi"],
         ["Vortex Exponent", "vortex_exponent"],
-        ["Stagnation Pressure Loss Coefficient", "Y_p"]
+        ["Stagnation Pressure Loss Coefficient", "Y_p"],
+        ["Blade Row Area Ratio", "area_ratio"]
     ]
 
     # list of engine label-pairs to display (computed/output values)

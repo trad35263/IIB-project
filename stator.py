@@ -206,10 +206,8 @@ class Stator(Blade_row):
         # start timer
         t1 = timer()
 
-        # impose bounds on hub velocity guess
-        print(f"v_x_hub: {v_x_hub}")    
+        # impose bounds on hub velocity guess  
         v_x_hub = utils.bound(v_x_hub)
-        print(f"v_x_hub: {v_x_hub}")
 
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
@@ -402,7 +400,7 @@ class Stator(Blade_row):
         )
 
         # calculate minimum number of blades to achieve aspect ratio
-        self.no_of_blades = 2
+        self.no_of_blades = utils.Defaults.min_no_of_blades
         while True:
 
             # calculate pitch and chord distributions

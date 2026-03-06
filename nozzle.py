@@ -363,9 +363,7 @@ class Nozzle:
         t1 = timer()
 
         # impose bounds on hub velocity guess
-        print(f"v_x_hub: {v_x_hub}")
         v_x_hub = utils.bound(v_x_hub)
-        print(f"v_x_hub: {v_x_hub}")
 
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub

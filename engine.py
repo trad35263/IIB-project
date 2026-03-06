@@ -57,7 +57,8 @@ class Engine:
             phi = utils.Defaults.phi,
             psi = utils.Defaults.psi,
             vortex_exponent = utils.Defaults.vortex_exponent,
-            Y_p = utils.Defaults.Y_p
+            Y_p = utils.Defaults.Y_p,
+            area_ratio = utils.Defaults.area_ratio
         ):
         """Creates an instance of the Engine class."""
         # store variables from input scenario
@@ -76,6 +77,7 @@ class Engine:
         self.Y_p = Y_p
         self.phi = phi
         self.psi = psi
+        self.area_ratio = area_ratio
 
         # create the appropriate number of empty stages and blade rows
         self.stages = []
@@ -187,7 +189,7 @@ class Engine:
                 """Returns the relevant residual for a blade row for a given hub axial velocity."""
                 # design blade row and return residual
                 blade_row.design(v_x_hub, self.hub_tip_ratio)
-                residual = blade_row.exit.rr[-1]**2 - 0.9 * blade_row.inlet.rr[-1]**2
+                residual = blade_row.exit.rr[-1]**2 - self.area_ratio * blade_row.inlet.rr[-1]**2
                 blade_row.v_x_guesses.append(v_x_hub)
                 blade_row.residual_guesses.append(residual)
                 utils.debug(f"residual: {residual}")
@@ -276,9 +278,7 @@ class Engine:
         sol = root_scalar(
             solve_thrust, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
         )
-        print(f"sol: {sol}")
-
-        print(f"self.blade_rows[-1].exit.rr: {self.blade_rows[-1].exit.rr}")
+        utils.debug(f"sol: {sol}")
 
         # end timer and print feedback
         t2 = timer()
@@ -758,9 +758,15 @@ class Engine:
             "export_timestamp": datetime.now().replace(microsecond = 0).isoformat(),
 
             # export flight scenario details
+            "altitude": self.scenario.altitude,
+            "flight_speed": self.scenario.flight_speed,
+            "diameter": self.scenario.diameter,
+            "hub_tip_ratio": self.scenario.hub_tip_ratio,
+            "thrust": self.scenario.thrust,
+
+            # export dimensionless inputs
             "flight_mach_number": self.M_flight,
             "thrust_coefficient": self.C_th,
-            "hub_tip_ratio": self.hub_tip_ratio,
 
             # export original input information
             "no_of_stages": self.no_of_stages,
@@ -768,6 +774,7 @@ class Engine:
             "pressure_loss_coefficient": self.Y_p,
             "flow_coefficient": self.phi,
             "stage_loading_coefficient": self.psi,
+            "blade_row_area_ratio": self.area_ratio,
 
             # export geometry information
             "aspect_ratio": self.geometry["aspect_ratio"],
