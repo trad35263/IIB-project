@@ -640,7 +640,16 @@ class Engine:
     def export(self):
         """Exports the engine's parameters as a .mat file for CFD."""
         # store variable for calculating blade x-coordinates
-        x_ref = 0
+        #x_ref = 0
+
+        # get array of x-coordinates
+        xx = np.array([blade_row.exit.axial_chord[0] for blade_row in self.blade_rows])
+        print(f"xx: {xx}")
+        xx = np.concatenate([[2 * xx[0]], xx[:-1] + xx[1:]])
+        print(f"xx: {xx}")
+        xx = np.cumsum(xx)
+        print(f"xx: {xx}")
+        xx = xx * self.scenario.diameter / 2
 
         # create empty dictionaries
         self.export_dictionary = {}
@@ -691,7 +700,7 @@ class Engine:
             chord = chord_interp(span)
 
             # calculate blade x-coordinate as maximum axial chord + 20% margin from previous blade
-            x_ref += 1.2 * max(blade_row.exit.axial_chord) * self.scenario.diameter / 2
+            #x_ref += 1.2 * max(blade_row.exit.axial_chord) * self.scenario.diameter / 2
 
             # store inlet and exit midspan radii
             inlet_radius = self.diameter / 2 * (blade_row.inlet.rr[0] + blade_row.inlet.rr[-1]) / 2
@@ -736,7 +745,7 @@ class Engine:
                 "inlet_metal_angle": inlet_metal_angle.tolist(),
                 "exit_metal_angle": exit_metal_angle.tolist(),
                 "chord": chord.tolist(),
-                "x_ref": x_ref,
+                "x_ref": xx[index],
                 "inlet_radius": inlet_radius,
                 "exit_radius": exit_radius,
                 "inlet_area": inlet_area,
