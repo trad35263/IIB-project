@@ -17,8 +17,8 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # default dimensional values
     altitude = 0
-    flight_speed = 60
-    thrust = 30
+    flight_speed = 180
+    thrust = 45
 
     # default flight scenario parameters
     label = ""
@@ -35,14 +35,14 @@ class Defaults:
     # default engine input parameters
     no_of_stages = 2
     vortex_exponent = 0.5
-    Y_p = 0.02
+    Y_p = 0.04
     phi = 0.6
     psi = 0.15
     area_ratio = 1
 
     # default geometry parameters
     aspect_ratio = 2.5
-    diffusion_factor = 0.3
+    diffusion_factor = 0.35
     design_parameter = 0.5
     min_no_of_blades = 6
     max_no_of_blades = 20
@@ -88,6 +88,9 @@ class Defaults:
         [
             'deviation', 'Deviation angle (°)'
         ],
+        [
+            'p', 'Static pressure'
+        ]
     ]
 
     # code iteration parameters
@@ -101,6 +104,9 @@ class Defaults:
 
     # whether or not debug mode is active
     debug = False
+
+    # default dimensional blade thickness
+    thickness = 2e-3
 
 # 0.3 compressible flow perfect gas relations
 

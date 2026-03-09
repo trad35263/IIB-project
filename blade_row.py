@@ -4,6 +4,7 @@ from scipy.optimize import least_squares
 from scipy.interpolate import make_interp_spline
 from scipy.integrate import cumulative_simpson
 
+# import high speed solver modules
 from streamtube import Streamtube
 from flow_state import Flow_state
 from annulus import Annulus
@@ -15,42 +16,15 @@ import matplotlib.pyplot as plt
 
 # define Blade_row class
 class Blade_row:
-    """
-    Represents a single row of blades (i.e. a rotor or a stator) and their associated parameters.
-    
-    Used to investigate the flow across a Rotor or a Stator. Stator is a special case of the
-    Blade_row class where the blade velocity is zero. Every instance of the class will
-    contain an inlet and exit flow state where all of the flow properties are stored.
-    
-    Parameters
-    ----------
-    Y_p : float
-        Stagnation pressure loss coefficient.
-    is_rotor : boolean
-        Whether or not to categorise the blade row as a rotor or a stator.
-    phi : float
-        Flow coefficient.
-    psi : float
-        Stage loading coefficient.
-    vortex_exponent : float
-        Vortex exponent.
-    """
-    def __init__(self, Y_p, is_rotor = False, phi = None, psi = None, vortex_exponent = None):
-        """Create instance of the Blade_row class."""
-        # store input variables
-        #self.Y_p = Y_p
-        #self.phi = phi
-        #self.psi = psi
-        #self.vortex_exponent = vortex_exponent
-        
-        # hub radius is set by global hub-tip ratio
-        #self.r_hub = utils.Defaults.hub_tip_ratio
-
+    """Represents a single row of blades (rotor or stator) and their associated parameters."""
+    def __init__(self):
+        """Creates an instance of the Blade_row class."""
         # assign the default colour of black
-        #self.colour = 'k'
+        self.colour = 'k'
 
-        # categorise blade row
-        #self.categorise(is_rotor)
+        # create empty inlet and exit Annulus instances
+        self.inlet = Annulus()
+        self.exit = Annulus()
 
     def __str__(self):
         """Prints a string representation of the blade row."""
@@ -1476,88 +1450,81 @@ class Blade_row:
         #self.xx = self.xx / 2
         #self.yy = self.yy / 2
 
-    def draw_blades(self):
+    def draw_blades(self, thickness):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
+        # initiialise empty arrays of x- and y-coordinates
+        self.xx = np.zeros((3, 2 * utils.Defaults.solver_grid))
+        self.yy = np.zeros((3, 2 * utils.Defaults.solver_grid))
 
-        self.xx = np.zeros((3, 2 * utils.Defaults.export_grid))
-        self.yy = np.zeros((3, 2 * utils.Defaults.export_grid))
-
+        # get indices corresponding to hub, mid-span and tip
         indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
 
+        # loop for each spanwise position
         for j, index in enumerate(indices):
 
-            # -------------------------------------------------
-            # 1) Construct NORMALISED camber line
-            # -------------------------------------------------
+            # find centre-point of circular camberline
             r = 1 / (self.exit.metal_angle[index] - self.inlet.metal_angle[index])
             x0 = -r * np.sin(self.inlet.metal_angle[index])
             y0 =  r * np.cos(self.inlet.metal_angle[index])
 
-            theta = np.linspace(
-                self.inlet.metal_angle[index],
-                self.exit.metal_angle[index],
-                utils.Defaults.export_grid
+            # get list of angular values concentrated around leading edge
+            theta = (
+                self.inlet.metal_angle[index]
+                + (self.exit.metal_angle[index] - self.inlet.metal_angle[index])
+                * np.linspace(0, 1, utils.Defaults.solver_grid)**2
             )
 
-            xx_0 = x0 + r * np.sin(theta)
-            yy_0 = y0 - r * np.cos(theta)
+            # get camber line coordinates
+            xx_camber = x0 + r * np.sin(theta)
+            yy_camber = y0 - r * np.cos(theta)
 
-            # -------------------------------------------------
-            # 2) SCALE camber line to physical axial chord
-            # -------------------------------------------------
-            chord_scale = self.exit.axial_chord[index]
-
-            xx_0 *= chord_scale
-            yy_0 *= chord_scale
-
-            # -------------------------------------------------
-            # 3) Recompute arc length on SCALED camber line
-            # -------------------------------------------------
-            ll_0 = np.concatenate([[0], np.cumsum(
-                np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2)
+            # calculate cumulative distance along camber line
+            ll_camber = np.concatenate([[0], np.cumsum(
+                np.sqrt(np.diff(xx_camber)**2 + np.diff(yy_camber)**2)
             )])
 
-            dx_dl = np.gradient(xx_0, ll_0)
-            dy_dl = np.gradient(yy_0, ll_0)
+            # differentiate camber line with respect to cumulative distance
+            dx_dl = np.gradient(xx_camber, ll_camber)
+            dy_dl = np.gradient(yy_camber, ll_camber)
 
+            # calculate components of vector normal to camber line
             norm = np.sqrt(dx_dl**2 + dy_dl**2)
             nx = -dy_dl / norm
             ny =  dx_dl / norm
 
-            # -------------------------------------------------
-            # 4) Thickness distribution (ABSOLUTE)
-            # -------------------------------------------------
-            zz_0 = utils.aerofoil_data
-            zz_0 = zz_0[:, zz_0[0].argsort()]
+            # read in thickness data
+            zz = utils.aerofoil_data
+            zz = zz[:, zz[0].argsort()]
 
-            # Important:
-            # Your aerofoil x-data is 0→1 (normalised chord).
-            # We therefore need a normalised arc-length coordinate.
+            # initialise empty arrays for upper- and lower-surface data
+            xx_upper = np.zeros(xx_camber.shape)
+            xx_lower = np.zeros(xx_camber.shape)
+            yy_upper = np.zeros(xx_camber.shape)
+            yy_lower = np.zeros(xx_camber.shape)
 
-            s_normalised = ll_0 / ll_0[-1]
+            # loop over each point in the camber line
+            for i, (x, y, l) in enumerate(zip(xx_camber, yy_camber, ll_camber)):
 
-            xx_upper = np.zeros(xx_0.shape)
-            xx_lower = np.zeros(xx_0.shape)
-            yy_upper = np.zeros(xx_0.shape)
-            yy_lower = np.zeros(xx_0.shape)
+                # get relevant thickness for that point along the camber line
+                dy = np.interp(l, *zz)
 
-            for i, (x, y, s) in enumerate(zip(xx_0, yy_0, s_normalised)):
+                # scale thickness by axial chord length
+                dy *= thickness / (0.12 * self.exit.chord[index])
 
-                dy = np.interp(s, *zz_0)  # <-- thickness unchanged
-
+                # add upper and lower surfaces
                 xx_upper[i] = x + dy * nx[i]
                 yy_upper[i] = y + dy * ny[i]
                 xx_lower[i] = x - dy * nx[i]
                 yy_lower[i] = y - dy * ny[i]
 
-            # -------------------------------------------------
-            # 5) Combine surfaces
-            # -------------------------------------------------
+            # reverse upper surfaces
             xx_upper = xx_upper[::-1]
             yy_upper = yy_upper[::-1]
 
+            # combine surfaces and store in 2D matrices
             self.xx[j] = np.concatenate([xx_upper, xx_lower])
             self.yy[j] = np.concatenate([yy_upper, yy_lower])
 
-
-
+            # resize according to chord length (x1.5 for clarity)
+            self.xx[j] *= 1.5 * self.exit.chord[index]
+            self.yy[j] *= 1.5 * self.exit.chord[index]

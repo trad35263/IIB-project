@@ -57,9 +57,6 @@ class Flight_scenario:
         # create list to store engines designed for this flight scenario
         self.engines = []
 
-        # assign a unique colour for plotting
-        self.colour = next(self._color_cycle)
-
     def __str__(self):
         """Prints a string representation of the flight scenario."""
         string = f"\n"

@@ -367,7 +367,7 @@ class Nozzle:
 
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
-        self.exit.rr[0] = 1e-2
+        self.exit.rr[0] = 1e-3
 
         # nozzle is isentropic
         self.exit.T_0 = self.inlet.T_0
@@ -418,19 +418,22 @@ class Nozzle:
                 # calculate derivatives required for radial equilibrium
                 dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
                 ds = self.exit.s[index] - self.exit.s[index - 1]
-                dtan_2_alpha = (np.tan(self.exit.alpha[index]))**2 - (np.tan(self.exit.alpha[index - 1]))**2
+                d_tan_alpha = np.tan(self.exit.alpha[index]) - np.tan(self.exit.alpha[index - 1])
 
-                # calculate dimensionless axial velocity via difference equation
+                # calculate all v_x terms together
+                v_x_term = (
+                    dT_0 / (utils.gamma - 1)
+                    - self.exit.T[index - 1] * ds
+                    - self.exit.v_x[index - 1]**2 * np.tan(self.exit.alpha[index - 1])**2
+                    * (self.exit.rr[index] / self.exit.rr[index - 1] - 1)
+                    - self.exit.v_x[index - 1]**2 * np.tan(self.exit.alpha[index - 1])
+                    * d_tan_alpha
+                )
+
+                # calculate dimensionless axial velocity at new radial position
                 self.exit.v_x[index] = (
-                    self.exit.v_x[index - 1] + (
-                        dT_0 / (utils.gamma - 1)
-                        - self.exit.T[index - 1] * ds
-                        - self.exit.v_x[index - 1]**2 * (
-                            (np.tan(self.exit.alpha[index - 1]))**2 / self.exit.rr[index - 1]
-                            * (self.exit.rr[index] - self.exit.rr[index - 1])
-                            + 0.5 * dtan_2_alpha
-                        )
-                    ) / self.exit.v_x[index - 1]
+                    v_x_term / (self.exit.v_x[index - 1] * (1 + np.tan(self.exit.alpha[index - 1])**2))
+                    + self.exit.v_x[index - 1]
                 )
 
             # get exit tangential velocity from axial velocity and flow angle
@@ -511,6 +514,12 @@ class Nozzle:
                 - 2 * utils.dynamic_pressure_function(self.exit.M)
                 * (np.sin(self.exit.alpha))**2
             ) * self.exit.p_0 * self.exit.rr
+        )
+        self.C_th_with_p = utils.cumulative_trapezoid(self.exit.rr, dC_th_dr)
+
+        dC_th_dr = (   # without pressure terms
+            2 * utils.gamma / (1 - hub_tip_ratio**2)
+            * self.exit.p * self.exit.M**2 * np.cos(self.exit.alpha)**2 * self.exit.rr
         )
         self.C_th = utils.cumulative_trapezoid(self.exit.rr, dC_th_dr)
 

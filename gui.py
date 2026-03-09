@@ -129,6 +129,12 @@ class DataContainer:
                     # display as is
                     text = wx.StaticText(self.panel, label = f"{value}")
 
+                # for list attributes
+                elif isinstance(value, list):
+
+                    # display first entry to 4 significant figures
+                    text = wx.StaticText(self.panel, label = f"{value[0]:.4g}")
+
                 # for numeric attributes
                 else:
 
@@ -393,8 +399,8 @@ class MainFrame(wx.Frame):
             # append engine descriptions to dropdown
             self.engine.dropdown.Append(
                 f"[{index}]     Stages: {self.engine.source.no_of_stages} | "
-                f"n: {self.engine.source.vortex_exponent} | phi: {self.engine.source.phi} | "
-                f"psi: {self.engine.source.psi}"
+                f"n: {self.engine.source.vortex_exponent} | phi: {self.engine.source.phi[0]} | "
+                f"psi: {self.engine.source.psi[0]}"
             )
 
         if self.engine.source != None:
@@ -460,8 +466,8 @@ class MainFrame(wx.Frame):
                 # add new entry to dropdown
                 self.engine.dropdown.Append(
                     f"[{len(self.scenario.source.engines) - 1}]     Stages: {self.engine.source.no_of_stages} | "
-                    f"n: {self.engine.source.vortex_exponent} | phi: {self.engine.source.phi} | "
-                    f"psi: {self.engine.source.psi}"
+                    f"n: {self.engine.source.vortex_exponent} | phi: {self.engine.source.phi[0]} | "
+                    f"psi: {self.engine.source.psi[0]}"
                 )
 
                 # set engine dropdown to the most recent option

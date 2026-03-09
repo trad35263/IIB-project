@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from time import perf_counter as timer
 import matplotlib.pyplot as plt
+import copy
 
 # import custom classes
 from annulus import Annulus
@@ -32,7 +33,7 @@ class Rotor(Blade_row):
     def __init__(self, Y_p, phi, psi, vortex_exponent):
         """Create instance of the Rotor class."""
         # initialise parent Blade_row class
-        super().__init__(Y_p, phi, psi, vortex_exponent)
+        super().__init__()
 
         # store input variables
         self.Y_p = Y_p
@@ -378,6 +379,9 @@ class Rotor(Blade_row):
         """Solves for the rotor exit conditions and blade geometry."""
         # start timer
         t1 = timer()
+
+        # sever relationship between inlet and previous blade row exit
+        self.inlet = copy.deepcopy(self.inlet)
 
         # impose bounds on hub velocity guess
         v_x_hub = utils.bound(v_x_hub)
@@ -799,14 +803,6 @@ class Rotor(Blade_row):
             )
         )
 
-        # check for negative pitch-to-chord
-        if np.any(self.exit.pitch_to_chord < 0):
-
-            print(
-                f"{utils.Colours.RED}Warning: negative pitch-to-chord ratio{utils.Colours.END}.\n"
-                f"Consider increasing the diffusion factor of the design."
-            )
-
         # calculate corresponding deviation
         self.calculate_deviation()
 
@@ -829,6 +825,16 @@ class Rotor(Blade_row):
         self.exit.pitch_to_chord = (
             (1 - p) * self.exit.pitch_to_chord + p * pitch_to_chord_deviation
         )
+
+        # check for negative pitch-to-chord
+        if np.any(self.exit.pitch_to_chord < 0):
+
+            print(
+                f"{utils.Colours.RED}Warning: negative pitch-to-chord ratio{utils.Colours.END}.\n"
+                f"Consider increasing the diffusion factor of the design."
+            )
+
+        print(f"self.exit.pitch_to_chord: {self.exit.pitch_to_chord}")
 
         # recalculate deviation
         self.calculate_deviation()
@@ -895,6 +901,11 @@ class Rotor(Blade_row):
             / (-m * np.sqrt(self.exit.pitch_to_chord) + 1)
         )
 
+        #print(f"metal_angle_1: {metal_angle_1}")
+        #print(f"metal_angle_2: {metal_angle_2}")
+        #print(f"inlet_angle: {inlet_angle}")
+        #print(f"self.exit.beta: {utils.rad_to_deg(self.exit.beta)}")
+
         self.exit.metal_angle = utils.deg_to_rad(metal_angle_2)
 
         # calculate exit metal angles and corresponding deviation
@@ -905,3 +916,6 @@ class Rotor(Blade_row):
             )
         )"""
         self.exit.deviation = self.exit.metal_angle - self.exit.beta
+
+        # cap deviation at arbitrary value
+        #self.exit.deviation = 

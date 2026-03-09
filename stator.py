@@ -2,6 +2,7 @@
 import numpy as np
 from scipy.optimize import least_squares
 from time import perf_counter as timer
+import copy
 
 # import custom classes
 from annulus import Annulus
@@ -15,31 +16,18 @@ class Stator(Blade_row):
     """
     Represents a single compressor stator and stores the associated flowfield.
     
-    Used to investigate the flow across a stator. Every instance of the class will
-    contain an inlet and exit flow object where all of the flow properties are stored.
-    
     Parameters
     ----------
     Y_p : float
         Stagnation pressure loss coefficient.
     """
     def __init__(self, Y_p):
-        """Create instance of the Blade_row class."""
-        #
-        super().__init__(Y_p)
+        """Create instance of the Stator class."""
+        # initialise parent Blade_row class 
+        super().__init__()
 
         # store input variables
         self.Y_p = Y_p
-        
-        # hub radius is set by global hub-tip ratio
-        self.r_hub = utils.Defaults.hub_tip_ratio
-
-        # assign the default colour of black
-        self.colour = 'k'
-
-        # create empty inlet and exit Annulus instances
-        self.inlet = Annulus()
-        self.exit = Annulus()
 
     def __str__(self):
         """Prints a string representation of the blade row."""
@@ -172,7 +160,6 @@ class Stator(Blade_row):
             solutions[-1] = self.exit.rr[-1]**2 - self.inlet.rr[-1]**2
 
             # return solutions
-            #solutions = solutions.ravel()
             return solutions
         
         # set list of lower and upper bounds and reshape
@@ -205,6 +192,9 @@ class Stator(Blade_row):
         """Solves for the stator exit conditions and blade geometry."""
         # start timer
         t1 = timer()
+
+        # sever relationship between inlet and previous blade row exit
+        self.inlet = copy.deepcopy(self.inlet)
 
         # impose bounds on hub velocity guess  
         v_x_hub = utils.bound(v_x_hub)
@@ -265,25 +255,6 @@ class Stator(Blade_row):
                 # interpolate to find upper bound of corresponding streamtube
                 self.exit.rr[index] = np.interp(dm_dot_2[index - 1], m_dot_3, r_3_fine)
 
-                # calculate derivatives required for radial equilibrium
-                """dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
-                ds = self.exit.s[index] - self.exit.s[index - 1]
-                dtan_2_alpha = (np.tan(self.exit.alpha[index]))**2 - (np.tan(self.exit.alpha[index - 1]))**2
-
-                # calculate dimensionless axial velocity via difference equation
-                self.exit.v_x[index] = (
-                    self.exit.v_x[index - 1] + (
-                        dT_0 / (utils.gamma - 1)
-                        - self.exit.T[index - 1] * ds
-                        - self.exit.v_x[index - 1]**2 * (
-                            (np.tan(self.exit.alpha[index - 1]))**2 / self.exit.rr[index - 1]
-                            * (self.exit.rr[index] - self.exit.rr[index - 1])
-                            + 0.5 * dtan_2_alpha
-                        )
-                    ) / self.exit.v_x[index - 1]
-                )"""
-
-                # VERSION 2
                 # calculate derivatives required for radial equilibrium
                 dT_0 = self.exit.T_0[index] - self.exit.T_0[index - 1]
                 ds = self.exit.s[index] - self.exit.s[index - 1]

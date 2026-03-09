@@ -43,12 +43,14 @@ class Engine:
         Instance of the Flight_scenario class for which this engine is designed.
     no_of_stages : int
         Number of stages in the compressor.
-    vortex_exponent : float
-        Vortex exponent describing the distribution of stage loading across a rotor.
-    phi : float
-        Flow coefficient.
+    phi : float or list
+        Flow coefficient or list of flow coefficients.
     psi : float
         Stage loading coefficient.
+    vortex_exponent : float
+        Vortex exponent describing the distribution of stage loading across a rotor.
+    Y_p : float
+    area_ratio : float
     """
     def __init__(
             self,
@@ -75,9 +77,36 @@ class Engine:
         self.no_of_stages = int(no_of_stages)
         self.vortex_exponent = vortex_exponent
         self.Y_p = Y_p
-        self.phi = phi
-        self.psi = psi
         self.area_ratio = area_ratio
+
+        # phi is provided as a scalar
+        if isinstance(phi, float):
+
+            # convert to uniform array
+            self.phi = list(phi * np.ones(self.no_of_stages))
+
+        else:
+
+            self.phi = list(phi)
+
+        # psi is provided as a scalar
+        if isinstance(psi, float):
+
+            # convert to uniform array
+            self.psi = list(psi * np.ones(self.no_of_stages))
+
+        else:
+
+            self.psi = list(psi)
+
+        # phi or psi list is not the correct length
+        if len(self.phi) != self.no_of_stages or len(self.psi) != self.no_of_stages:
+
+            # print error message
+            print(
+                f"{utils.Colours.RED}Error! Please provide input list with same length as number "
+                f"of stages!.{utils.Colours.END}"
+            )
 
         # create the appropriate number of empty stages and blade rows
         self.stages = []
@@ -85,7 +114,7 @@ class Engine:
         for index in range(self.no_of_stages):
 
             # create stage and blade rows and store in lists
-            stage = Stage(self.phi, self.psi, self.vortex_exponent, self.Y_p, index)
+            stage = Stage(self.phi[index], self.psi[index], self.vortex_exponent, self.Y_p, index)
             self.stages.append(stage)
             self.blade_rows.extend(self.stages[-1].blade_rows)
 
@@ -146,6 +175,10 @@ class Engine:
                 else:
 
                     string += f"{name}: {utils.Colours.GREEN}{value:.4g}{utils.Colours.END}\n"
+
+            elif isinstance(value, list):
+
+                string += f"{name}: {utils.Colours.GREEN}{value}{utils.Colours.END}\n"
 
         string += "\n"
 
@@ -227,6 +260,8 @@ class Engine:
 
                     fig, ax = plt.subplots()
                     ax.plot(blade_row.v_x_guesses, blade_row.residual_guesses, label = "Guesses")
+                    ax.set_xlabel("Dimensionless Hub Velocity")
+                    ax.set_ylabel("Blade row Area Ratio Residual")
                     ax.grid()
                     ax.legend()
                     ax.set_xlim(-1, 1)
@@ -286,7 +321,6 @@ class Engine:
             f"Engine design completed after {utils.Colours.GREEN}{t2 - t1:.3g}s:"
             f"{utils.Colours.END}"
         )
-        print(self)
 
     def initial_guess(self):
         """Calculates an initial inlet Mach number guess for the solver."""
@@ -307,9 +341,9 @@ class Engine:
         # calculate compressor stagnation temperature ratio
         T_03_T_01 = (
             np.power(
-                1 + self.psi * velocity_function_1**2 * np.power(
+                1 + self.psi[0] * velocity_function_1**2 * np.power(
                     r_mean / rr_grid, self.vortex_exponent + 1
-                ) / (self.phi * r_mean / rr_grid)**2,
+                ) / (self.phi[0] * r_mean / rr_grid)**2,
                 self.no_of_stages
             )
         )
@@ -409,13 +443,20 @@ class Engine:
         self.p_0_ratio = self.nozzle.p_0_ratio
         self.nozzle_area_ratio = self.nozzle.area_ratio
 
-        # calculate thrust coefficient (including pressure terms)
+        # calculate thrust coefficient (excluding pressure terms)
         self.C_th = (
             self.nozzle.C_th[-1]
             - utils.mass_flow_function(self.M_1)
             * utils.velocity_function(self.M_flight)
-            - self.nozzle_area_ratio * self.p_atm
         )
+
+        # calculate thrust coefficient (including pressure terms)
+        """self.C_th_with_p = (
+            self.nozzle.C_th_with_p[-1]
+            - utils.mass_flow_function(self.M_1)
+            * utils.velocity_function(self.M_flight)
+            - self.nozzle_area_ratio * self.p_atm
+        )"""
 
         # calculate jet velocity ratio
         rho_v_2_r = (
@@ -473,7 +514,9 @@ class Engine:
             / ( 
                 2 * self.nozzle_area_ratio * utils.gamma * np.sqrt(utils.gamma - 1)
                 * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1], rho_v_3_r
+                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1],
+                    self.nozzle.exit.p * self.nozzle.exit.M**3 * np.sqrt(self.nozzle.exit.T)
+                    * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
                 )[-1]
                 - utils.mass_flow_function(self.M_1) * utils.velocity_function(self.scenario.M)**2
             )
@@ -637,18 +680,12 @@ class Engine:
                 # calculate stage off-design performance
                 stage.calculate_off_design(self.hub_tip_ratio, phi)
 
-    def export(self):
+    def export(self, filename = None):
         """Exports the engine's parameters as a .mat file for CFD."""
-        # store variable for calculating blade x-coordinates
-        #x_ref = 0
-
-        # get array of x-coordinates
+        # calculate array of blade row x-coordinates
         xx = np.array([blade_row.exit.axial_chord[0] for blade_row in self.blade_rows])
-        print(f"xx: {xx}")
         xx = np.concatenate([[2 * xx[0]], xx[:-1] + xx[1:]])
-        print(f"xx: {xx}")
         xx = np.cumsum(xx)
-        print(f"xx: {xx}")
         xx = xx * self.scenario.diameter / 2
 
         # create empty dictionaries
@@ -698,9 +735,6 @@ class Engine:
                 fill_value = "extrapolate"
             )
             chord = chord_interp(span)
-
-            # calculate blade x-coordinate as maximum axial chord + 20% margin from previous blade
-            #x_ref += 1.2 * max(blade_row.exit.axial_chord) * self.scenario.diameter / 2
 
             # store inlet and exit midspan radii
             inlet_radius = self.diameter / 2 * (blade_row.inlet.rr[0] + blade_row.inlet.rr[-1]) / 2
@@ -781,8 +815,8 @@ class Engine:
             "no_of_stages": self.no_of_stages,
             "vortex_exponent": self.vortex_exponent,
             "pressure_loss_coefficient": self.Y_p,
-            "flow_coefficient": self.phi,
-            "stage_loading_coefficient": self.psi,
+            "flow_coefficients": self.phi,
+            "stage_loading_coefficients": self.psi,
             "blade_row_area_ratio": self.area_ratio,
 
             # export geometry information
@@ -800,26 +834,25 @@ class Engine:
             "export_grid_points": utils.Defaults.export_grid
         }
 
+        if filename == None:
+
+            filename = (
+                f"high_speed_"
+                f"{self.export_dictionary['metadata']['export_timestamp'].replace(':', '-')}"
+            )
+
         # save dictionary as .mat file
-        filename = (
-            f"high_speed_solver_export_"
-            f"{self.export_dictionary['metadata']['export_timestamp'].replace(':', '-')}.mat"
-        )
-        savemat(filename, self.export_dictionary)
+        savemat(f"exports/{filename}.mat", self.export_dictionary)
         
         # save dictionary as JSON file
-        json_filename = (
-            f"high_speed_solver_export_"
-            f"{self.export_dictionary['metadata']['export_timestamp'].replace(':', '-')}.json"
-        )
-        with open(json_filename, 'w') as f:
+        with open(f"exports/{filename}.json", 'w') as f:
             json.dump(self.export_dictionary, f, indent = 2)
 
         # print feedback to user
         print(
             f"Engine data successfully exported as "
-            f"{utils.Colours.GREEN}{filename}{utils.Colours.END} and "
-            f"{utils.Colours.GREEN}{json_filename}{utils.Colours.END}!"
+            f"{utils.Colours.GREEN}{filename}.mat{utils.Colours.END} and "
+            f"{utils.Colours.GREEN}{filename}.json{utils.Colours.END}!"
         )
 
 # plotting functions ------------------------------------------------------------------------------
@@ -827,9 +860,7 @@ class Engine:
     def plot_velocity_triangles(self):
         """Plots the Mach triangles and approximate blade shapes for the compressor."""
         # create plot for displaying velocity triangles
-        fig, ax = plt.subplots(figsize = (10, 6))
-
-        scaling = 1
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
         # coordinates for a brace
         verts = [
@@ -880,7 +911,8 @@ class Engine:
         ax.text(
             0.5, 1.02,
             f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
-            f"$ \\phi $ = {self.phi:.3g}, $ \\psi $ = {self.psi:.3g}, n = {self.vortex_exponent:.3g}",
+            f"$ \\phi $ = {self.phi[0]:.3g}, $ \\psi $ = {self.psi[0]:.3g}, "
+            f"n = {self.vortex_exponent:.3g}",
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',
@@ -890,14 +922,20 @@ class Engine:
         # tight layout
         plt.tight_layout()
 
+        # loop over all blade rows
+        for blade_row in self.blade_rows:
+
+            # draw blades
+            thickness = utils.Defaults.thickness * 2 / self.scenario.diameter
+            blade_row.draw_blades(thickness)
+
         # iterate over all inlet and exit streamtubes chosen for plotting
         for row, index in enumerate(indices):
-                
+            
             # iterate over all blade rows
             for column, blade_row in enumerate(self.blade_rows):
 
                 # plot blade row at chosen spanwise positions
-                blade_row.draw_blades()
                 ax.plot(blade_row.xx[row] + column, blade_row.yy[row] + row, color = 'k')
 
                 # add velocity triangles
@@ -1366,7 +1404,7 @@ class Engine:
             ax.text(
                 0.5, 1.02,
                 f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
-                f"$ \\phi $ = {self.phi:.3g}, $ \\psi $ = {self.psi:.3g}, n = {self.vortex_exponent:.3g}",
+                f"$ \\phi $ = {self.phi[0]:.3g}, $ \\psi $ = {self.psi[0]:.3g}, n = {self.vortex_exponent:.3g}",
                 transform = ax.transAxes,
                 ha = 'center',
                 va = 'bottom',
