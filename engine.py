@@ -1193,9 +1193,6 @@ class Engine:
             # plot streamline
             ax.plot(xx, streamline, linewidth = 1, color = 'k')
 
-        # show plot
-        plt.show()
-
     def plot_matlab(self):
         """Creates a spanwise flow angle plot with matlab results overlaid."""
         # run matlab engine

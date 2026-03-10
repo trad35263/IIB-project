@@ -13,17 +13,19 @@ from flight_scenario import Flight_scenario
 class Inputs:
 
     # motor parameters
-    power = 3000
-    rpm = 10000
+    #power = 3000
+    #rpm = 10000
 
     # thrust and nozzle area ratio
-    thrust = 45
-    nozzle_area_ratio = 0.5
+    thrust = 30
     
     # variables to loop over
     stages = [1, 2, 3]
     phis = [0.6, 0.75, 0.9]
     psis = [0.1, 0.15, 0.2]
+
+    # inlet Mach number
+    M_1 = 0.15
 
 # create_engine function
 def create_engine(
@@ -67,42 +69,36 @@ def main():
 
         for phi in Inputs.phis:
 
-            Inputs.flow_coefficient = phi
+            Inputs.phi = phi
 
-            # get engine
-            export_engine()
+            for psi in Inputs.psis:
+
+                Inputs.psi = psi
+
+                # get engine
+                export_engine()
 
 def export_engine():
 
-    def specify_motor(vars, no_of_stages, flow_coefficient):
+    def specify_motor(vars, no_of_stages, phi, psi):
 
-        # convert input variables to dimensional values
-        thrust = vars[0] * utils.Defaults.thrust
-        psi = list(vars[1::2] * utils.Defaults.psi)
-        phi = list(flow_coefficient * np.concatenate(([1], vars[2::2])))
+        # thrust is input variable
+        thrust = vars[0]
 
         # create engine
         Inputs.engine = create_engine(no_of_stages = no_of_stages, thrust = thrust, phi = phi, psi = psi)
 
-        # create empty list of residuals
-        residuals = []
-
-        # loop for each stage
-        for index, stage in enumerate(Inputs.engine.stages):
-
-            # append dimensionless error in motor power and rpm to residuals list
-            residuals.append(getattr(Inputs.engine, f"rotor_{index + 1}_power") / Inputs.power - 1)
-            residuals.append(getattr(Inputs.engine, f"rotor_{index + 1}_rpm") / Inputs.rpm - 1)
-
+        # residual is mass flow rate delta
+        residuals = [Inputs.engine.M_1 - Inputs.M_1]
         return residuals
 
     # set initial guess
-    x0 = np.ones(2 * Inputs.no_of_stages)
+    x0 = [Inputs.thrust]
 
     # solve for appropriate thrust and stage loading coefficients iteratively
     sol = least_squares(
         specify_motor,
-        x0, args = (Inputs.no_of_stages, Inputs.flow_coefficient),
+        x0, args = (Inputs.no_of_stages, Inputs.phi, Inputs.psi),
         xtol=1e-6,      # tolerance on change in x
         ftol=1e-6,      # tolerance on change in residual
         gtol=1e-6       # tolerance on gradient
@@ -122,8 +118,11 @@ def export_engine():
     # calculate blade angles and export engine
     Inputs.engine.empirical_design()
     Inputs.engine.plot_section()
-    Inputs.engine.export(f"N_{Inputs.no_of_stages}_phi_{Inputs.flow_coefficient}")
+    Inputs.engine.export(f"N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")
 
 if __name__ == "__main__":
 
     main()
+
+    # show all plots
+    plt.show()

@@ -830,11 +830,75 @@ class Rotor(Blade_row):
         if np.any(self.exit.pitch_to_chord < 0):
 
             print(
-                f"{utils.Colours.RED}Warning: negative pitch-to-chord ratio{utils.Colours.END}.\n"
+                f"{utils.Colours.ORANGE}Warning: negative pitch-to-chord ratio{utils.Colours.END}.\n"
                 f"Consider increasing the diffusion factor of the design."
             )
 
-        print(f"self.exit.pitch_to_chord: {self.exit.pitch_to_chord}")
+            self.exit.pitch_to_chord = utils.soft_clip(self.exit.pitch_to_chord, a_min = 0.1)
+
+        # calculate minimum number of blades to achieve aspect ratio
+        self.no_of_blades = utils.Defaults.min_no_of_blades
+        while True:
+
+            # calculate pitch and chord distributions
+            self.exit.pitch = 2 * np.pi * self.exit.rr / self.no_of_blades
+            self.exit.chord = self.exit.pitch / self.exit.pitch_to_chord
+
+            # chord length somewhere exceeds maximum chord limit
+            if np.any(self.exit.chord > utils.Defaults.max_chord_limit):
+
+                print(
+                    f"{utils.Colours.ORANGE}Chord distribution clipped at max. value."
+                    f"{utils.Colours.END}"
+                )
+
+                utils.debug(f"self.exit.chord: {self.exit.chord}")
+
+                # clip chord distribution at max. value
+                self.exit.chord = np.clip(
+                    self.exit.chord, a_min = None, a_max = utils.Defaults.max_chord_limit
+                )
+
+                utils.debug(f"self.exit.chord: {self.exit.chord}")
+
+            # impose limits on chord variation
+            chord_min = np.min(self.exit.chord)
+            chord_max = np.max(self.exit.chord)
+
+            # minimum chord is too small
+            if chord_min / chord_max < utils.Defaults.chord_ratio_limit:
+
+                print(
+                    f"{utils.Colours.ORANGE}Chord distribution smoothing necessary."
+                    f"{utils.Colours.END}"
+                )
+
+                utils.debug(f"self.exit.chord: {self.exit.chord}")
+
+                # smooth chord distribution
+                self.exit.chord = (
+                    utils.Defaults.chord_ratio_limit * chord_max
+                    + (1 - utils.Defaults.chord_ratio_limit) * chord_max
+                    * (self.exit.chord - chord_min) / (chord_max - chord_min)
+                )
+
+                utils.debug(f"self.exit.chord: {self.exit.chord}")
+
+            # calculate mean-line aspect ratio
+            r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+            chord_mean = np.interp(r_mean, self.exit.rr, self.exit.chord)
+            AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
+
+            # check if aspect ratio criterion is met
+            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_no_of_blades:
+
+                break
+
+            # increment number of blades
+            self.no_of_blades += 1
+
+        # update pitch-to-chord ratio with new chord lengths
+        self.exit.pitch_to_chord = self.exit.pitch / self.exit.chord
 
         # recalculate deviation
         self.calculate_deviation()
@@ -849,27 +913,6 @@ class Rotor(Blade_row):
             ) * self.exit.pitch_to_chord
         )
 
-        # calculate minimum number of blades to achieve aspect ratio
-        self.no_of_blades = utils.Defaults.min_no_of_blades
-        while True:
-
-            # calculate pitch and chord distributions
-            self.exit.pitch = 2 * np.pi * self.exit.rr / self.no_of_blades
-            self.exit.chord = self.exit.pitch / self.exit.pitch_to_chord
-
-            # calculate mean-line aspect ratio
-            r_mean = 0.5 * (self.exit.rr[0] + self.exit.rr[-1])
-            chord_mean = np.interp(r_mean, self.exit.rr, self.exit.chord)
-            AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
-
-            # check if aspect ratio criterion is met
-            if AR_mean > aspect_ratio or self.no_of_blades > utils.Defaults.max_no_of_blades:
-
-                break
-
-            # increment number of blades
-            self.no_of_blades += 1
-
         # calculate true aspect ratio distribution
         self.exit.aspect_ratio = (self.exit.rr[-1] - self.exit.rr[0]) / self.exit.chord
 
@@ -881,7 +924,7 @@ class Rotor(Blade_row):
 
     def calculate_deviation(self):
         """Calculates the deviation distribution using Carter and Howell."""
-        # store inlet metal angle for zero incidence
+        # store inlet metal angle for zero nominal incidence
         self.inlet.metal_angle = self.inlet.beta
         
         # store inlet and exit angles in degrees for convenience
@@ -891,31 +934,23 @@ class Rotor(Blade_row):
         # calculate deviation coefficient using Howell's correlation for a circular camber line
         m = 0.23 + np.abs(exit_angle) / 500
 
+        # calculate magnitude of deviation
+        self.exit.deviation = (
+            m * np.abs(self.exit.beta - self.inlet.beta) * np.sqrt(self.exit.pitch_to_chord)
+        )
+
+        # soft clip deviation at max. value
+        self.exit.deviation = utils.soft_clip(self.exit.deviation, a_min = None, a_max = np.pi / 9)
+
+        # calculate metal angles from clipped deviation values
+        self.exit.metal_angle = self.exit.beta * self.exit.deviation
+
         # calculate two options of metal angle
-        metal_angle_1 = (
+        """metal_angle_1 = (
             (m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle + exit_angle)
             / (m * np.sqrt(self.exit.pitch_to_chord) + 1)
         )
         metal_angle_2 = (
             (-m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle + exit_angle)
             / (-m * np.sqrt(self.exit.pitch_to_chord) + 1)
-        )
-
-        #print(f"metal_angle_1: {metal_angle_1}")
-        #print(f"metal_angle_2: {metal_angle_2}")
-        #print(f"inlet_angle: {inlet_angle}")
-        #print(f"self.exit.beta: {utils.rad_to_deg(self.exit.beta)}")
-
-        self.exit.metal_angle = utils.deg_to_rad(metal_angle_2)
-
-        # calculate exit metal angles and corresponding deviation
-        """self.exit.metal_angle = (
-            utils.deg_to_rad(
-                exit_angle - m * inlet_angle * np.sqrt(self.exit.pitch_to_chord)
-                / (1 - m * np.sqrt(self.exit.pitch_to_chord))
-            )
         )"""
-        self.exit.deviation = self.exit.metal_angle - self.exit.beta
-
-        # cap deviation at arbitrary value
-        #self.exit.deviation = 

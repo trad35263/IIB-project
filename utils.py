@@ -17,7 +17,7 @@ class Defaults:
     """Container for default values relating to the engine system."""
     # default dimensional values
     altitude = 0
-    flight_speed = 180
+    flight_speed = 170
     thrust = 45
 
     # default flight scenario parameters
@@ -45,7 +45,11 @@ class Defaults:
     diffusion_factor = 0.35
     design_parameter = 0.5
     min_no_of_blades = 6
-    max_no_of_blades = 20
+    max_no_of_blades = 40
+
+    # chord distribution limits
+    max_chord_limit = 0.8
+    chord_ratio_limit = 0.5
 
     # default off_design parameters
     phi_min = 0.4
@@ -178,6 +182,13 @@ def invert(function, target, bracket = [0, 1], method = "brentq"):
         raise RuntimeError("Inversion failed to converge.")
     
     return sol.root"""
+
+def soft_clip(x, a_min=None, a_max=None, sharpness=10.0):
+    if a_max is not None:
+        x = a_max - (1 / sharpness) * np.log1p(np.exp(sharpness * (a_max - x)))
+    if a_min is not None:
+        x = a_min + (1 / sharpness) * np.log1p(np.exp(sharpness * (x - a_min)))
+    return x
 
 # 0.4 upload NACA aerofoil for visualisation purposes
 
