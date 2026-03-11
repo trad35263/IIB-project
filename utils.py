@@ -18,7 +18,7 @@ class Defaults:
     # default dimensional values
     altitude = 0
     flight_speed = 170
-    thrust = 45
+    thrust = 50.625
 
     # default flight scenario parameters
     label = ""
@@ -45,7 +45,11 @@ class Defaults:
     diffusion_factor = 0.35
     design_parameter = 0.5
     min_no_of_blades = 6
-    max_no_of_blades = 40
+    max_no_of_blades = 100
+
+    # guardrails
+    min_pitch_to_chord_ratio = 0.2
+    axial_separation = 0.1
 
     # chord distribution limits
     max_chord_limit = 0.8
@@ -183,7 +187,7 @@ def invert(function, target, bracket = [0, 1], method = "brentq"):
     
     return sol.root"""
 
-def soft_clip(x, a_min=None, a_max=None, sharpness=10.0):
+def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
     if a_max is not None:
         x = a_max - (1 / sharpness) * np.log1p(np.exp(sharpness * (a_max - x)))
     if a_min is not None:

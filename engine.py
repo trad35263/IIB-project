@@ -275,15 +275,14 @@ class Engine:
                 self.nozzle.residual_guesses = []
 
                 # set initial guess
-                x0 = self.nozzle.inlet.v_x[0]
-                x0 = self.scenario.M
-                x1 = 0.9 * x0
+                x0 = self.M_j_initial
+                x1 = 0.9 * x0 + 1e-3
 
                 # solve for nozzle exit conditions
                 sol = root_scalar(
                     solve_nozzle, x0 = x0, x1 = x1, method = 'secant', maxiter = 20
                 )
-                utils.debug(f"sol: {sol}")
+                utils.debug(f"nozzle sol: {sol}")
 
             # catch exceptions
             except ValueError as error:
@@ -303,11 +302,11 @@ class Engine:
         self.initial_guess()
 
         # temp code
-        self.nozzle.exit.M_j_initial = self.M_j_initial
-        self.nozzle.exit.rr_j_initial = self.rr_j_initial
+        #self.nozzle.exit.M_j_initial = self.M_j_initial
+        #self.nozzle.exit.rr_j_initial = self.rr_j_initial
 
         x0 = self.M_1
-        x1 = 0.99 * x0
+        x1 = 0.9 * x0
 
         # solve iteratively
         sol = root_scalar(
@@ -395,18 +394,21 @@ class Engine:
             )
 
         # calculate the running maximum
-        C_th_max = np.maximum.accumulate(self.C_th_initial)
+        C_th_max = np.fmax.accumulate(self.C_th_initial)
 
         # mask all values below the running maximum, including the M_1 = 0 value
         mask = np.concatenate([[False], self.C_th_initial[1:] >= C_th_max[:-1]])
 
         # plot
-        """fig, ax = plt.subplots()
-        ax.plot(self.M_1_initial, self.C_th_initial)
-        ax.plot(self.M_1_initial, C_th_max)
-        ax.plot(self.M_1_initial[mask], self.C_th_initial[mask])
+        fig, ax = plt.subplots()
+        ax.plot(self.M_1_initial, self.C_th_initial, label = "Values")
+        ax.plot(self.M_1_initial, C_th_max, label = "Running maximum")
+        ax.plot(self.M_1_initial[mask], self.C_th_initial[mask], label = "Masked maximum")
         ax.grid()
-        plt.show()"""
+        ax.legend()
+        ax.set_xlabel("Compressor Inlet Mach Number")
+        ax.set_ylabel("Thrust Coefficient")
+        plt.show()
 
         # thrust cannot be produced
         if np.max(self.C_th_initial[mask]) < self.C_th_design:
@@ -422,7 +424,7 @@ class Engine:
 
         # temp code
         index = int(np.interp(self.M_1, self.M_1_initial, np.arange(utils.Defaults.solver_grid)))
-        self.M_j_initial = M_j[:, index]
+        self.M_j_initial = M_j[:, index][0]
         self.rr_j_initial = rr_j[:, index]
 
         # find nozzle area ratio
@@ -683,7 +685,7 @@ class Engine:
     def export(self, filename = None):
         """Exports the engine's parameters as a .mat file for CFD."""
         # calculate array of blade row x-coordinates
-        xx = np.array([blade_row.exit.axial_chord[0] for blade_row in self.blade_rows])
+        xx = np.array([blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation for blade_row in self.blade_rows])
         xx = np.concatenate([[2 * xx[0]], xx[:-1] + xx[1:]])
         xx = np.cumsum(xx)
         xx = xx * self.scenario.diameter / 2
@@ -790,15 +792,12 @@ class Engine:
                 "no_of_blades": blade_row.no_of_blades
             }
 
-        # add blades dictionary to export dictionary
-        self.export_dictionary["blades"] = self.blades_dictionary
-
         # add metadata to dictionary
         self.export_dictionary["metadata"] = {
             # export date-time information
-            "export_date": datetime.now().strftime("%Y-%m-%d"),
-            "export_time": datetime.now().strftime("%H:%M:%S"),
-            "export_timestamp": datetime.now().replace(microsecond = 0).isoformat(),
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "date_and_time": datetime.now().replace(microsecond = 0).isoformat(),
 
             # export flight scenario details
             "altitude": self.scenario.altitude,
@@ -819,23 +818,34 @@ class Engine:
             "stage_loading_coefficients": self.psi,
             "blade_row_area_ratio": self.area_ratio,
 
+            # export engine calculated values
+            "inlet_mach_number": self.M_1,
+            "nozzle_area_ratio": self.nozzle_area_ratio,
+            "eta_comp": self.eta_comp,
+            "eta_prop": self.eta_prop,
+
+            # export CFD boundary condition
+            "mass_flow_rate": self.m_dot,
+            "p_0": self.scenario.p_0,
+            "T_0": self.scenario.T_0,
+
             # export geometry information
             "aspect_ratio": self.geometry["aspect_ratio"],
             "diffusion_factor": self.geometry["diffusion_factor"],
             "design_parameter": self.geometry["design_parameter"],
-
-            # export engine calculated values
-            "inlet_mach_number": self.M_1,
-            "nozzle_area_ratio": self.nozzle_area_ratio,
-            "mass_flow_rate":  self.m_dot,
 
             # export solver grid details
             "solver_grid_points": utils.Defaults.solver_grid,
             "export_grid_points": utils.Defaults.export_grid
         }
 
+        # add blades dictionary to export dictionary
+        self.export_dictionary["blades"] = self.blades_dictionary
+
+        # no filename argument was passed
         if filename == None:
 
+            # set default filename
             filename = (
                 f"high_speed_"
                 f"{self.export_dictionary['metadata']['export_timestamp'].replace(':', '-')}"
@@ -1065,12 +1075,6 @@ class Engine:
             span = (
                 (self.nozzle.exit.rr_j_initial - self.nozzle.exit.rr_j_initial[0])
                 / (self.nozzle.exit.rr_j_initial[-1] - self.nozzle.exit.rr_j_initial[0])
-            )
-            axes[-1].plot(
-                self.nozzle.exit.M_j_initial,
-                span,
-                label = "Initial",
-                color = 'k'
             )
 
             # assign values for capturing appropriate axis limits

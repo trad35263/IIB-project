@@ -381,7 +381,7 @@ class Rotor(Blade_row):
         t1 = timer()
 
         # sever relationship between inlet and previous blade row exit
-        self.inlet = copy.deepcopy(self.inlet)
+        #self.inlet = copy.deepcopy(self.inlet)
 
         # impose bounds on hub velocity guess
         v_x_hub = utils.bound(v_x_hub)
@@ -789,7 +789,7 @@ class Rotor(Blade_row):
             / (self.inlet.T * (utils.gamma - 1) * self.inlet.M_blade**2)
         )
 
-    def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
+    def calculate_chord2(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
         # calculate pitch-to-chord distributions for constant diffusion factor
         self.exit.pitch_to_chord = (
@@ -922,7 +922,99 @@ class Rotor(Blade_row):
             / (self.exit.metal_angle - self.inlet.metal_angle)
         )
 
-    def calculate_deviation(self):
+    def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
+        """Applies empirical relations to design the pitch-to-chord distributions."""
+        # calculate uniform chord distribution from prescribed aspect ratio
+        """self.exit.chord = (
+            (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
+            * np.ones(utils.Defaults.solver_grid)
+        )"""
+
+        # calculate linear chord distribution from prescribed aspect ratio
+        b = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
+        a = -0.5 * b
+        self.exit.r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+        self.exit.chord = a * (self.exit.rr - self.exit.r_mean) + b
+
+        # calculate minimum number of blades to achieve aspect ratio
+        self.no_of_blades = utils.Defaults.min_no_of_blades
+        while True:
+
+            # calculate pitch and pitch-to-chord distributions
+            self.exit.pitch = 2 * np.pi * self.exit.rr / self.no_of_blades
+            self.exit.pitch_to_chord = self.exit.pitch / self.exit.chord
+
+            # calculate diffusion factor distribution
+            self.exit.diffusion_factor = (
+                1 - self.exit.M_rel / self.inlet.M_rel * np.sqrt(self.exit.T / self.inlet.T)
+                + 0.5 * (
+                    np.sin(np.abs(self.inlet.beta)) - self.exit.M_rel / self.inlet.M_rel * np.sqrt(
+                        self.exit.T / self.inlet.T
+                    ) * np.sin(np.abs(self.exit.beta))
+                ) * self.exit.pitch_to_chord
+            )
+
+            # calculate mean-line diffusion factor
+            r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+            DF_mean = np.interp(r_mean, self.exit.rr, self.exit.diffusion_factor)
+
+            # check if diffusion factor criterion is met
+            if DF_mean < diffusion_factor or self.no_of_blades > utils.Defaults.max_no_of_blades:
+
+                # exit while-loop
+                break
+
+            # increment number of blades
+            self.no_of_blades += 1
+
+        # calculate pitch-to-chord distribution for constant diffusion factor
+        pitch_to_chord_DF = (
+            2 * (
+                diffusion_factor - 1 + self.exit.M_rel / self.inlet.M_rel
+                * np.sqrt(self.exit.T / self.inlet.T)
+            ) / np.abs(
+                np.sin(self.inlet.beta)
+                - self.exit.M_rel / self.inlet.M_rel
+                * np.sqrt(self.exit.T / self.inlet.T)
+                * np.sin(self.exit.beta)
+            )
+        )
+
+        # pitch-to-chord went negative
+        if np.any(pitch_to_chord_DF < utils.Defaults.min_pitch_to_chord_ratio):
+
+            print(
+                f"{utils.Colours.ORANGE}Warning! Constant diffusion factor condition results in "
+                f"critically small pitch-to-chord ratio values!{utils.Colours.END}"
+            )
+            utils.debug(f"pitch_to_chord_DF: {pitch_to_chord_DF}")
+
+        # calculate minimum diffusion factor
+        DF = (
+            1 - self.exit.M_rel / self.inlet.M_rel * np.sqrt(self.exit.T / self.inlet.T)
+            + 0.5 * utils.Defaults.min_pitch_to_chord_ratio * np.abs(
+                np.sin(self.inlet.beta)
+                - self.exit.M_rel / self.inlet.M_rel * np.sqrt(self.exit.T / self.inlet.T)
+                * np.sin(self.exit.beta)
+            )
+        )
+
+        # convert to chord distribution
+        chord_DF = self.exit.pitch / pitch_to_chord_DF
+
+        # calculate deviation
+        self.calculate_deviation()
+
+        # calculate aspect ratio distribution
+        self.exit.aspect_ratio = (self.exit.rr[-1] - self.exit.rr[0]) / self.exit.chord
+
+        # calculate axial chord distribution
+        self.exit.axial_chord = (
+            self.exit.chord * (np.sin(self.exit.metal_angle) - np.sin(self.inlet.metal_angle))
+            / (self.exit.metal_angle - self.inlet.metal_angle)
+        )
+
+    def calculate_deviation2(self):
         """Calculates the deviation distribution using Carter and Howell."""
         # store inlet metal angle for zero nominal incidence
         self.inlet.metal_angle = self.inlet.beta
@@ -954,3 +1046,29 @@ class Rotor(Blade_row):
             (-m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle + exit_angle)
             / (-m * np.sqrt(self.exit.pitch_to_chord) + 1)
         )"""
+
+    def calculate_deviation(self):
+        """Calculates the deviation distribution using Carter and Howell."""
+        # store inlet metal angle for zero nominal incidence
+        self.inlet.metal_angle = self.inlet.beta
+        
+        # store inlet and exit angles in degrees for convenience
+        inlet_angle = utils.rad_to_deg(self.inlet.beta)
+        exit_angle = utils.rad_to_deg(self.exit.beta)
+
+        # calculate deviation coefficient using Howell's correlation for a circular camber line
+        m = 0.23 + np.abs(exit_angle) / 500
+
+        # calculate two options of metal angle
+        metal_angle_1 = (
+            (m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle + exit_angle)
+            / (m * np.sqrt(self.exit.pitch_to_chord) + 1)
+        )
+        metal_angle_2 = (
+            (-m * np.sqrt(self.exit.pitch_to_chord) * inlet_angle + exit_angle)
+            / (-m * np.sqrt(self.exit.pitch_to_chord) + 1)
+        )
+
+        # calculate exit metal angles and corresponding deviation
+        self.exit.metal_angle = utils.deg_to_rad(metal_angle_2)
+        self.exit.deviation = self.exit.metal_angle - self.exit.beta
