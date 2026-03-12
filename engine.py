@@ -180,8 +180,6 @@ class Engine:
 
                 string += f"{name}: {utils.Colours.GREEN}{value}{utils.Colours.END}\n"
 
-        string += "\n"
-
         return string
 
     def __repr__(self):
@@ -327,7 +325,7 @@ class Engine:
         t1 = timer()
 
         # set up grid of inlet Mach number and span
-        self.M_1_initial = np.linspace(0, 1, utils.Defaults.solver_grid)
+        self.M_1_initial = np.linspace(1e-6, 1, utils.Defaults.solver_grid)
         rr = np.linspace(self.hub_tip_ratio, 1, utils.Defaults.solver_grid)
 
         # create mesh grid and calculate inlet velocity function at all points
@@ -399,8 +397,8 @@ class Engine:
         # mask all values below the running maximum, including the M_1 = 0 value
         mask = np.concatenate([[False], self.C_th_initial[1:] >= C_th_max[:-1]])
 
-        # plot
-        fig, ax = plt.subplots()
+        # plot for debugging
+        """fig, ax = plt.subplots()
         ax.plot(self.M_1_initial, self.C_th_initial, label = "Values")
         ax.plot(self.M_1_initial, C_th_max, label = "Running maximum")
         ax.plot(self.M_1_initial[mask], self.C_th_initial[mask], label = "Masked maximum")
@@ -408,7 +406,7 @@ class Engine:
         ax.legend()
         ax.set_xlabel("Compressor Inlet Mach Number")
         ax.set_ylabel("Thrust Coefficient")
-        plt.show()
+        plt.show()"""
 
         # thrust cannot be produced
         if np.max(self.C_th_initial[mask]) < self.C_th_design:
@@ -434,7 +432,8 @@ class Engine:
         t2 = timer()
         print(
             f"Initial guess calculated in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
-            f"\nM_1: {self.M_1} | Nozzle area ratio: {nozzle_area_ratio}"
+            f"\nInitial guess | M_1: {utils.Colours.GREEN}{self.M_1:.4g}{utils.Colours.END} | "
+            f"Nozzle area ratio: {utils.Colours.GREEN}{nozzle_area_ratio:.4g}{utils.Colours.END}"
         )
 
     def evaluate(self):
@@ -864,6 +863,7 @@ class Engine:
             f"{utils.Colours.GREEN}{filename}.mat{utils.Colours.END} and "
             f"{utils.Colours.GREEN}{filename}.json{utils.Colours.END}!"
         )
+        print(self)
 
 # plotting functions ------------------------------------------------------------------------------
 
@@ -1072,10 +1072,10 @@ class Engine:
             fig, axes = plt.subplots(ncols = len(self.blade_rows) + 2, figsize = (14, 6))
 
             # plot initial guess of nozzle - temp code
-            span = (
+            """span = (
                 (self.nozzle.exit.rr_j_initial - self.nozzle.exit.rr_j_initial[0])
                 / (self.nozzle.exit.rr_j_initial[-1] - self.nozzle.exit.rr_j_initial[0])
-            )
+            )"""
 
             # assign values for capturing appropriate axis limits
             x_min = 1e12

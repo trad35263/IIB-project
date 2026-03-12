@@ -83,7 +83,7 @@ class Rotor(Blade_row):
         self.inlet.T_0_rel = Coefficients()
         self.inlet.p_0_rel = Coefficients()
 
-        # calculate mid-span radius
+        # calculate mean-line radius
         self.inlet.r_mean = np.sqrt(0.5 * (self.inlet.rr[0]**2 + self.inlet.rr[-1]**2))
 
         # get variation in blade Mach number
@@ -885,7 +885,7 @@ class Rotor(Blade_row):
                 utils.debug(f"self.exit.chord: {self.exit.chord}")
 
             # calculate mean-line aspect ratio
-            r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+            r_mean =  np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
             chord_mean = np.interp(r_mean, self.exit.rr, self.exit.chord)
             AR_mean = (self.exit.rr[-1] - self.exit.rr[0]) / chord_mean
 
@@ -924,16 +924,11 @@ class Rotor(Blade_row):
 
     def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
-        # calculate uniform chord distribution from prescribed aspect ratio
-        """self.exit.chord = (
-            (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
-            * np.ones(utils.Defaults.solver_grid)
-        )"""
-
         # calculate linear chord distribution from prescribed aspect ratio
         b = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
         a = -0.5 * b
-        self.exit.r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+        a = 0               # for constant chord distribution
+        self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
         self.exit.chord = a * (self.exit.rr - self.exit.r_mean) + b
 
         # calculate minimum number of blades to achieve aspect ratio
@@ -955,7 +950,7 @@ class Rotor(Blade_row):
             )
 
             # calculate mean-line diffusion factor
-            r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+            r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
             DF_mean = np.interp(r_mean, self.exit.rr, self.exit.diffusion_factor)
 
             # check if diffusion factor criterion is met

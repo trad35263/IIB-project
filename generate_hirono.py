@@ -27,7 +27,7 @@ class Inputs:
     flight_speeds = [20, 0, 40]
     thrusts = [30, 50, 20]
     phis = [0.6, 0.59, 0.63]
-    psis = [0.17, 0.18, 0.12]
+    psis = [0.16, 0.18, 0.12]
 
     # labels
     labels = ["take_off", "static", "cruise"]
@@ -96,9 +96,6 @@ def export_engine(label):
         Y_p = Inputs.Y_p,
         area_ratio = Inputs.area_ratio
     )
-
-    # print user feedback
-    print(Inputs.engine)
 
     # add geometry
     Inputs.engine.geometry = {

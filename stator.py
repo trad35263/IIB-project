@@ -193,9 +193,6 @@ class Stator(Blade_row):
         # start timer
         t1 = timer()
 
-        # sever relationship between inlet and previous blade row exit
-        #self.inlet = copy.deepcopy(self.inlet)
-
         # impose bounds on hub velocity guess  
         v_x_hub = utils.bound(v_x_hub)
 
@@ -402,15 +399,10 @@ class Stator(Blade_row):
 
     def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
-        # calculate uniform chord distribution from prescribed aspect ratio
-        """self.exit.chord = (
-            (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
-            * np.ones(utils.Defaults.solver_grid)
-        )"""
-
         # calculate linear chord distribution from prescribed aspect ratio
         b = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
         a = -0.5 * b
+        a = 0               # for constant chord distribution
         self.exit.r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
         self.exit.chord = a * (self.exit.rr - self.exit.r_mean) + b
 

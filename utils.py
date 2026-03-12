@@ -25,15 +25,15 @@ class Defaults:
     diameter = 0.2
     hub_tip_ratio = 0.3
     flight_scenarios = {
+        "Take-off": ["Take-off", 0, 20, 0.14, 0.3571, 30],
+        "Static": ["Static", 0, 0, 0.14, 0.3571, 50],
+        "Cruise": ["Cruise", 3000, 40, 0.14, 0.3571, 20],
         "Default": ["Default", altitude, flight_speed, diameter, hub_tip_ratio, thrust],
         "High speed": ["High speed", 3000, 180, diameter, hub_tip_ratio, 100],
-        "Take-off": ["Take-off", 0, 10, diameter, hub_tip_ratio, 10],
-        "Static": ["Static", 0, 0, diameter, hub_tip_ratio, 50],
-        "Cruise": ["Cruise", altitude, 40, diameter, hub_tip_ratio, 20]
     }
 
     # default engine input parameters
-    no_of_stages = 2
+    no_of_stages = 1
     vortex_exponent = 0.5
     Y_p = 0.04
     phi = 0.6
