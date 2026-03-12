@@ -823,10 +823,12 @@ class Engine:
             "eta_comp": self.eta_comp,
             "eta_prop": self.eta_prop,
 
-            # export CFD boundary condition
+            # export CFD boundary conditions (dimensional)
             "mass_flow_rate": self.m_dot,
             "p_0": self.scenario.p_0,
             "T_0": self.scenario.T_0,
+            "p": self.scenario.p,
+            "rho": self.scenario.rho,
 
             # export geometry information
             "aspect_ratio": self.geometry["aspect_ratio"],
