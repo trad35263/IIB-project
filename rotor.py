@@ -569,6 +569,9 @@ class Rotor(Blade_row):
             self.exit.M_rel[index] = np.hypot(z_x, z_y)
             self.exit.beta[index] = np.arctan2(z_y, z_x)
 
+        # calculate geometric mean-line radius
+        self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
+
         # calculate exit stagnation conditions
         self.exit.T = self.exit.T_0_rel * utils.stagnation_temperature_ratio(self.exit.M_rel)
         self.exit.p = self.exit.p_0_rel * utils.stagnation_pressure_ratio(self.exit.M_rel)
@@ -789,7 +792,7 @@ class Rotor(Blade_row):
             / (self.inlet.T * (utils.gamma - 1) * self.inlet.M_blade**2)
         )
 
-    def calculate_chord2(self, aspect_ratio, diffusion_factor, design_parameter):
+    def calculate_chord_old(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
         # calculate pitch-to-chord distributions for constant diffusion factor
         self.exit.pitch_to_chord = (
@@ -855,9 +858,9 @@ class Rotor(Blade_row):
                 utils.debug(f"self.exit.chord: {self.exit.chord}")
 
                 # clip chord distribution at max. value
-                self.exit.chord = np.clip(
+                """self.exit.chord = np.clip(
                     self.exit.chord, a_min = None, a_max = utils.Defaults.max_chord_limit
-                )
+                )"""
 
                 utils.debug(f"self.exit.chord: {self.exit.chord}")
 
@@ -876,11 +879,11 @@ class Rotor(Blade_row):
                 utils.debug(f"self.exit.chord: {self.exit.chord}")
 
                 # smooth chord distribution
-                self.exit.chord = (
+                """self.exit.chord = (
                     utils.Defaults.chord_ratio_limit * chord_max
                     + (1 - utils.Defaults.chord_ratio_limit) * chord_max
                     * (self.exit.chord - chord_min) / (chord_max - chord_min)
-                )
+                )"""
 
                 utils.debug(f"self.exit.chord: {self.exit.chord}")
 
@@ -925,11 +928,27 @@ class Rotor(Blade_row):
     def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
         # calculate linear chord distribution from prescribed aspect ratio
-        b = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
-        a = -0.5 * b
-        a = 0               # for constant chord distribution
-        self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
-        self.exit.chord = a * (self.exit.rr - self.exit.r_mean) + b
+        #a = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
+        #b = -0.5 * a
+        #self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
+        #self.exit.chord = a + b * (self.exit.rr - self.exit.r_mean)
+
+        # calculate mean-line chord from aspect ratio
+        chord_mean = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
+
+        # calculate parabolic chord distribution
+        self.exit.chord = (
+            (1 - design_parameter) * chord_mean * (self.exit.rr - self.exit.rr[0])**2 / (
+                (self.exit.r_mean - self.exit.rr[0])**2
+                - 2 * (self.exit.rr[-1] - self.exit.rr[0]) * (self.exit.r_mean - self.exit.rr[0])
+            )
+            - 2 * (1 - design_parameter) * chord_mean * (self.exit.rr[-1] - self.exit.rr[0])
+            * (self.exit.rr - self.exit.rr[0]) / (
+                (self.exit.r_mean - self.exit.rr[0])**2
+                - 2 * (self.exit.rr[-1] - self.exit.rr[0]) * (self.exit.r_mean - self.exit.rr[0])
+            )
+            + design_parameter * chord_mean
+        )
 
         # calculate minimum number of blades to achieve aspect ratio
         self.no_of_blades = utils.Defaults.min_no_of_blades
@@ -949,12 +968,11 @@ class Rotor(Blade_row):
                 ) * self.exit.pitch_to_chord
             )
 
-            # calculate mean-line diffusion factor
-            r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
-            DF_mean = np.interp(r_mean, self.exit.rr, self.exit.diffusion_factor)
-
             # check if diffusion factor criterion is met
-            if DF_mean < diffusion_factor or self.no_of_blades > utils.Defaults.max_no_of_blades:
+            if (
+                np.max(self.exit.diffusion_factor) < diffusion_factor
+                or self.no_of_blades > utils.Defaults.max_no_of_blades
+            ):
 
                 # exit while-loop
                 break
@@ -975,17 +993,46 @@ class Rotor(Blade_row):
             )
         )
 
-        # pitch-to-chord went negative
-        if np.any(pitch_to_chord_DF < utils.Defaults.min_pitch_to_chord_ratio):
+        # calculate corresponding deviation
+        self.calculate_deviation()
 
-            print(
-                f"{utils.Colours.ORANGE}Warning! Constant diffusion factor condition results in "
-                f"critically small pitch-to-chord ratio values!{utils.Colours.END}"
-            )
-            utils.debug(f"pitch_to_chord_DF: {pitch_to_chord_DF}")
+        # get mean-line deviation value
+        """delta_mean = np.interp(self.exit.r_mean, self.exit.rr, self.exit.deviation)"""
+
+        # calculate pitch-to-chord distribution for constant deviation
+        """pitch_to_chord_deviation = (
+            (
+                utils.rad_to_deg(delta_mean) / (
+                    (0.23 + np.abs(utils.rad_to_deg(self.exit.beta)) / 500)
+                    * utils.rad_to_deg(self.inlet.beta - delta_mean - self.exit.beta)
+                )
+            )**2
+        )"""
+
+        # plot all 3 distributions
+        """span = (self.exit.rr - self.exit.rr[0]) / (self.exit.rr[-1] - self.exit.rr[0])
+        fig, ax = plt.subplots(figsize = (10, 5))
+        ax.set_xlim(0, 7)
+        ax.set_ylim(0, 1)
+        ax.plot(self.exit.pitch_to_chord, span, label = "Constant chord", color = 'C0')
+        ax.plot(pitch_to_chord_DF, span, label = "Constant diffusion factor", color = 'C1')
+        ax.fill_betweenx(span, pitch_to_chord_DF, ax.get_xlim()[1], alpha = 0.2, color = 'C1', label = "DF too high")
+        ax.plot(pitch_to_chord_deviation, span, label = "Constant deviation", color = 'C2')
+        ax.grid()
+        ax.legend(loc = 'center left', bbox_to_anchor = (1, 0.5))
+        ax.set_title(
+            f"Stage loading coefficient: {self.psi_mean}\n"
+            f"No. of blades: {self.no_of_blades}\n"
+            f"Mean-line DF: {diffusion_factor}\n"
+            f"Mean-line AR: {aspect_ratio}"
+        )
+        ax.set_xlabel("Pitch-to-chord ratio")
+        ax.set_ylabel("Dimensionless span")
+        plt.tight_layout()
+        plt.show()"""
 
         # calculate minimum diffusion factor
-        DF = (
+        """DF = (
             1 - self.exit.M_rel / self.inlet.M_rel * np.sqrt(self.exit.T / self.inlet.T)
             + 0.5 * utils.Defaults.min_pitch_to_chord_ratio * np.abs(
                 np.sin(self.inlet.beta)
@@ -995,10 +1042,7 @@ class Rotor(Blade_row):
         )
 
         # convert to chord distribution
-        chord_DF = self.exit.pitch / pitch_to_chord_DF
-
-        # calculate deviation
-        self.calculate_deviation()
+        chord_DF = self.exit.pitch / pitch_to_chord_DF"""
 
         # calculate aspect ratio distribution
         self.exit.aspect_ratio = (self.exit.rr[-1] - self.exit.rr[0]) / self.exit.chord

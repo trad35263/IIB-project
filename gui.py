@@ -13,11 +13,15 @@ from engine import Engine
 # create DataContainer class
 class DataContainer:
     """Stores information associated with a certain aspect of the engine design."""
-    def __init__(self, label, panel):
+    def __init__(self, label, button_text, panel):
         """Creates an instance of the DataContainer class."""
         # store input variables
         self.label = label
+        self.button_text = button_text
         self.panel = panel
+        
+        # create button and bind to event function
+        self.button = wx.Button(self.panel, label = f"{self.button_text}")
 
         # get input and output labels from utils.Labels class
         self.input_labels = copy.deepcopy(getattr(utils.Labels, f"{self.label}_input_labels"))
@@ -39,7 +43,7 @@ class DataContainer:
 
             # create grid of values to display
             grid = wx.FlexGridSizer(
-                rows = len(label), cols = 2, hgap = 10, vgap = 5
+                rows = len(label), cols = 2, hgap = 10, vgap = 4
             )
             grid.AddGrowableCol(1)
             self.grids.append(grid)
@@ -169,10 +173,26 @@ class MainFrame(wx.Frame):
         self.panel = wx.Panel(self)
 
         # create containers for the different engine design aspects
-        self.scenario = DataContainer("scenario", self.panel)
-        self.engine = DataContainer("engine", self.panel)
-        self.geometry = DataContainer("geometry", self.panel)
-        self.off_design = DataContainer("off_design", self.panel)
+        self.scenario = DataContainer("scenario", "Add Flight Scenario", self.panel)
+        self.engine = DataContainer("engine", "Create Engine", self.panel)
+        self.geometry = DataContainer("geometry", "Add Geometry", self.panel)
+        self.off_design = DataContainer("off_design", "Off-design", self.panel)
+        self.thickness = DataContainer("thickness", "Add Thickness", self.panel)
+        data_containers = [
+            self.scenario, self.engine,
+            self.geometry, self.off_design,
+            self.thickness
+        ]
+
+        # loop for each kind of data container
+        for data in data_containers:
+
+            # bind button and dropdown to corresponding event function
+            data.button.Bind(wx.EVT_BUTTON, getattr(self, f"add_{data.label}"))
+            data.dropdown.Bind(wx.EVT_COMBOBOX, getattr(self, f"change_{data.label}"))
+
+            # populate column
+            data.populate_column()
 
         # loop over all default flight scenario labels
         for key in self.flight_scenarios.keys():
@@ -180,36 +200,10 @@ class MainFrame(wx.Frame):
             # append as flight scenario dropdown option
             self.scenario.dropdown.Append(str(key))
         
-        # bind dropdown listing flight scenarios to event function
+        # set default flight scenario to first entry stored in dictionary
         self.scenario.label = str(next(iter(self.flight_scenarios)))
         self.scenario.dropdown.SetValue(self.scenario.label)
-        self.scenario.dropdown.Bind(wx.EVT_COMBOBOX, self.change_scenario)
         self.scenario.source = self.flight_scenarios[self.scenario.label]
-
-        # bind dropdown listing associated engines to event function
-        self.engine.dropdown.Bind(wx.EVT_COMBOBOX, self.change_engine)
-
-        # bind dropdown listing geometry options to event function
-        self.geometry.dropdown.Bind(wx.EVT_COMBOBOX, self.change_geometry)
-
-        # bind dropdown listing off-design options to event function
-        self.off_design.dropdown.Bind(wx.EVT_COMBOBOX, self.change_off_design)
-
-        # create button to add new flight scenarios and bind to event function
-        self.scenario.button = wx.Button(self.panel, label = "Add Flight Scenario")
-        self.scenario.button.Bind(wx.EVT_BUTTON, self.add_scenario)
-
-        # create button to add new engines and bind to event function
-        self.engine.button = wx.Button(self.panel, label = "Create Engine")
-        self.engine.button.Bind(wx.EVT_BUTTON, self.add_engine)
-
-        # create button to add new geometries and bind to event function
-        self.geometry.button = wx.Button(self.panel, label = "Add Geometry")
-        self.geometry.button.Bind(wx.EVT_BUTTON, self.add_geometry)
-        
-        # create button to calculate off-design and bind to event function
-        self.off_design.button = wx.Button(self.panel, label = "Off-design")
-        self.off_design.button.Bind(wx.EVT_BUTTON, self.add_off_design)
 
         # create buttons for each Engine plotting function
         plot_methods = [name for name, f in Engine.__dict__.items() if callable(f) and "plot" in name]
@@ -222,17 +216,11 @@ class MainFrame(wx.Frame):
         # create export button and bind to event function
         self.export_button = wx.Button(self.panel, label = "Export Engine")
         self.export_button.Bind(wx.EVT_BUTTON, self.export_engine)
-
-        # create and populate main columns
-        self.scenario.populate_column()
-        self.engine.populate_column()
-        self.geometry.populate_column()
-        self.off_design.populate_column(self.geometry.column)
         
         # add stretch spacer to geometry column (after off_design is added)
-        self.geometry.column.AddStretchSpacer()
+        #self.geometry.column.AddStretchSpacer()
 
-        # toggle slider at the very bottom of the scenario column
+        # toggle slider at the bottom of the scenario column
         self.toggle_slider = wx.Slider(
             self.panel, value = 0, minValue = 0, maxValue = 1, style = wx.SL_HORIZONTAL
         )
@@ -245,19 +233,17 @@ class MainFrame(wx.Frame):
         slider_row.Add(debug_label, 0, wx.LEFT | wx.ALIGN_CENTER_VERTICAL, 8)
         self.scenario.column.Add(slider_row, 0, wx.ALL | wx.EXPAND, 8)
 
-        # create plotting column
-        self.plot_column = wx.BoxSizer(wx.VERTICAL)
+        # add stretch spacer to push buttons to bottom
+        self.scenario.column.AddStretchSpacer()
 
-        # assign buttons to right-hand column
+        # loop for each button
         for button in plot_buttons:
 
-            self.plot_column.Add(button, 0, wx.ALL | wx.EXPAND, 8)
-        
-        # add stretch spacer to push export button to bottom
-        self.plot_column.AddStretchSpacer()
-        
-        # add export button at the bottom
-        self.plot_column.Add(self.export_button, 0, wx.ALL | wx.EXPAND, 8)
+            # add plot buttons to scenario column
+            self.scenario.column.Add(button, 0, wx.ALL | wx.EXPAND, 8)
+
+        # add export button to scenario column
+        self.scenario.column.Add(self.export_button, 0, wx.ALL | wx.EXPAND, 8)
         
         # refresh grids
         self.scenario.refresh_grid()
@@ -265,12 +251,16 @@ class MainFrame(wx.Frame):
         self.geometry.refresh_grid()
         self.off_design.refresh_grid()
 
-        # create root sizer
+        # create root 
         root = wx.BoxSizer(wx.HORIZONTAL)
-        root.Add(self.scenario.column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
-        root.Add(self.engine.column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
-        root.Add(self.geometry.column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
-        root.Add(self.plot_column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+
+        # loop for each data container
+        for data in data_containers:
+
+            # add column to root
+            root.Add(data.column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+
+        # set root sizer
         self.panel.SetSizer(root)
 
         # create colours dictionary
@@ -281,7 +271,7 @@ class MainFrame(wx.Frame):
         self.colours["blue"] = wx.Colour(96, 160, 255)
 
         # set font
-        self.font = wx.Font(11, wx.FONTFAMILY_SWISS, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Segoe UI")
+        self.font = wx.Font(10, wx.FONTFAMILY_SWISS, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, False, "Segoe UI")
 
         # apply to panel
         self.apply_styling(self.panel)
@@ -820,6 +810,12 @@ class MainFrame(wx.Frame):
         self.apply_styling(self.panel)
         self.panel.Thaw()
 
+    def add_thickness(self, event):
+        pass
+
+    def change_thickness(self, event):
+        pass
+
     def display_plot(self, event):
         """Displays a given plot for the selected Engine class instance."""
         # retrieve button and corresponding method name
@@ -1043,7 +1039,7 @@ class AddGeometryDialog(wx.Dialog):
         slider_row = wx.BoxSizer(wx.HORIZONTAL)
         diffusion_label = wx.StaticText(panel, label = "Diffusion Factor")
         self.geometry_slider = wx.Slider(
-            panel, value = int(100 * utils.Defaults.design_parameter), minValue = 0, maxValue = 100,
+            panel, value = int(100 * utils.Defaults.design_parameter), minValue = 0, maxValue = 200,
             style = wx.SL_HORIZONTAL
         )
         deviation_label = wx.StaticText(panel, label = "Deviation")

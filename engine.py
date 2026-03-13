@@ -85,8 +85,10 @@ class Engine:
             # convert to uniform array
             self.phi = list(phi * np.ones(self.no_of_stages))
 
+        # phi is provided as a list or numpy array
         else:
 
+            # ensure type is list
             self.phi = list(phi)
 
         # psi is provided as a scalar
@@ -95,8 +97,10 @@ class Engine:
             # convert to uniform array
             self.psi = list(psi * np.ones(self.no_of_stages))
 
+        # psi is provided as a list or numpy array
         else:
 
+            # ensure type is list
             self.psi = list(psi)
 
         # phi or psi list is not the correct length
@@ -146,7 +150,7 @@ class Engine:
         self.design()
 
         # loop over all blade rows
-        for blade_row in self.blade_rows:
+        for index, blade_row in enumerate(self.blade_rows):
 
             # sever shared references between inlet and exit annuli
             blade_row.exit = copy.deepcopy(blade_row.exit)
@@ -664,6 +668,20 @@ class Engine:
         for index, value in enumerate(self.geometry["no_of_blades"]):
 
             self.geometry[f"no_of_blades{index}"] = value
+            
+        # calculate array of blade row x-coordinates
+        xx = np.array([
+            blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation
+            for blade_row in self.blade_rows
+        ])
+        xx = np.concatenate([[xx[0]], xx[:-1] + xx[1:]])
+        xx = np.cumsum(xx)
+
+        # loop over each blade row
+        for x, blade_row in zip(xx, self.blade_rows):
+
+            # assign reference axial position
+            blade_row.x_ref = x
 
         # recalculate dimensional values
         self.dimensional_values()
@@ -938,7 +956,7 @@ class Engine:
         for blade_row in self.blade_rows:
 
             # draw blades
-            thickness = utils.Defaults.thickness * 2 / self.scenario.diameter
+            thickness = utils.Defaults.max_thickness * 2 / self.scenario.diameter
             blade_row.draw_blades(thickness)
 
         # iterate over all inlet and exit streamtubes chosen for plotting
@@ -1163,9 +1181,10 @@ class Engine:
     def plot_section(self):
         """Plots a section view through the engine highlighting streamline behaviour."""
         # create plot
-        fig, ax = plt.subplots(figsize = (14, 6))
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
         # initialise empty grid to store streamline radii
+        xx = np.zeros(len(self.blade_rows) + 2)
         yy = np.zeros((utils.Defaults.solver_grid, len(self.blade_rows) + 2))
 
         # store rotor inlet values
@@ -1175,11 +1194,12 @@ class Engine:
         for index, blade_row in enumerate(self.blade_rows):
 
             # store exit streamline radii for blade row
+            xx[index + 1] = blade_row.x_ref + blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation
             yy[:, index + 1] = blade_row.exit.rr
 
             # draw blade row
-            x_1 = index + 0.5 - blade_row.exit.axial_chord / 2
-            x_2 = index + 0.5 + blade_row.exit.axial_chord / 2
+            x_1 = blade_row.x_ref - blade_row.exit.axial_chord / 2
+            x_2 = blade_row.x_ref + blade_row.exit.axial_chord / 2
             x = np.concatenate((x_1, x_2[::-1]))
             y = np.concatenate((
                 (blade_row.inlet.rr + blade_row.exit.rr) / 2,
@@ -1187,17 +1207,45 @@ class Engine:
             ))
             ax.plot(x, y)
 
+            # plot plane one hub axial chord upstream and downstream of each blade row
+            ax.axvline(
+                blade_row.x_ref - blade_row.exit.axial_chord[0], color = 'C3',
+                linestyle = '--', linewidth = 2
+            )
+            ax.axvline(
+                blade_row.x_ref + blade_row.exit.axial_chord[0], color = 'C3',
+                linestyle = '--', linewidth = 2
+            )
+
         # store nozzle exit values
+        xx[-1] = xx[-2] + 2 * self.scenario.hub_tip_ratio
         yy[:, -1] = self.nozzle.exit.rr
 
-        # array of x-coordinates
-        xx = np.arange(len(self.blade_rows) + 2)
+        for x in xx:
+
+            ax.axvline(x, color = 'C3')
 
         # plot each streamline separately
         for streamline in yy:
 
             # plot streamline
-            ax.plot(xx, streamline, linewidth = 1, color = 'k')
+            ax.plot(xx, streamline, linewidth = 0.5, color = 'k', alpha = 0.5)
+
+        # configure plot
+        ax.set_xlabel("Axial Position", fontsize = utils.Defaults.fontsize)
+        ax.set_ylabel("Radial Position", fontsize = utils.Defaults.fontsize)
+        ax.set_aspect("equal")
+
+        # set title
+        ax.text(
+            0.5, 1.02,
+            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+            f"$ \\phi $ = {self.phi[0]:.3g}, $ \\psi $ = {self.psi[0]:.3g}, n = {self.vortex_exponent:.3g}",
+            transform = ax.transAxes,
+            ha = 'center',
+            va = 'bottom',
+            fontsize = 16
+        )
 
     def plot_matlab(self):
         """Creates a spanwise flow angle plot with matlab results overlaid."""

@@ -273,6 +273,9 @@ class Stator(Blade_row):
                     + self.exit.v_x[index - 1]
                 )
 
+            # calculate geometric mean-line radius
+            self.exit.r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+
             # solve for exit tangential velocity from axial velocity and flow angle
             self.exit.v_theta[index] = self.exit.v_x[index] * np.tan(self.exit.alpha[index])
 
@@ -317,7 +320,7 @@ class Stator(Blade_row):
             / (self.exit.T - T_1)
         )
 
-    def calculate_chord2(self, aspect_ratio, diffusion_factor, design_parameter):
+    def calculate_chord_old(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
         # calculate pitch-to-chord distribution for constant diffusion factor
         self.exit.pitch_to_chord = (
@@ -400,11 +403,10 @@ class Stator(Blade_row):
     def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
         # calculate linear chord distribution from prescribed aspect ratio
-        b = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
-        a = -0.5 * b
-        a = 0               # for constant chord distribution
-        self.exit.r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
-        self.exit.chord = a * (self.exit.rr - self.exit.r_mean) + b
+        a = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
+        b = -0.5 * a
+        b = 0
+        self.exit.chord = a + b * (self.exit.rr - self.exit.r_mean)
 
         # calculate minimum number of blades to achieve aspect ratio
         self.no_of_blades = utils.Defaults.min_no_of_blades
@@ -426,11 +428,14 @@ class Stator(Blade_row):
             )
 
             # calculate mean-line diffusion factor
-            r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
-            DF_mean = np.interp(r_mean, self.exit.rr, self.exit.diffusion_factor)
+            """r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+            DF_mean = np.interp(r_mean, self.exit.rr, self.exit.diffusion_factor)"""
 
             # check if diffusion factor criterion is met
-            if DF_mean < diffusion_factor or self.no_of_blades > utils.Defaults.max_no_of_blades:
+            if (
+                np.max(self.exit.diffusion_factor) < diffusion_factor
+                or self.no_of_blades > utils.Defaults.max_no_of_blades
+            ):
 
                 # exit while-loop
                 break

@@ -9,6 +9,7 @@ from streamtube import Streamtube
 from flow_state import Flow_state
 from annulus import Annulus
 from coefficients import Coefficients
+from thick_aerofoils import Aerofoils
 import utils
 from time import perf_counter as timer
 
@@ -1253,6 +1254,8 @@ class Blade_row:
 
             # get the upper surface only from the imported aerofoil data and sort
             zz_0 = utils.aerofoil_data
+            #aerofoils = Aerofoils()
+            #zz_0 = aerofoils.thick_aerofoil()
             zz_0 = zz_0[:, zz_0[0].argsort()]
 
             # initialise empty arrays for the upper and lower surfaces
@@ -1414,6 +1417,8 @@ class Blade_row:
 
             # get the upper surface only from the imported aerofoil data and sort
             zz_0 = utils.aerofoil_data
+            #aerofoils = Aerofoils()
+            #zz_0 = aerofoils.thick_aerofoil()
             zz_0 = zz_0[:, zz_0[0].argsort()]
 
             # initialise empty arrays for the upper and lower surfaces
@@ -1452,9 +1457,13 @@ class Blade_row:
 
     def draw_blades(self, thickness):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
+        # read in thickness distribution
+        aerofoils = Aerofoils()
+        self.zz = aerofoils.thick_aerofoil()
+
         # initiialise empty arrays of x- and y-coordinates
-        self.xx = np.zeros((3, 2 * utils.Defaults.solver_grid))
-        self.yy = np.zeros((3, 2 * utils.Defaults.solver_grid))
+        self.xx = np.zeros((3, 2 * len(self.zz[0])))
+        self.yy = np.zeros((3, 2 * len(self.zz[0])))
 
         # get indices corresponding to hub, mid-span and tip
         indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
@@ -1471,7 +1480,7 @@ class Blade_row:
             theta = (
                 self.inlet.metal_angle[index]
                 + (self.exit.metal_angle[index] - self.inlet.metal_angle[index])
-                * np.linspace(0, 1, utils.Defaults.solver_grid)**2
+                * np.linspace(0, 1, len(self.zz[0]))**2
             )
 
             # get camber line coordinates
@@ -1493,8 +1502,8 @@ class Blade_row:
             ny =  dx_dl / norm
 
             # read in thickness data
-            zz = utils.aerofoil_data
-            zz = zz[:, zz[0].argsort()]
+            #zz = utils.aerofoil_data
+            zz = self.zz[:, self.zz[0].argsort()]
 
             # initialise empty arrays for upper- and lower-surface data
             xx_upper = np.zeros(xx_camber.shape)

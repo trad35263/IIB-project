@@ -2,7 +2,6 @@
 
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
-from scipy.optimize import root_scalar
 from scipy.interpolate import make_interp_spline
 
 # 0.1 global variables
@@ -43,13 +42,13 @@ class Defaults:
     # default geometry parameters
     aspect_ratio = 2.5
     diffusion_factor = 0.35
-    design_parameter = 0.5
+    design_parameter = 1.4
     min_no_of_blades = 6
-    max_no_of_blades = 100
+    max_no_of_blades = 1000
 
     # guardrails
     min_pitch_to_chord_ratio = 0.2
-    axial_separation = 0.1
+    axial_separation = 0.15
 
     # chord distribution limits
     max_chord_limit = 0.8
@@ -58,6 +57,9 @@ class Defaults:
     # default off_design parameters
     phi_min = 0.4
     phi_max = 1
+
+    # fonts
+    fontsize = 12
 
     # default figure size tuple
     figsize = (10, 6)
@@ -113,8 +115,8 @@ class Defaults:
     # whether or not debug mode is active
     debug = False
 
-    # default dimensional blade thickness
-    thickness = 2e-3
+    # default dimensional blade thickness (in m)
+    max_thickness = 2e-3
 
 # 0.3 compressible flow perfect gas relations
 
@@ -148,44 +150,6 @@ def dynamic_pressure_function(M):
 def velocity_function(M):
     """Calculates the non-dimensional velocity for a given Mach number."""
     return np.sqrt(gamma - 1) * M * np.power(1 + (gamma - 1) * M**2 / 2, -1 / 2)
-
-def invert(function, target, bracket = [0, 1], method = "brentq"):
-    """
-    Numerically inverts a 1D function f(x), solving f(x) = y_target.
-    
-    Parameters
-    ----------
-    function : callable
-        Function to invert, must take a single float and return a float.
-    target : float
-        Target output value of f(x).
-    bracket : (float, float), optional
-        Lower and upper x bounds where the root is searched.
-        Required for bracketed methods like 'brentq' or 'bisect'.
-    method : str, default 'brentq'
-        Root-finding method ('brentq', 'bisect', 'secant', 'newton', etc.)
-    """
-    pass
-    # define residual function
-    """def residual(x):
-
-        return function(x) - target
-
-    # solve for residual root
-    try:
-        
-        sol = root_scalar(residual, bracket = bracket, method = method)
-
-    except:
-
-        return np.nan
-
-    if not sol.converged:
-
-        print(f"target: {target}")
-        raise RuntimeError("Inversion failed to converge.")
-    
-    return sol.root"""
 
 def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
     if a_max is not None:
@@ -375,38 +339,9 @@ class Labels:
     ]
     off_design_output_labels = []
 
-###################################################################################################
-###################################################################################################
+    # list of label-pairs required to create a thickness object
+    thickness_input_labels = [
+        ["Max. Blade Thickness", "max_thickness"]
+    ]
+    thickness_output_labels = []
 
-# hand calculations
-
-M_infinity = 0.05877
-M_1 = 0.152
-M_1A_rel = 0.2413
-M_2A_rel = 0.2133
-
-M_1B_rel = 0.3167
-M_2B_rel = 0.2750
-
-M_1C_rel = 0.3759
-M_2C_rel = 0.3283
-
-"""print(f"stagnation_temperature_ratio(M_1): {stagnation_temperature_ratio(M_1)}")
-
-
-print(f"mass_flow_function(M_1A_rel): {mass_flow_function(M_1A_rel)}")
-print(f"stagnation_temperature_ratio(M_1A_rel): {stagnation_temperature_ratio(M_1A_rel)}")
-print(f"invert(mass_flow_function, 0.4595): {invert(mass_flow_function, 0.4595)}")
-print(f"stagnation_temperature_ratio(M_2A_rel): {stagnation_temperature_ratio(M_2A_rel)}")
-
-
-print(f"mass_flow_function(M_1B_rel): {mass_flow_function(M_1B_rel)}")
-print(f"stagnation_temperature_ratio(M_1B_rel): {stagnation_temperature_ratio(M_1B_rel)}")
-print(f"invert(mass_flow_function, 0.5526): {invert(mass_flow_function, 0.5820)}")
-print(f"stagnation_temperature_ratio(M_2B_rel): {stagnation_temperature_ratio(M_2B_rel)}")
-
-
-print(f"mass_flow_function(M_1C_rel): {mass_flow_function(M_1C_rel)}")
-print(f"stagnation_temperature_ratio(M_1C_rel): {stagnation_temperature_ratio(M_1C_rel)}")
-print(f"invert(mass_flow_function, 0.6817): {invert(mass_flow_function, 0.6817)}")
-print(f"stagnation_temperature_ratio(M_2C_rel): {stagnation_temperature_ratio(M_2C_rel)}")"""
