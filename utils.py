@@ -17,18 +17,18 @@ class Defaults:
     # default dimensional values
     altitude = 0
     flight_speed = 170
-    thrust = 50.625
+    thrust = 50
 
     # default flight scenario parameters
     label = ""
     diameter = 0.2
     hub_tip_ratio = 0.3
     flight_scenarios = {
+        "High speed": ["High speed", 0, 170, diameter, hub_tip_ratio, 100],
         "Take-off": ["Take-off", 0, 20, 0.14, 0.3571, 30],
         "Static": ["Static", 0, 0, 0.14, 0.3571, 50],
         "Cruise": ["Cruise", 3000, 40, 0.14, 0.3571, 20],
         "Default": ["Default", altitude, flight_speed, diameter, hub_tip_ratio, thrust],
-        "High speed": ["High speed", 3000, 180, diameter, hub_tip_ratio, 100],
     }
 
     # default engine input parameters
@@ -42,7 +42,7 @@ class Defaults:
     # default geometry parameters
     aspect_ratio = 2.5
     diffusion_factor = 0.35
-    design_parameter = 1.4
+    design_parameter = 1.15
     min_no_of_blades = 6
     max_no_of_blades = 1000
 
@@ -328,7 +328,8 @@ class Labels:
     # list of label-pairs required to create a geometry object
     geometry_input_labels = [
         ["Aspect Ratio", "aspect_ratio"],
-        ["Diffusion Factor", "diffusion_factor"]
+        ["Diffusion Factor", "diffusion_factor"],
+        ["Design Parameter", "design_parameter"]
     ]
     geometry_output_labels = []
 

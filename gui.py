@@ -648,7 +648,7 @@ class MainFrame(wx.Frame):
                 # create and store new object
                 aspect_ratio = float(dialog.arguments[0].GetValue())
                 diffusion_factor = float(dialog.arguments[1].GetValue())
-                design_parameter = float(dialog.arguments[2].GetValue()) / 100
+                design_parameter = float(dialog.arguments[2].GetValue())# / 100
                 self.geometry.source = {
                     "aspect_ratio": aspect_ratio,
                     "diffusion_factor": diffusion_factor,
@@ -1036,17 +1036,17 @@ class AddGeometryDialog(wx.Dialog):
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
 
         # slider row: Diffusion Factor [slider fills space] Deviation
-        slider_row = wx.BoxSizer(wx.HORIZONTAL)
+        """slider_row = wx.BoxSizer(wx.HORIZONTAL)
         diffusion_label = wx.StaticText(panel, label = "Diffusion Factor")
         self.geometry_slider = wx.Slider(
-            panel, value = int(100 * utils.Defaults.design_parameter), minValue = 0, maxValue = 200,
+            panel, value = int(100 * utils.Defaults.design_parameter), minValue = 114.999, maxValue = 115.001,
             style = wx.SL_HORIZONTAL
         )
         deviation_label = wx.StaticText(panel, label = "Deviation")
         slider_row.Add(diffusion_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
         slider_row.Add(self.geometry_slider, 1, wx.ALL | wx.EXPAND, 6)
         slider_row.Add(deviation_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
-        panel_sizer.Add(slider_row, 0, wx.EXPAND)
+        panel_sizer.Add(slider_row, 0, wx.EXPAND)"""
 
         # re-apply styling so newly-created labels and slider get themed
         parent.apply_styling(self)
@@ -1059,7 +1059,7 @@ class AddGeometryDialog(wx.Dialog):
 
         # store as ordered list of arguments
         self.arguments = [getattr(self, input_label[1]) for input_label in parent.geometry.input_labels]
-        self.arguments.append(self.geometry_slider)
+        #self.arguments.append(self.geometry_slider)
 
 # main function
 def main():

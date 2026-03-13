@@ -16,11 +16,11 @@ class Inputs:
     #power = 3000
     #rpm = 10000
 
-    # thrust and nozzle area ratio
+    # thrust for initial guesses
     thrust = 30
     
     # variables to loop over
-    stages = [1, 2, 3]
+    stages = [1]
     phis = [0.6, 0.75, 0.9]
     psis = [0.1, 0.15, 0.2]
 
@@ -106,7 +106,6 @@ def export_engine():
 
     # print user feedback
     print(f"sol: {sol}")
-    print(Inputs.engine)
 
     # add geometry
     Inputs.engine.geometry = {
@@ -117,8 +116,9 @@ def export_engine():
 
     # calculate blade angles and export engine
     Inputs.engine.empirical_design()
-    Inputs.engine.plot_section()
-    Inputs.engine.export(f"N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")
+    print(f"{[blade_row.no_of_blades for blade_row in Inputs.engine.blade_rows]}")
+    #Inputs.engine.plot_section()
+    Inputs.engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")
 
 if __name__ == "__main__":
 
