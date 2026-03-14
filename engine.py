@@ -22,7 +22,6 @@ from pathlib import Path as FilePath
 import copy
 import inspect
 import os
-import io
 
 # import custom classes
 from stage import Stage
@@ -60,7 +59,8 @@ class Engine:
             psi = utils.Defaults.psi,
             vortex_exponent = utils.Defaults.vortex_exponent,
             Y_p = utils.Defaults.Y_p,
-            area_ratio = utils.Defaults.area_ratio
+            area_ratio = utils.Defaults.area_ratio,
+            M_1 = None
         ):
         """Creates an instance of the Engine class."""
         # store variables from input scenario
@@ -78,6 +78,7 @@ class Engine:
         self.vortex_exponent = vortex_exponent
         self.Y_p = Y_p
         self.area_ratio = area_ratio
+        self.M_1 = M_1
 
         # phi is provided as a scalar
         if isinstance(phi, float):
@@ -300,21 +301,30 @@ class Engine:
             # return difference between actual and design thrust
             return self.C_th - self.C_th_design
 
-        # calculate initial guess
-        self.initial_guess()
+        # no inlet Mach number was provided
+        if self.M_1 == None:
 
-        # temp code
-        #self.nozzle.exit.M_j_initial = self.M_j_initial
-        #self.nozzle.exit.rr_j_initial = self.rr_j_initial
+            # calculate initial guess
+            self.initial_guess()
 
-        x0 = self.M_1
-        x1 = 0.9 * x0
+            # set initial guess from initial guess
+            x0 = self.M_1
+            x1 = 0.9 * x0
 
-        # solve iteratively
-        sol = root_scalar(
-            solve_thrust, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
-        )
-        utils.debug(f"sol: {sol}")
+            # solve iteratively
+            sol = root_scalar(
+                solve_thrust, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
+            )
+            utils.debug(f"sol: {sol}")
+
+        # inlet Mach number was specified
+        else:
+
+            # estimate jet Mach number
+            self.M_j_initial = self.scenario.M
+
+            # run solve_thrust function without iterating
+            solve_thrust(self.M_1)
 
         # end timer and print feedback
         t2 = timer()
@@ -601,53 +611,6 @@ class Engine:
                     1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2
                 )
 
-    def dimensional_values2(self):
-        """Convert some values back to dimensional values for export to CFD."""
-        # get mean of mean-line chords for each blade row
-        chords = [np.interp(
-            0.5 * (blade_row.exit.rr[0] + blade_row.exit.rr[-1]),
-            blade_row.exit.rr, blade_row.exit.axial_chord
-        ) for blade_row in self.blade_rows]
-        nominal_chord = np.mean(chords)
-
-        # convert to mm
-        chord_spacing = 4
-        nominal_chord_mm = chord_spacing * nominal_chord * self.diameter / 2
-
-        # space blade rows one nominal chord apart
-        #self.xx = np.linspace(-0.1, len(self.blade_rows) + 0.1, utils.Defaults.export_grid)
-        xx = nominal_chord * np.repeat(np.arange(len(self.blade_rows)), 2)
-
-        # add tip axial chord to the second x-element corresponding to each blade row
-        xx[1::2] += np.array([
-            blade_row.exit.axial_chord[-1] for blade_row in self.blade_rows
-        ])
-
-        # fit spline through casing and hub radii
-        r_casing_spline = make_interp_spline(
-            xx,
-            #[blade_row.exit.rr[-1] for blade_row in self.blade_rows],
-            [
-                x.rr[-1] for blade_row in self.blade_rows
-                for x in (blade_row.inlet, blade_row.exit)
-            ],
-            k = 3,
-            bc_type = "clamped"
-        )
-        r_hub_spline = make_interp_spline(
-            xx,
-            [
-                x.rr[0] for blade_row in self.blade_rows
-                for x in (blade_row.inlet, blade_row.exit)
-            ],
-            k = 3,
-            bc_type = "clamped"
-        )
-
-        xx_mm = np.linspace(-0.1, len(self.blade_rows) + 0.1, utils.Defaults.export_grid)
-        r_casing_mm = r_casing_spline(xx_mm)
-        r_hub_mm = r_hub_spline(xx_mm)
-
     def empirical_design(self):
         """Determines the actual geometry of the engine."""
         # store relevant geometry parameters separately for convenience
@@ -685,6 +648,23 @@ class Engine:
 
         # recalculate dimensional values
         self.dimensional_values()
+
+    def calculate_thickness(
+        self, max_thickness = utils.Defaults.max_thickness_mm,
+        thickness_fraction = utils.Defaults.thickness_fraction
+    ):
+
+        # convert max. thickness in mm into dimensionless value
+
+        max_thickness = (
+            self.geometry["thickness"]["max_thickness_mm"]
+            / 1000 * 2 / self.scenario.diameter
+        )
+        thickness_fraction = self.geometry["thickness"]["thickness_fraction"]
+
+        for blade_row in self.blade_rows:
+
+            blade_row.draw_blades(max_thickness, thickness_fraction)
 
     def calculate_off_design(self):
         """Calculates the off-design performance characterstics of each stage."""
@@ -953,11 +933,11 @@ class Engine:
         plt.tight_layout()
 
         # loop over all blade rows
-        for blade_row in self.blade_rows:
+        """for blade_row in self.blade_rows:
 
             # draw blades
             thickness = utils.Defaults.max_thickness * 2 / self.scenario.diameter
-            blade_row.draw_blades(thickness)
+            blade_row.draw_blades(thickness, 0.5)"""
 
         # iterate over all inlet and exit streamtubes chosen for plotting
         for row, index in enumerate(indices):
@@ -1247,10 +1227,10 @@ class Engine:
             fontsize = 16
         )
 
-    def plot_matlab(self):
+    #def plot_matlab(self):
         """Creates a spanwise flow angle plot with matlab results overlaid."""
         # run matlab engine
-        eng = matlab.engine.start_matlab()
+        """eng = matlab.engine.start_matlab()
         eng.eval("set(0, 'DefaultFigureVisible', 'off')", nargout=0)
 
         # path to matlab_folder
@@ -1358,7 +1338,7 @@ class Engine:
         ]
 
         # plot spanwise variation
-        self.plot_spanwise(quantities)
+        self.plot_spanwise(quantities)"""
 
     def plot_convergence(self):
         """Plots the thrust calculation convergence history for the engine."""

@@ -39,7 +39,8 @@ def create_engine(
         psi = utils.Defaults.psi,
         vortex_exponent = utils.Defaults.vortex_exponent,
         Y_p = utils.Defaults.Y_p,
-        area_ratio = utils.Defaults.area_ratio
+        area_ratio = utils.Defaults.area_ratio,
+        M_1 = None
     ):
     """Creates an engine with custom parameters."""
     # start timer
@@ -52,7 +53,7 @@ def create_engine(
     
     # create engine
     engine = Engine(
-        flight_scenario, no_of_stages, phi, psi, vortex_exponent, Y_p, area_ratio
+        flight_scenario, no_of_stages, phi, psi, vortex_exponent, Y_p, area_ratio, M_1
     )
 
     # end timer
@@ -80,7 +81,7 @@ def main():
 
 def export_engine():
 
-    def specify_motor(vars, no_of_stages, phi, psi):
+    """def specify_motor(vars, no_of_stages, phi, psi):
 
         # thrust is input variable
         thrust = vars[0]
@@ -105,7 +106,12 @@ def export_engine():
     )
 
     # print user feedback
-    print(f"sol: {sol}")
+    print(f"sol: {sol}")"""
+
+    Inputs.engine = create_engine(
+        no_of_stages = Inputs.no_of_stages, thrust = Inputs.thrust, phi = Inputs.phi,
+        psi = Inputs.psi, M_1 = Inputs.M_1
+    )
 
     # add geometry
     Inputs.engine.geometry = {

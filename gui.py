@@ -435,6 +435,13 @@ class MainFrame(wx.Frame):
         # create dialog box
         dialog = DialogBox(self, "Add Engine", self.engine.input_labels)
 
+        # helper function
+        def to_float(s):
+            try:
+                return float(s)
+            except (ValueError, TypeError):
+                return None
+
         # if user presses OK
         if dialog.ShowModal() == wx.ID_OK:
 
@@ -444,7 +451,7 @@ class MainFrame(wx.Frame):
                 # create and store new engine
                 arguments = (
                     [self.scenario.source]
-                    + [float(arg.GetValue()) for arg in dialog.arguments]
+                    + [to_float(arg.GetValue()) for arg in dialog.arguments]
                 )
                 engine = Engine(*arguments)
                 self.scenario.source.engines.append(engine)
@@ -653,7 +660,8 @@ class MainFrame(wx.Frame):
                     "aspect_ratio": aspect_ratio,
                     "diffusion_factor": diffusion_factor,
                     "design_parameter": design_parameter,
-                    "off_designs": []
+                    "off_designs": [],
+                    "thicknesses": []
                 }
                 self.engine.source.geometries.append(self.geometry.source)
                 self.engine.source.geometry = self.geometry.source
@@ -811,7 +819,59 @@ class MainFrame(wx.Frame):
         self.panel.Thaw()
 
     def add_thickness(self, event):
-        pass
+        """Specifies a thickness distribution to make calculations for."""
+        # no geometry has been created for the engine
+        if self.geometry.source == None:
+
+            # do nothing
+            return
+        
+        # create dialog box
+        dialog = DialogBox(self, "Add Thickness", self.thickness.input_labels)
+        
+        # if user presses OK
+        if dialog.ShowModal() == wx.ID_OK:
+
+            # try-except block
+            try:
+
+                # create and store new object
+                max_thickness = float(dialog.arguments[0].GetValue())
+                thickness_fraction = float(dialog.arguments[1].GetValue())
+                self.thickness.source = {
+                    "max_thickness_mm": max_thickness,
+                    "thickness_fraction": thickness_fraction
+                }
+                self.geometry.source["thicknesses"].append(self.thickness.source)
+                self.geometry.source["thickness"] = self.thickness.source
+                self.engine.source.calculate_thickness()
+
+                # add new entry to dropdown
+                self.thickness.dropdown.Append(
+                    f"[{len(self.geometry.source['thicknesses']) - 1}]        "
+                    f"t_max: {max_thickness} mm | t_min / t_max: {thickness_fraction}"
+                )
+
+            # catch non-numeric inputs
+            except ValueError as error:
+
+                # display error
+                wx.MessageBox("Please enter a valid numeric input.", "Invalid Input")
+                traceback.print_exc()
+
+        # close dialog box
+        dialog.Destroy()
+
+        # set thickness dropdown to the most recent option
+        self.thickness.dropdown.SetSelection(self.thickness.dropdown.GetCount() - 1)
+        
+        # refresh all grids
+        self.panel.Freeze()
+        self.thickness.refresh_grid()
+
+        # re-apply styling and refresh layout
+        self.apply_styling(self.panel)
+        self.panel.Thaw()
 
     def change_thickness(self, event):
         pass
@@ -942,18 +1002,17 @@ class DialogBox(wx.Dialog):
     def __init__(self, parent, title, input_labels):
         """Creates an instance of the DialogBox class."""
         # create dialog box
-        super().__init__(
-            parent,
-            title = f"{title}",
-            size = (1000, 300)
-        )
+        super().__init__(parent, title = f"{title}", size = (1000, 300))
         panel = wx.Panel(self)
 
         # loop over all input label-pairs
         for input_label in input_labels:
 
             # set the relevant attribute to a newly created text box
-            setattr(self, input_label[1], wx.TextCtrl(panel, value = f"{getattr(utils.Defaults, input_label[1])}"))
+            setattr(
+                self, input_label[1],
+                wx.TextCtrl(panel, value = f"{getattr(utils.Defaults, input_label[1])}")
+            )
 
         # layout in grid form
         grid = wx.FlexGridSizer(
@@ -1035,19 +1094,6 @@ class AddGeometryDialog(wx.Dialog):
         # dialog-level buttons
         buttons = self.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
 
-        # slider row: Diffusion Factor [slider fills space] Deviation
-        """slider_row = wx.BoxSizer(wx.HORIZONTAL)
-        diffusion_label = wx.StaticText(panel, label = "Diffusion Factor")
-        self.geometry_slider = wx.Slider(
-            panel, value = int(100 * utils.Defaults.design_parameter), minValue = 114.999, maxValue = 115.001,
-            style = wx.SL_HORIZONTAL
-        )
-        deviation_label = wx.StaticText(panel, label = "Deviation")
-        slider_row.Add(diffusion_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
-        slider_row.Add(self.geometry_slider, 1, wx.ALL | wx.EXPAND, 6)
-        slider_row.Add(deviation_label, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 6)
-        panel_sizer.Add(slider_row, 0, wx.EXPAND)"""
-
         # re-apply styling so newly-created labels and slider get themed
         parent.apply_styling(self)
 
@@ -1059,7 +1105,6 @@ class AddGeometryDialog(wx.Dialog):
 
         # store as ordered list of arguments
         self.arguments = [getattr(self, input_label[1]) for input_label in parent.geometry.input_labels]
-        #self.arguments.append(self.geometry_slider)
 
 # main function
 def main():

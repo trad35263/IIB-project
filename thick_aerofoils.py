@@ -16,7 +16,7 @@ class Inputs:
     # default parameters
     N = 10000
     sharpness = 100
-    t_frac = 0.5
+    thickness_fraction = 0.5
 
 # Aerofoils class
 class Aerofoils:
@@ -41,7 +41,53 @@ class Aerofoils:
         aerofoil_data = np.array([x_fine, y_fine])
         return aerofoil_data
     
-    def thick_aerofoil(self, filename = Inputs.filename, t_frac = Inputs.t_frac, sharpness = Inputs.sharpness):
+    def thick_aerofoil(
+            self, thickness_fraction = Inputs.thickness_fraction, filename = Inputs.filename,
+            sharpness = Inputs.sharpness
+        ):
+        """Imposes thickness restrictions on a given aerofoil."""
+        # load aerofoil data
+        data = self.load_aerofoil(filename)
+
+        # find y-value of min. thickness
+        t_min = np.max(data[1]) * thickness_fraction
+
+        # find x-coordinate (scalar) and y-coordinates (vector) of all possible circles
+        c_x = 1 - t_min
+        c_y = ((c_x - data[0])**2 + data[1]**2 - t_min**2) / (2 * (data[1] - t_min))
+
+        # get gradient of circle radius arms
+        m = (c_y - data[1]) / (c_x - data[0])
+
+        # get gradient of aerofoil
+        dy_dx = np.gradient(data[1], data[0])
+
+        # get tangency residuals
+        dtan = dy_dx + 1 / m
+
+        # get index of closest to zero tangency residual
+        tangent_index = np.argmin(np.abs(dtan))
+
+        # get index of rear fillet start
+        fillet_index = np.argmin(np.abs(data[0] + t_min - 1))
+
+        # replace data between fillets with that of circle
+        r = c_y[tangent_index] - t_min
+        data[1][tangent_index:fillet_index] = c_y[tangent_index] - np.sqrt(r**2 - (data[0][tangent_index:fillet_index] - c_x)**2)
+
+        # get trailing edge circle datapoints
+        data[1][fillet_index:] = np.sqrt(np.maximum(t_min**2 - (data[0][fillet_index:] + t_min - 1)**2, 0))
+
+        # store circles for visualisation
+        self.circle_1 = plt.Circle((c_x, c_y[tangent_index]), r, fill=False)
+        self.circle_2 = plt.Circle((1 - t_min, 0), t_min, fill=False)
+
+        return data
+    
+    def thick_aerofoil_backup(
+            self, thickness_fraction = Inputs.thickness_fraction, filename = Inputs.filename,
+            sharpness = Inputs.sharpness
+        ):
         """Imposes thickness restrictions on a given aerofoil."""
         # load aerofoil data
         data = self.load_aerofoil(filename)
@@ -50,7 +96,7 @@ class Aerofoils:
         index = np.argmax(data[1])
 
         # find y-value of min. thickness
-        t_min = np.max(data[1]) * t_frac
+        t_min = np.max(data[1]) * thickness_fraction
 
         # clip y-data from point of max. thickness to trailing edge to impose minimum thickness
         data[1][index:] = (
@@ -85,8 +131,12 @@ def main():
         aerofoil_data = aerofoils.load_aerofoil(filename)
         ax.plot(aerofoil_data[0], aerofoil_data[1], label = f"{filename}")
 
-    # load NACA-0012 aerofoil
+    # generate thickened aerofoil profile
     aerofoil_data = aerofoils.thick_aerofoil()
+
+    # plot circles used as fillets
+    ax.add_patch(aerofoils.circle_1)
+    ax.add_patch(aerofoils.circle_2)
 
     ax.plot(aerofoil_data[0], aerofoil_data[1], label = f"Thickened")
 

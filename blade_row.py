@@ -1455,11 +1455,16 @@ class Blade_row:
         #self.xx = self.xx / 2
         #self.yy = self.yy / 2
 
-    def draw_blades(self, thickness):
+    def draw_blades(self, max_thickness, thickness_fraction):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
         # read in thickness distribution
         aerofoils = Aerofoils()
-        self.zz = aerofoils.thick_aerofoil()
+        self.zz = aerofoils.thick_aerofoil(thickness_fraction)
+
+        """fig, ax = plt.subplots()
+        ax.plot(self.zz[0], self.zz[1])
+        ax.grid()
+        ax.set_aspect("equal")"""
 
         # initiialise empty arrays of x- and y-coordinates
         self.xx = np.zeros((3, 2 * len(self.zz[0])))
@@ -1502,7 +1507,6 @@ class Blade_row:
             ny =  dx_dl / norm
 
             # read in thickness data
-            #zz = utils.aerofoil_data
             zz = self.zz[:, self.zz[0].argsort()]
 
             # initialise empty arrays for upper- and lower-surface data
@@ -1518,7 +1522,7 @@ class Blade_row:
                 dy = np.interp(l, *zz)
 
                 # scale thickness by axial chord length
-                dy *= thickness / (0.12 * self.exit.chord[index])
+                dy *= max_thickness / (2 * 0.09 * self.exit.chord[index])
 
                 # add upper and lower surfaces
                 xx_upper[i] = x + dy * nx[i]
@@ -1534,6 +1538,6 @@ class Blade_row:
             self.xx[j] = np.concatenate([xx_upper, xx_lower])
             self.yy[j] = np.concatenate([yy_upper, yy_lower])
 
-            # resize according to chord length (x1.5 for clarity)
-            self.xx[j] *= 1.5 * self.exit.chord[index]
-            self.yy[j] *= 1.5 * self.exit.chord[index]
+            # resize according to chord length
+            self.xx[j] *= self.exit.chord[index]
+            self.yy[j] *= self.exit.chord[index]

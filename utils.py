@@ -109,6 +109,8 @@ class Defaults:
     off_design_grid = 10
     maxiter = 50
 
+    M_1 = ""
+
     # specify inlet swirl
     inlet_swirl = 0
 
@@ -116,7 +118,8 @@ class Defaults:
     debug = False
 
     # default dimensional blade thickness (in m)
-    max_thickness = 2e-3
+    max_thickness_mm = 2e-3
+    thickness_fraction = 0.5
 
 # 0.3 compressible flow perfect gas relations
 
@@ -304,12 +307,12 @@ class Labels:
         ["Stage Loading Coefficient", "psi"],
         ["Vortex Exponent", "vortex_exponent"],
         ["Stagnation Pressure Loss Coefficient", "Y_p"],
-        ["Blade Row Area Ratio", "area_ratio"]
+        ["Blade Row Area Ratio", "area_ratio"],
+        ["Inlet Mach Number", "M_1"],
     ]
 
     # list of engine label-pairs to display (computed/output values)
     engine_output_labels = [
-        ["Inlet Mach Number", "M_1"],
         ["Temperature Ratio", "T_0_ratio"],
         ["Pressure Ratio", "p_0_ratio"],
         ["Nozzle Area Ratio", "nozzle_area_ratio"],
@@ -342,7 +345,8 @@ class Labels:
 
     # list of label-pairs required to create a thickness object
     thickness_input_labels = [
-        ["Max. Blade Thickness", "max_thickness"]
+        ["Max. Blade Thickness", "max_thickness_mm"],
+        ["Thickness Fraction", "thickness_fraction"]
     ]
     thickness_output_labels = []
 
