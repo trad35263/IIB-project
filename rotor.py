@@ -927,12 +927,6 @@ class Rotor(Blade_row):
 
     def calculate_chord(self, aspect_ratio, diffusion_factor, design_parameter):
         """Applies empirical relations to design the pitch-to-chord distributions."""
-        # calculate linear chord distribution from prescribed aspect ratio
-        #a = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
-        #b = -0.5 * a
-        #self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
-        #self.exit.chord = a + b * (self.exit.rr - self.exit.r_mean)
-
         # calculate mean-line chord from aspect ratio
         chord_mean = (self.exit.rr[-1] - self.exit.rr[0]) / aspect_ratio
 
@@ -961,17 +955,18 @@ class Rotor(Blade_row):
             # calculate diffusion factor distribution
             self.exit.diffusion_factor = (
                 1 - self.exit.M_rel / self.inlet.M_rel * np.sqrt(self.exit.T / self.inlet.T)
-                + 0.5 * (
-                    np.sin(np.abs(self.inlet.beta)) - self.exit.M_rel / self.inlet.M_rel * np.sqrt(
-                        self.exit.T / self.inlet.T
-                    ) * np.sin(np.abs(self.exit.beta))
-                ) * self.exit.pitch_to_chord
+                + 0.5 * self.exit.pitch_to_chord * np.abs(
+                    np.sin(self.inlet.beta)
+                    - self.exit.M_rel / self.inlet.M_rel
+                    * np.sqrt(self.exit.T / self.inlet.T)
+                    * np.sin(self.exit.beta)
+                )
             )
 
             # check if diffusion factor criterion is met
             if (
-                np.max(self.exit.diffusion_factor) < diffusion_factor
-                or self.no_of_blades > utils.Defaults.max_no_of_blades
+                np.max(self.exit.diffusion_factor) <= diffusion_factor
+                or self.no_of_blades >= utils.Defaults.max_no_of_blades
             ):
 
                 # exit while-loop

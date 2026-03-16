@@ -23,7 +23,7 @@ class Inputs:
     thrust = 30
     
     # variables to loop over
-    stages = [1]
+    stages = [2]
     #phis = [0.4, 0.6, 0.8, 1.0]
     #psis = [0.1, 0.15, 0.2]
     phis = np.linspace(0.4, 1.0, 4)
@@ -33,9 +33,10 @@ class Inputs:
     M_1 = 0.15
 
     # set guardrails to exclude bad engine designs
-    max_no_of_blades = utils.Defaults.max_no_of_blades
+    max_no_of_blades = utils.Defaults.max_no_of_blades + 1
     max_deviation = np.pi / 4
     max_chord = 1
+    max_diffusion_factor = 0.8
 
 # create_engine function
 def create_engine(
@@ -180,6 +181,11 @@ def export_engine():
 
             print(f"Error! Chord error.")
             #print(blade_row)
+            return
+        
+        if np.any(blade_row.exit.diffusion_factor > Inputs.max_diffusion_factor):
+
+            print(f"Error! Diffusion factor error.")
             return
 
     engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")

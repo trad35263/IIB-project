@@ -43,7 +43,7 @@ class Defaults:
 
     # default geometry parameters
     aspect_ratio = 2.5
-    diffusion_factor = 0.35
+    diffusion_factor = 0.4
     design_parameter = 1.15
     min_no_of_blades = 6
     max_no_of_blades = 20

@@ -420,10 +420,10 @@ class Stator(Blade_row):
             self.exit.diffusion_factor = (
                 1 - self.exit.M / self.inlet.M * np.sqrt(self.exit.T / self.inlet.T)
                 + 0.5 * self.exit.pitch_to_chord * np.abs(
-                    np.sin(np.abs(self.inlet.alpha))
+                    np.sin(self.inlet.alpha)
                     - self.exit.M / self.inlet.M
                     * np.sqrt(self.exit.T / self.inlet.T)
-                    * np.sin(np.abs(self.exit.alpha))
+                    * np.sin(self.exit.alpha)
                 )
             )
 
@@ -433,8 +433,8 @@ class Stator(Blade_row):
 
             # check if diffusion factor criterion is met
             if (
-                np.max(self.exit.diffusion_factor) < diffusion_factor
-                or self.no_of_blades > utils.Defaults.max_no_of_blades
+                np.max(self.exit.diffusion_factor) <= diffusion_factor
+                or self.no_of_blades >= utils.Defaults.max_no_of_blades
             ):
 
                 # exit while-loop
