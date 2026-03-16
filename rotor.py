@@ -366,9 +366,6 @@ class Rotor(Blade_row):
         # store axial velocity
         self.inlet.v_x = self.inlet.M * self.inlet.T
 
-        # store grid of equally-spaced radial positions to consider
-        #self.inlet.rr = np.linspace(hub_tip_ratio, 1, utils.Defaults.solver_grid)
-
         # use quadratic variation of radial positions to consider
         self.inlet.rr = (
             hub_tip_ratio

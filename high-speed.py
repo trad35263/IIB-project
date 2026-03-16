@@ -38,6 +38,9 @@ def main():
         utils.Defaults.Y_p,
         utils.Defaults.area_ratio
     )
+
+    # design engine
+    engine.design()
     print(engine)
 
     # add geometry

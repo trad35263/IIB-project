@@ -149,16 +149,7 @@ class Engine:
         self.nozzle.exit = Annulus()
 
         # design engine
-        self.design()
-
-        # loop over all blade rows
-        for index, blade_row in enumerate(self.blade_rows):
-
-            # sever shared references between inlet and exit annuli
-            blade_row.exit = copy.deepcopy(blade_row.exit)
-
-        # calculate dimensional values
-        self.dimensional_values()
+        #self.design()
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
@@ -326,6 +317,21 @@ class Engine:
 
             # run solve_thrust function without iterating
             solve_thrust(self.M_1)
+
+        # loop over all blade rows
+        for index, blade_row in enumerate(self.blade_rows):
+
+            # sever shared references between inlet and exit annuli
+            blade_row.exit = copy.deepcopy(blade_row.exit)
+
+        # iterate over all stages
+        for stage in self.stages:
+
+            # investigate stage performance
+            stage.evaluate()
+
+        # calculate dimensional values
+        self.dimensional_values()
 
         # end timer and print feedback
         t2 = timer()
@@ -538,10 +544,10 @@ class Engine:
         )
 
         # iterate over all stages
-        for stage in self.stages:
+        """for stage in self.stages:
 
             # investigate stage performance
-            stage.evaluate()
+            stage.evaluate()"""
 
     def dimensional_values(self):
         """Converts dimensionless values back to dimensional ones after the design process."""
@@ -550,6 +556,9 @@ class Engine:
             utils.mass_flow_function(self.M_1) * self.scenario.A * self.scenario.p_0
             / np.sqrt(utils.c_p * self.scenario.T_0)
         )
+
+        # calculate dimensional thrust
+        self.thrust = self.C_th * self.scenario.A * self.scenario.p_0
 
         # loop over each stage
         for index, stage in enumerate(self.stages):

@@ -511,6 +511,7 @@ class MainFrame(wx.Frame):
                     + [to_float(arg.GetValue()) for arg in dialog.arguments]
                 )
                 engine = Engine(*arguments)
+                engine.design()
                 self.scenario.source.engines.append(engine)
                 self.scenario.source.engine = engine
                 self.engine.source = engine

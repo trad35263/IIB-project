@@ -24,8 +24,6 @@ class Inputs:
     
     # variables to loop over
     stages = [2]
-    #phis = [0.4, 0.6, 0.8, 1.0]
-    #psis = [0.1, 0.15, 0.2]
     phis = np.linspace(0.4, 1.0, 4)
     psis = np.linspace(0.1, 0.3, 3)
 
@@ -33,7 +31,7 @@ class Inputs:
     M_1 = 0.15
 
     # set guardrails to exclude bad engine designs
-    max_no_of_blades = utils.Defaults.max_no_of_blades + 1
+    max_no_of_blades = utils.Defaults.max_no_of_blades
     max_deviation = np.pi / 4
     max_chord = 1
     max_diffusion_factor = 0.8
