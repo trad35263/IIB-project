@@ -10,6 +10,8 @@ gamma = 1.4
 c_p = 1005
 R = 287
 
+rho_aluminium = 2700
+
 # 0.2 define Defaults class
 
 class Defaults:
@@ -44,7 +46,7 @@ class Defaults:
     diffusion_factor = 0.35
     design_parameter = 1.15
     min_no_of_blades = 6
-    max_no_of_blades = 1000
+    max_no_of_blades = 20
 
     # guardrails
     min_pitch_to_chord_ratio = 0.2
@@ -117,8 +119,8 @@ class Defaults:
     # whether or not debug mode is active
     debug = False
 
-    # default dimensional blade thickness (in m)
-    max_thickness_mm = 2e-3
+    # default dimensional blade thickness (in mm)
+    max_thickness_mm = 2
     thickness_fraction = 0.5
 
 # 0.3 compressible flow perfect gas relations
@@ -318,7 +320,6 @@ class Labels:
         ["Nozzle Area Ratio", "nozzle_area_ratio"],
         ["Jet Velocity Ratio", "jet_velocity_ratio"],
         ["Compressor Efficiency", "eta_comp"],
-        ["Nozzle Efficiency", "eta_nozz"],
         ["Propulsive Efficiency", "eta_prop"],
         ["Overall Efficiency", "eta_overall"]
     ]
@@ -336,17 +337,25 @@ class Labels:
     ]
     geometry_output_labels = []
 
-    # list of label-pairs required to create an off_design object
-    off_design_input_labels = [
-        ["Min. Flow Coefficient", "phi_min"],
-        ["Max. Flow Coefficient", "phi_max"]
-    ]
-    off_design_output_labels = []
-
     # list of label-pairs required to create a thickness object
     thickness_input_labels = [
         ["Max. Blade Thickness", "max_thickness_mm"],
         ["Thickness Fraction", "thickness_fraction"]
     ]
     thickness_output_labels = []
+
+    # list of label-pairs required to make a motor object
+    motor_input_labels = []
+    motor_output_labels = [
+        ["No. of Motors (Power)", "no_of_motors_power"],
+        ["No. of Motors (RPM)", "no_of_motors_rpm"],
+        ["No. of Motors (Diameter)", "no_of_motors_diameter"]
+    ]
+
+    # list of label-pairs required to create an off_design object
+    off_design_input_labels = [
+        ["Min. Flow Coefficient", "phi_min"],
+        ["Max. Flow Coefficient", "phi_max"]
+    ]
+    off_design_output_labels = []
 

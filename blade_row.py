@@ -1223,238 +1223,6 @@ class Blade_row:
 
 # plotting functions ------------------------------------------------------------------------------
 
-    def old_draw_blades(self):
-        """Creates a series of x- and y- coordinates based on the blade shape data."""
-        # initialise arrays to store blade shape data in
-        self.xx = np.empty(len(self.inlet), dtype=object)
-        self.yy = np.empty(len(self.inlet), dtype=object)
-
-        # loop over all inlet and exit angles
-        for index, (inlet, exit) in enumerate(zip(self.inlet, self.exit)):
-
-            # construct circular camber line
-            r = 1 / (exit.metal_angle - inlet.metal_angle)
-            x0 = -r * np.sin(inlet.metal_angle)
-            y0 = r * np.cos(inlet.metal_angle)
-            theta = np.linspace(inlet.metal_angle, exit.metal_angle, 100)
-            xx_0 = x0 + r * np.sin(theta)
-            yy_0 = y0 - r * np.cos(theta)
-
-            # determine cumulative length of chord line
-            ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])
-
-            # calculate derivatives in x and y with respect to l
-            dx_dl = np.gradient(xx_0, ll_0)
-            dy_dl = np.gradient(yy_0, ll_0)
-
-            # compute unit normals
-            norm = np.sqrt(dx_dl**2 + dy_dl**2)
-            nx = -dy_dl / norm
-            ny =  dx_dl / norm
-
-            # get the upper surface only from the imported aerofoil data and sort
-            zz_0 = utils.aerofoil_data
-            #aerofoils = Aerofoils()
-            #zz_0 = aerofoils.thick_aerofoil()
-            zz_0 = zz_0[:, zz_0[0].argsort()]
-
-            # initialise empty arrays for the upper and lower surfaces
-            xx_upper = np.zeros(xx_0.shape)
-            xx_lower = np.zeros(xx_0.shape)
-            yy_upper = np.zeros(xx_0.shape)
-            yy_lower = np.zeros(xx_0.shape)
-
-            # iterate over each datapoint
-            for i, (x, y, l) in enumerate(zip(xx_0, yy_0, ll_0)):
-
-                # add thickness to the camberline
-                dy = np.interp(l, *zz_0)
-                nx_i = np.interp(l, ll_0, nx)
-                ny_i = np.interp(l, ll_0, ny)
-                xx_upper[i] = x + dy * nx_i
-                yy_upper[i] = y + dy * ny_i
-                xx_lower[i] = x - dy * nx_i
-                yy_lower[i] = y - dy * ny_i
-
-            # reverse upper surface
-            xx_upper = xx_upper[::-1]
-            yy_upper = yy_upper[::-1]
-
-            # combine upper and lower surfaces
-            self.xx[index] = np.concatenate([xx_upper, xx_lower])
-            self.yy[index] = np.concatenate([yy_upper, yy_lower])
-
-        # resize
-        self.xx = self.xx / 2
-        self.yy = self.yy / 2
-
-    def plot_blade_row(self, ax, column, row, index, scaling = 1):
-        """Plots a blade row onto a given axes at a specified spanwise position."""
-        # plot blade shape
-        self.draw_blades()
-        return
-        ax.plot(self.xx[k] + index, self.yy[k] + j, color = self.colour)
-
-        # store inlet and exit for convenience
-        #inlet = self.inlet[k]
-        #exit = self.exit[k]
-
-        # get trailing edge coordinates
-        x_te, y_te = self.xx[k][0], self.yy[k][0]
-
-        # helper function to simplify plotting arrows
-        def plot_arrow(z1, z2, colour = 'k'):
-            """Plot an arrow from (x1, y1) to (x2, y2) in a given colour."""
-            ax.annotate(
-                "",
-                xy = z2,
-                xytext = z1,
-                arrowprops = dict(
-                    arrowstyle = "->", color = colour,
-                    shrinkA = 0, shrinkB = 0, lw = 1.5
-                )
-            )
-            ax.plot([z1[0]] + [z2[0]], [z1[1]] + [z2[1]], linestyle = '')
-
-        # only plot rotating quantities if blade is a rotor
-        if "Rotor" in self.label:
-                
-            # display relative velocity vector at blade row inlet
-            plot_arrow(
-                (
-                    index - scaling * inlet.flow_state.M_rel * np.cos(inlet.flow_state.beta),
-                    j - scaling * inlet.flow_state.M_rel * np.sin(inlet.flow_state.beta)
-                ),
-                (index, j),
-                colour = 'C4'
-            )
-
-            # display relative velocity vector at blade row exit
-            plot_arrow(
-                (x_te + index, y_te + j),
-                (
-                    x_te + index + scaling * exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
-                    y_te + j + scaling * exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
-                ),
-                colour = 'C4'
-            )
-
-            # display blade row speed vector at blade row inlet
-            plot_arrow(
-                (index, j),
-                (index, j + scaling * inlet.M_blade),
-                colour = 'C3'
-            )
-
-            # display blade row speed vector at blade row exit
-            plot_arrow(
-                (
-                    x_te + index + scaling * exit.flow_state.M_rel * np.cos(exit.flow_state.beta),
-                    y_te + j + scaling * exit.flow_state.M_rel * np.sin(exit.flow_state.beta)
-                ),
-                (
-                    x_te + index + scaling * exit.flow_state.M * np.cos(exit.flow_state.alpha),
-                    y_te + j + scaling * exit.flow_state.M * np.sin(exit.flow_state.alpha)
-                ),
-                colour = 'C3'
-            )
-
-        # display absolute velocity vector at blade row inlet
-        plot_arrow(
-            (
-                index - scaling * inlet.flow_state.M * np.cos(inlet.flow_state.alpha),
-                j + scaling * (inlet.M_blade - inlet.flow_state.M * np.sin(inlet.flow_state.alpha))
-            ),
-            (index, j + scaling * inlet.M_blade),
-            colour = 'C0'
-        )
-
-        # display absolute velocity vector at blade row exit
-        plot_arrow(
-            (x_te + index, y_te + j),
-            (
-                x_te + index + scaling * exit.flow_state.M * np.cos(exit.flow_state.alpha),
-                y_te + j + scaling * exit.flow_state.M * np.sin(exit.flow_state.alpha)
-            ),
-            colour = 'C0'
-        )
-
-    def draw_blades2(self):
-        """Creates a series of x- and y- coordinates based on the blade shape data."""
-        # initialise arrays to store blade shape data in
-        self.xx = np.zeros((3, 2 * utils.Defaults.export_grid))
-        self.yy = np.zeros((3, 2 * utils.Defaults.export_grid))
-
-        # get hub, mid-span and tip indices
-        indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
-
-        # loop over all inlet and exit angles
-        for j, index in enumerate(indices):
-
-            # construct circular camber line
-            r = 1 / (self.exit.metal_angle[index] - self.inlet.metal_angle[index])
-            x0 = -r * np.sin(self.inlet.metal_angle[index])
-            y0 = r * np.cos(self.inlet.metal_angle[index])
-            theta = np.linspace(
-                self.inlet.metal_angle[index],
-                self.exit.metal_angle[index],
-                utils.Defaults.export_grid
-            )
-            xx_0 = x0 + r * np.sin(theta)
-            yy_0 = y0 - r * np.cos(theta)
-
-            # determine cumulative length of chord line
-            ll_0 = np.concatenate([[0], np.cumsum(np.sqrt(np.diff(xx_0)**2 + np.diff(yy_0)**2))])
-
-            # calculate derivatives in x and y with respect to l
-            dx_dl = np.gradient(xx_0, ll_0)
-            dy_dl = np.gradient(yy_0, ll_0)
-
-            # compute unit normals
-            norm = np.sqrt(dx_dl**2 + dy_dl**2)
-            nx = -dy_dl / norm
-            ny =  dx_dl / norm
-
-            # get the upper surface only from the imported aerofoil data and sort
-            zz_0 = utils.aerofoil_data
-            #aerofoils = Aerofoils()
-            #zz_0 = aerofoils.thick_aerofoil()
-            zz_0 = zz_0[:, zz_0[0].argsort()]
-
-            # initialise empty arrays for the upper and lower surfaces
-            xx_upper = np.zeros(xx_0.shape)
-            xx_lower = np.zeros(xx_0.shape)
-            yy_upper = np.zeros(xx_0.shape)
-            yy_lower = np.zeros(xx_0.shape)
-
-            # iterate over each datapoint
-            for i, (x, y, l) in enumerate(zip(xx_0, yy_0, ll_0)):
-
-                # add thickness to the camberline
-                dy = np.interp(l, *zz_0)
-                nx_i = np.interp(l, ll_0, nx)
-                ny_i = np.interp(l, ll_0, ny)
-                xx_upper[i] = x + dy * nx_i
-                yy_upper[i] = y + dy * ny_i
-                xx_lower[i] = x - dy * nx_i
-                yy_lower[i] = y - dy * ny_i
-
-            # reverse upper surface
-            xx_upper = xx_upper[::-1]
-            yy_upper = yy_upper[::-1]
-
-            # combine upper and lower surfaces
-            self.xx[j] = np.concatenate([xx_upper, xx_lower])
-            self.yy[j] = np.concatenate([yy_upper, yy_lower])
-
-            # scale in the x-direction
-            self.xx[j] *= self.exit.axial_chord[index]
-            self.yy[j] *= self.exit.axial_chord[index]
-
-        # resize
-        #self.xx = self.xx / 2
-        #self.yy = self.yy / 2
-
     def draw_blades(self, max_thickness, thickness_fraction):
         """Creates a series of x- and y- coordinates based on the blade shape data."""
         # read in thickness distribution
@@ -1541,3 +1309,48 @@ class Blade_row:
             # resize according to chord length
             self.xx[j] *= self.exit.chord[index]
             self.yy[j] *= self.exit.chord[index]
+
+    def calculate_mass(self, radius):
+        """Calculates the mass of a blade row."""
+        # helper function for calcuating area of a polygon
+        def polygon_area(x, y):
+            """Returns the area of a polygon of x-y values via the shoelace method."""
+            # calculate and return area
+            A = 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+            return A
+        
+        # calculate index of mid-span
+        mid_index = int(np.floor(utils.Defaults.solver_grid / 2))
+
+        # calculate section areas at hub mid-span and tip
+        section_areas = [polygon_area(xx, yy) for (xx, yy) in zip(self.xx, self.yy)]
+
+        # approximate section area distribution by ratio of chords
+        A_hub = section_areas[0] * self.exit.chord / self.exit.chord[0]
+        A_mid = section_areas[1] * self.exit.chord / self.exit.chord[mid_index]
+        A_tip = section_areas[2] * self.exit.chord / self.exit.chord[-1]
+
+        # express in terms of span
+        span = (self.exit.rr - self.exit.rr[0]) / (self.exit.rr[-1] - self.exit.rr[0])
+        mid_span = span[mid_index]
+
+        # find coefficients for calculating weighted average of area distributions
+        w_mid = span / mid_span
+        w_tip = (span - mid_span) / (1 - mid_span)
+
+        # blend area distributions according to piecewise weighted average
+        A_blend = np.where(
+            span <= mid_span,
+            (1 - w_mid) * A_hub + w_mid * A_mid,
+            (1 - w_tip) * A_mid + w_tip * A_tip
+        )
+
+        # calculate dimensionless blade volume
+        blade_volume = utils.cumulative_trapezoid(self.exit.rr, A_blend)[-1]
+
+        # calculate (dimensional, in kg) blade mass
+        self.mass = blade_volume * radius**3 * utils.rho_aluminium * self.no_of_blades
+
+    def calculate_stress(self):
+
+        pass

@@ -15,8 +15,10 @@ class Inputs:
     file_names = [
         "NeuMotors 1200 Series BLDC Motor",
         "NeuMotors 3800 Series BLDC Motors",
+        "NeuMotors 4600 Series BLDC Motors",
         "NeuMotors 6500 Series BLDC Motors",
-        "NeuMotors 8000 SERIES BLDC MOTORS",
+        "NeuMotors 8000 Series BLDC Motors",
+        "NeuMotors 8800 Series BLDC Motors",
         "NeuMotors 120xx Series BLDC Motors"
     ]
 
@@ -27,10 +29,21 @@ class Inputs:
 # Database class
 class Database:
     """Constructs a database of electric motors given a list of input file paths."""
-    def __init__(self, file_paths):
+    def __init__(self, file_paths = None):
         """Creates an instance of the Database class."""
-        # store input variables
-        self.file_paths = file_paths
+        # no file paths provided
+        if file_paths == None:
+
+            # use default file paths
+            self.file_paths = [
+                Inputs.folder_path + "/" + file_name + ".txt" for file_name in Inputs.file_names
+            ]
+
+        # use provided file paths
+        else:
+
+            # store input variables
+            self.file_paths = file_paths
 
         # create cycle of colours
         self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
@@ -44,14 +57,14 @@ class Database:
         # create empty string to return
         string = ""
 
+        # print database reading duration
+        string += f"Motor database data read in {Colours.GREEN}{self.time:.4g}{Colours.END} s."
+
         # print number of motors
         string += f"Database contains {Colours.GREEN}{len(self.motors)}{Colours.END} motors!\n"
 
         # print keys of first motor
         string += f"Available motor keys:\n{[key for key, value in self.motors[0].items()]}\n"
-
-        # print database reading duration
-        string += f"Input data read in {Colours.GREEN}{self.time:.4g}{Colours.END} s."
 
         return string
 
@@ -164,9 +177,18 @@ class Database:
 
                         # all other headings
                         else:
+                            
+                            # try-except block
+                            try:
 
-                            # convert to float and store variable
-                            motor[heading] = float(values[index].replace(",", ""))
+                                # convert to float and store variable
+                                motor[heading] = float(values[index].replace(",", ""))
+
+                            # value is non-numeric
+                            except:
+
+                                # store variable as is
+                                motor[heading] = values[index]
                     
                     # Add all shared variables to this motor
                     motor.update(shared_vars)
@@ -207,9 +229,7 @@ class Database:
 def main():
 
     # create database
-    database = Database(
-        [Inputs.folder_path + "/" + file_name + ".txt" for file_name in Inputs.file_names]
-    )
+    database = Database()
     print(database)
 
     # plot results

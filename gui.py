@@ -55,6 +55,13 @@ class DataContainer:
             style = wx.CB_READONLY
         )
 
+        # boolean values for column construction
+        self.column_is_parent = False
+        self.column_is_child = False
+
+        # initialise column as None
+        self.column = None
+
         # set information source to None
         self.source = None
 
@@ -176,13 +183,20 @@ class MainFrame(wx.Frame):
         self.scenario = DataContainer("scenario", "Add Flight Scenario", self.panel)
         self.engine = DataContainer("engine", "Create Engine", self.panel)
         self.geometry = DataContainer("geometry", "Add Geometry", self.panel)
-        self.off_design = DataContainer("off_design", "Off-design", self.panel)
         self.thickness = DataContainer("thickness", "Add Thickness", self.panel)
+        self.motor = DataContainer("motor", "Add Motor", self.panel)
+        self.off_design = DataContainer("off_design", "Off-design", self.panel)
         data_containers = [
             self.scenario, self.engine,
-            self.geometry, self.off_design,
-            self.thickness
+            self.geometry, self.thickness,
+            self.motor, self.off_design
         ]
+
+        # set parent and child attributes
+        parent = None
+        self.thickness.column_is_parent = True
+        self.motor.column_is_child = True
+        self.off_design.column_is_child = True
 
         # loop for each kind of data container
         for data in data_containers:
@@ -191,8 +205,18 @@ class MainFrame(wx.Frame):
             data.button.Bind(wx.EVT_BUTTON, getattr(self, f"add_{data.label}"))
             data.dropdown.Bind(wx.EVT_COMBOBOX, getattr(self, f"change_{data.label}"))
 
-            # populate column
-            data.populate_column()
+            if data.column_is_parent:
+
+                parent = data
+
+            if data.column_is_child:
+
+                data.populate_column(parent.column)
+
+            else:
+
+                # populate column
+                data.populate_column()
 
         # loop over all default flight scenario labels
         for key in self.flight_scenarios.keys():
@@ -250,6 +274,7 @@ class MainFrame(wx.Frame):
         self.engine.refresh_grid()
         self.geometry.refresh_grid()
         self.off_design.refresh_grid()
+        self.thickness.refresh_grid()
 
         # create root 
         root = wx.BoxSizer(wx.HORIZONTAL)
@@ -257,8 +282,10 @@ class MainFrame(wx.Frame):
         # loop for each data container
         for data in data_containers:
 
-            # add column to root
-            root.Add(data.column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
+            if not data.column_is_child:
+
+                # add column to root
+                root.Add(data.column, proportion = 1, flag = wx.EXPAND | wx.ALL, border = 10)
 
         # set root sizer
         self.panel.SetSizer(root)
@@ -298,8 +325,12 @@ class MainFrame(wx.Frame):
                 )
                 self.scenario.source = Flight_scenario(*arguments)
                 self.flight_scenarios[self.scenario.label] = self.scenario.source
+
+                # set flight scenario children information sources to None
                 self.engine.source = None
                 self.geometry.source = None
+                self.thickness.source = None
+                self.motor.source = None
                 self.off_design.source = None
 
                 # refresh dropdown
@@ -358,6 +389,8 @@ class MainFrame(wx.Frame):
 
                 # set sources to None
                 self.geometry.source = None
+                self.thickness.source = None
+                self.motor.source = None
                 self.off_design.source = None
 
             # geometry exists
@@ -366,8 +399,32 @@ class MainFrame(wx.Frame):
                 # set current geometry
                 self.geometry.source = self.engine.source.geometries[0]
 
+                # engine has no stored thicknesses
+                if len(self.geometry.source["thicknesses"]) == 0:
+
+                    # set source to None
+                    self.thickness.source = None
+
+                # thickness exists
+                else:
+
+                    # set current thickness
+                    self.thickness.source = self.geometry.source["thicknesses"][0]
+
+                # engine has no stored motors
+                if len(self.geometry.source["motors"]) == 0:
+
+                    # set source to None
+                    self.motor.source = None
+
+                # motor exists
+                else:
+
+                    # set current motor
+                    self.motor.source = self.geometry.source["motors"][0]
+
                 # engine has no stored off-design
-                if not hasattr(self.engine.source, "off_design"):
+                if len(self.geometry.source["off_designs"]) == 0:
 
                     # set source to None
                     self.off_design.source = None
@@ -376,7 +433,7 @@ class MainFrame(wx.Frame):
                 else:
 
                     # set current off-design
-                    self.off_design.source = self.engine.source.off_designs[0]
+                    self.off_design.source = self.geometry.source["off_designs"][0]
 
         # clear all dropdowns
         self.engine.dropdown.Clear()
@@ -457,7 +514,11 @@ class MainFrame(wx.Frame):
                 self.scenario.source.engines.append(engine)
                 self.scenario.source.engine = engine
                 self.engine.source = engine
+
+                # clear information sources for engine children
                 self.geometry.source = None
+                self.thickness.source = None
+                self.motor.source = None
                 self.off_design.source = None
 
                 # add new entry to dropdown
@@ -496,32 +557,41 @@ class MainFrame(wx.Frame):
         for index, stage in enumerate(self.engine.source.stages):
 
             self.geometry.labels[1].append(
-                [f"Rotor {index + 1} blades", f"no_of_blades{2 * index}"]
+                [f"Rotor {index + 1} blades", f"rotor_{index + 1}_no_of_blades"]
             )
             self.geometry.labels[1].append(
-                [f"Rotor {index + 1} min. chord (mm)", f"rotor_{index + 1}_min_chord"]
+                [f"Rotor {index + 1} chord (mm)", f"rotor_{index + 1}_chord"]
             )
             self.geometry.labels[1].append(
-                [f"Rotor {index + 1} max. chord (mm)", f"rotor_{index + 1}_max_chord"]
+                [f"Stator {index + 1} blades", f"stator_{index + 1}_no_of_blades"]
             )
             self.geometry.labels[1].append(
-                [f"Stator {index + 1} blades", f"no_of_blades{2 * index + 1}"]
+                [f"Stator {index + 1} chord (mm)", f"stator_{index + 1}_chord"]
             )
-            self.geometry.labels[1].append(
-                [f"Stator {index + 1} min. chord (mm)", f"stator_{index + 1}_min_chord"]
+
+        # update thickness output grid for number of blade rows
+        self.thickness.labels[1] = copy.deepcopy(utils.Labels.thickness_output_labels)
+        for index, stage in enumerate(self.engine.source.stages):
+
+            self.thickness.labels[1].append(
+                [f"Rotor {index + 1} mass (kg)", f"rotor_{index + 1}_mass"]
             )
-            self.geometry.labels[1].append(
-                [f"Stator {index + 1} max. chord (mm)", f"stator_{index + 1}_max_chord"]
+            self.thickness.labels[1].append(
+                [f"Stator {index + 1} mass (kg)", f"stator_{index + 1}_mass"]
             )
         
         # refresh all grids
         self.panel.Freeze()
         self.engine.refresh_grid()
         self.geometry.refresh_grid()
+        self.thickness.refresh_grid()
+        self.motor.refresh_grid()
         self.off_design.refresh_grid()
 
         # clear all dropdowns
         self.geometry.dropdown.Clear()
+        self.thickness.dropdown.Clear()
+        self.motor.dropdown.Clear()
         self.off_design.dropdown.Clear()
 
         # re-apply styling and refresh layout
@@ -544,6 +614,8 @@ class MainFrame(wx.Frame):
 
             # set sources to None
             self.geometry.source = None
+            self.thickness.source = None
+            self.motor.source = None
             self.off_design.source = None
 
         # geometry exists
@@ -552,8 +624,32 @@ class MainFrame(wx.Frame):
             # set current geometry
             self.geometry.source = self.engine.source.geometries[0]
 
+            # engine has no stored thicknesses
+            if len(self.geometry.source["thicknesses"]) == 0:
+
+                # set source to None
+                self.thickness.source = None
+
+            # thickness_design exists
+            else:
+
+                # set current thickness
+                self.thickness.source = self.geometry.source["thicknesses"][0]
+
+            # engine has no stored motors
+            if len(self.geometry.source["motors"]) == 0:
+
+                # set source to None
+                self.motor.source = None
+
+            # motor exists
+            else:
+
+                # set current motor
+                self.motor.source = self.geometry.source["motors"][0]
+
             # engine has no stored off-design
-            if not hasattr(self.engine.source, "off_design"):
+            if len(self.geometry.source["off_designs"]) == 0:
 
                 # set source to None
                 self.off_design.source = None
@@ -566,6 +662,8 @@ class MainFrame(wx.Frame):
 
         # clear all dropdowns
         self.geometry.dropdown.Clear()
+        self.thickness.dropdown.Clear()
+        self.motor.dropdown.Clear()
         self.off_design.dropdown.Clear()
 
         # loop over geometries associated with the chosen engine
@@ -604,32 +702,41 @@ class MainFrame(wx.Frame):
         for index, stage in enumerate(self.engine.source.stages):
 
             self.geometry.labels[1].append(
-                [f"Rotor {index + 1} blades", f"no_of_blades{2 * index}"]
+                [f"Rotor {index + 1} blades", f"rotor_{index + 1}_no_of_blades"]
             )
             self.geometry.labels[1].append(
-                [f"Rotor {index + 1} min. chord (mm)", f"rotor_{index + 1}_min_chord"]
+                [f"Rotor {index + 1} chord (mm)", f"rotor_{index + 1}_chord"]
             )
             self.geometry.labels[1].append(
-                [f"Rotor {index + 1} max. chord (mm)", f"rotor_{index + 1}_max_chord"]
+                [f"Stator {index + 1} blades", f"stator_{index + 1}_no_of_blades"]
             )
             self.geometry.labels[1].append(
-                [f"Stator {index + 1} blades", f"no_of_blades{2 * index + 1}"]
+                [f"Stator {index + 1} chord (mm)", f"stator_{index + 1}_chord"]
             )
-            self.geometry.labels[1].append(
-                [f"Stator {index + 1} min. chord (mm)", f"stator_{index + 1}_min_chord"]
+
+        # update thickness output grid for number of blade rows
+        self.thickness.labels[1] = copy.deepcopy(utils.Labels.thickness_output_labels)
+        for index, stage in enumerate(self.engine.source.stages):
+
+            self.thickness.labels[1].append(
+                [f"Rotor {index + 1} mass (kg)", f"rotor_{index + 1}_mass"]
             )
-            self.geometry.labels[1].append(
-                [f"Stator {index + 1} max. chord (mm)", f"stator_{index + 1}_max_chord"]
+            self.thickness.labels[1].append(
+                [f"Stator {index + 1} mass (kg)", f"stator_{index + 1}_mass"]
             )
         
         # refresh all grids
         self.panel.Freeze()
         self.engine.refresh_grid()
         self.geometry.refresh_grid()
+        self.thickness.refresh_grid()
+        self.motor.refresh_grid()
         self.off_design.refresh_grid()
 
         # set dropdowns to first option
         self.geometry.dropdown.SetSelection(0)
+        self.thickness.dropdown.SetSelection(0)
+        self.motor.dropdown.SetSelection(0)
         self.off_design.dropdown.SetSelection(0)
 
         # re-apply styling and refresh layout
@@ -641,6 +748,7 @@ class MainFrame(wx.Frame):
         # check if an engine has already been created
         if len(self.scenario.source.engines) == 0:
 
+            # do nothing
             return
         
         # create dialog box
@@ -660,8 +768,9 @@ class MainFrame(wx.Frame):
                     "aspect_ratio": aspect_ratio,
                     "diffusion_factor": diffusion_factor,
                     "design_parameter": design_parameter,
-                    "off_designs": [],
-                    "thicknesses": []
+                    "thicknesses": [],
+                    "motors": [],
+                    "off_designs": []
                 }
                 self.engine.source.geometries.append(self.geometry.source)
                 self.engine.source.geometry = self.geometry.source
@@ -690,9 +799,13 @@ class MainFrame(wx.Frame):
         # refresh all grids
         self.panel.Freeze()
         self.geometry.refresh_grid()
+        self.thickness.refresh_grid()
+        self.motor.refresh_grid()
         self.off_design.refresh_grid()
 
         # clear all dropdowns
+        self.thickness.dropdown.Clear()
+        self.motor.dropdown.Clear()
         self.off_design.dropdown.Clear()
 
         # re-apply styling and refresh layout
@@ -710,8 +823,32 @@ class MainFrame(wx.Frame):
         self.geometry.source = geometry
         self.engine.source.geometry = geometry
 
+        # engine has no stored thicknesses
+        if len(self.geometry.source["thicknesses"]) == 0:
+
+            # set source to None
+            self.thickness.source = None
+
+        # thickness exists
+        else:
+
+            # set current thickness
+            self.thickness.source = self.geometry.source["thicknesses"][0]
+
+        # engine has no stored motors
+        if len(self.geometry.source["motors"]) == 0:
+
+            # set source to None
+            self.motor.source = None
+
+        # motor exists
+        else:
+
+            # set current motor
+            self.motor.source = self.geometry.source["motors"][0]
+
         # engine has no stored off-design
-        if not hasattr(self.geometry.source, "off_designs"):
+        if len(self.geometry.source["off_designs"]) == 0:
 
             # set source to None
             self.off_design.source = None
@@ -737,10 +874,156 @@ class MainFrame(wx.Frame):
         # refresh all grids
         self.panel.Freeze()
         self.geometry.refresh_grid()
+        self.thickness.refresh_grid()
+        self.motor.refresh_grid()
         self.off_design.refresh_grid()
 
         # set dropdowns to first option
+        self.thickness.dropdown.SetSelection(0)
+        self.motor.dropdown.SetSelection(0)
         self.off_design.dropdown.SetSelection(0)
+
+        # re-apply styling and refresh layout
+        self.apply_styling(self.panel)
+        self.panel.Thaw()
+
+    def add_thickness(self, event):
+        """Adds a thickness entry to the geometry dictionary."""
+        # no geometry has been created for the engine
+        if self.geometry.source == None:
+
+            # do nothing
+            return
+        
+        # create dialog box
+        dialog = DialogBox(self, "Add Thickness", self.thickness.input_labels)
+        
+        # if user presses OK
+        if dialog.ShowModal() == wx.ID_OK:
+
+            # try-except block
+            try:
+
+                # create and store new object
+                max_thickness = float(dialog.arguments[0].GetValue())
+                thickness_fraction = float(dialog.arguments[1].GetValue())
+                self.thickness.source = {
+                    "max_thickness_mm": max_thickness,
+                    "thickness_fraction": thickness_fraction
+                }
+                self.geometry.source["thickness"] = self.thickness.source
+                self.geometry.source["thicknesses"].append(self.thickness.source)
+                self.engine.source.calculate_thickness()
+
+                # add new entry to dropdown
+                self.thickness.dropdown.Append(
+                    f"[{len(self.geometry.source['thicknesses']) - 1}]        "
+                    f"t_max: {max_thickness} mm | t_min / t_max: {thickness_fraction}"
+                )
+
+            # catch non-numeric inputs
+            except ValueError as error:
+
+                # display error
+                wx.MessageBox("Please enter a valid numeric input.", "Invalid Input")
+                traceback.print_exc()
+
+        # close dialog box
+        dialog.Destroy()
+
+        # set thickness dropdown to the most recent option
+        self.thickness.dropdown.SetSelection(self.thickness.dropdown.GetCount() - 1)
+        
+        # refresh all grids
+        self.panel.Freeze()
+        self.thickness.refresh_grid()
+
+        # re-apply styling and refresh layout
+        self.apply_styling(self.panel)
+        self.panel.Thaw()
+
+    def change_thickness(self, event):
+        """Executes on each change of the thickness dropdown menu."""
+        # get latest label from thickness dropdown
+        self.thickness.label = int(self.thickness.dropdown.GetValue().split(']')[0][1:])
+
+        # find and store relevant off-motor
+        self.thickness.source = self.geometry.source["thicknesses"][self.thickness.label]
+        
+        # refresh grid
+        self.panel.Freeze()
+        self.off_design.refresh_grid()
+
+        # re-apply styling and refresh layout
+        self.apply_styling(self.panel)
+        self.panel.Thaw()
+
+    def add_motor(self, event):
+        """Selects a suitable motor or motors for the current configuration."""
+        # no geometry has been created for the engine
+        if self.geometry.source == None:
+
+            # do nothing
+            return
+        
+        # create dialog box
+        dialog = DialogBox(self, "Select Motor", self.motor.input_labels)
+        
+        # if user presses OK
+        if dialog.ShowModal() == wx.ID_OK:
+
+            # try-except block
+            try:
+
+                # create and store new object
+
+                #max_thickness = float(dialog.arguments[0].GetValue())
+                #thickness_fraction = float(dialog.arguments[1].GetValue())
+
+                self.motor.source = {
+                }
+                self.geometry.source["motor"] = self.motor.source
+                self.geometry.source["motors"].append(self.motor.source)
+                self.engine.source.select_motor()
+
+                # add new entry to dropdown
+                self.motor.dropdown.Append(
+                    f"[{len(self.geometry.source['motors']) - 1}]        "
+                    #f"t_max: {max_thickness} mm | t_min / t_max: {thickness_fraction}"
+                )
+
+            # catch non-numeric inputs
+            except ValueError as error:
+
+                # display error
+                wx.MessageBox("Please enter a valid numeric input.", "Invalid Input")
+                traceback.print_exc()
+
+        # close dialog box
+        dialog.Destroy()
+
+        # set motor dropdown to the most recent option
+        self.motor.dropdown.SetSelection(self.motor.dropdown.GetCount() - 1)
+        
+        # refresh all grids
+        self.panel.Freeze()
+        self.motor.refresh_grid()
+
+        # re-apply styling and refresh layout
+        self.apply_styling(self.panel)
+        self.panel.Thaw()
+
+    def change_motor(self, event):
+        """Executes on each change of the motor dropdown menu."""
+        # get latest label from motor dropdown
+        self.motor.label = int(self.motor.dropdown.GetValue().split(']')[0][1:])
+
+        # find and store relevant off-motor
+        self.motor.source = self.geometry.source["motors"][self.motor.label]
+        
+        # refresh grid
+        self.panel.Freeze()
+        self.off_design.refresh_grid()
 
         # re-apply styling and refresh layout
         self.apply_styling(self.panel)
@@ -808,7 +1091,6 @@ class MainFrame(wx.Frame):
 
         # find and store relevant off-design
         self.off_design.source = self.geometry.source["off_designs"][self.off_design.label]
-        #self.geometry.source.off_design = off_design
         
         # refresh grid
         self.panel.Freeze()
@@ -817,64 +1099,6 @@ class MainFrame(wx.Frame):
         # re-apply styling and refresh layout
         self.apply_styling(self.panel)
         self.panel.Thaw()
-
-    def add_thickness(self, event):
-        """Specifies a thickness distribution to make calculations for."""
-        # no geometry has been created for the engine
-        if self.geometry.source == None:
-
-            # do nothing
-            return
-        
-        # create dialog box
-        dialog = DialogBox(self, "Add Thickness", self.thickness.input_labels)
-        
-        # if user presses OK
-        if dialog.ShowModal() == wx.ID_OK:
-
-            # try-except block
-            try:
-
-                # create and store new object
-                max_thickness = float(dialog.arguments[0].GetValue())
-                thickness_fraction = float(dialog.arguments[1].GetValue())
-                self.thickness.source = {
-                    "max_thickness_mm": max_thickness,
-                    "thickness_fraction": thickness_fraction
-                }
-                self.geometry.source["thicknesses"].append(self.thickness.source)
-                self.geometry.source["thickness"] = self.thickness.source
-                self.engine.source.calculate_thickness()
-
-                # add new entry to dropdown
-                self.thickness.dropdown.Append(
-                    f"[{len(self.geometry.source['thicknesses']) - 1}]        "
-                    f"t_max: {max_thickness} mm | t_min / t_max: {thickness_fraction}"
-                )
-
-            # catch non-numeric inputs
-            except ValueError as error:
-
-                # display error
-                wx.MessageBox("Please enter a valid numeric input.", "Invalid Input")
-                traceback.print_exc()
-
-        # close dialog box
-        dialog.Destroy()
-
-        # set thickness dropdown to the most recent option
-        self.thickness.dropdown.SetSelection(self.thickness.dropdown.GetCount() - 1)
-        
-        # refresh all grids
-        self.panel.Freeze()
-        self.thickness.refresh_grid()
-
-        # re-apply styling and refresh layout
-        self.apply_styling(self.panel)
-        self.panel.Thaw()
-
-    def change_thickness(self, event):
-        pass
 
     def display_plot(self, event):
         """Displays a given plot for the selected Engine class instance."""

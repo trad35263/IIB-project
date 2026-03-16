@@ -1,8 +1,9 @@
 # import modules
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import least_squares
 from time import perf_counter as timer
+from scipy.interpolate import RegularGridInterpolator
+import operator
 
 # import high speed solver
 import utils
@@ -12,20 +13,29 @@ from flight_scenario import Flight_scenario
 # Inputs class
 class Inputs:
 
-    # motor parameters
-    #power = 3000
-    #rpm = 10000
+    # initialise empty list for storing engines
+    engines = []
+
+    # number of grid points for interpolation
+    N = 100
 
     # thrust for initial guesses
     thrust = 30
     
     # variables to loop over
     stages = [1]
-    phis = [0.6, 0.75, 0.9]
-    psis = [0.1, 0.15, 0.2]
+    #phis = [0.4, 0.6, 0.8, 1.0]
+    #psis = [0.1, 0.15, 0.2]
+    phis = np.linspace(0.4, 1.0, 4)
+    psis = np.linspace(0.1, 0.3, 3)
 
     # inlet Mach number
     M_1 = 0.15
+
+    # set guardrails to exclude bad engine designs
+    max_no_of_blades = utils.Defaults.max_no_of_blades
+    max_deviation = np.pi / 4
+    max_chord = 1
 
 # create_engine function
 def create_engine(
@@ -79,52 +89,100 @@ def main():
                 # get engine
                 export_engine()
 
+        # create contour plots
+        plot_contours(no_of_stages, "no_of_blades", "No. of Blades")
+        plot_contours(no_of_stages, "exit.diffusion_factor", "Max. Diffusion Factor")
+        plot_contours(no_of_stages, "exit.deviation", "Max. Deviation (rad)")
+
+def plot_contours(no_of_stages, attribute, label = ""):
+
+    # Collect unique phi and psi values
+    phis = Inputs.phis
+    psis = Inputs.psis
+
+    # define "getter" to retrieve nested class attributes
+    getter = operator.attrgetter(attribute)
+
+    # 2D array of z-values
+    Z = np.array([
+        [
+            next(
+                np.max([getter(blade_row) for blade_row in engine.blade_rows])
+                for engine in Inputs.engines
+                if engine.no_of_stages == no_of_stages
+                and engine.phi[0] == phi
+                and engine.psi[0] == psi
+            )
+            for phi in phis
+        ]
+        for psi in psis
+    ])
+
+    # interpolate onto a finer grid
+    interp = RegularGridInterpolator((psis, phis), Z, method="linear")
+
+    phi_fine = np.linspace(min(phis), max(phis), Inputs.N)
+    psi_fine = np.linspace(min(psis), max(psis), Inputs.N)
+    PHI, PSI = np.meshgrid(phi_fine, psi_fine)
+    Z_fine = interp((PSI, PHI))
+
+    # Plot contour
+    fig, ax = plt.subplots()
+    cf = ax.contourf(PHI, PSI, Z_fine, levels = 20, cmap = "viridis")
+    cs = ax.contour(PHI, PSI, Z_fine, levels = 20, colors = "white", linewidths = 0.4, alpha = 0.4)
+    cbar = fig.colorbar(cf, ax = ax)
+    cbar.set_label(f"{label}")
+
+    ax.set_xlabel("Flow Coefficient (φ)")
+    ax.set_ylabel("Stage Loading (ψ)")
+    ax.set_title(f"Engine {label} | No. of Stages: {no_of_stages}")
+
+    # Mark the original data points
+    for psi in psis:
+
+        for phi in phis:
+
+            ax.plot(phi, psi, "w+", markersize = 6, markeredgewidth = 1.2)
+
 def export_engine():
 
-    """def specify_motor(vars, no_of_stages, phi, psi):
-
-        # thrust is input variable
-        thrust = vars[0]
-
-        # create engine
-        Inputs.engine = create_engine(no_of_stages = no_of_stages, thrust = thrust, phi = phi, psi = psi)
-
-        # residual is mass flow rate delta
-        residuals = [Inputs.engine.M_1 - Inputs.M_1]
-        return residuals
-
-    # set initial guess
-    x0 = [Inputs.thrust]
-
-    # solve for appropriate thrust and stage loading coefficients iteratively
-    sol = least_squares(
-        specify_motor,
-        x0, args = (Inputs.no_of_stages, Inputs.phi, Inputs.psi),
-        xtol=1e-6,      # tolerance on change in x
-        ftol=1e-6,      # tolerance on change in residual
-        gtol=1e-6       # tolerance on gradient
-    )
-
-    # print user feedback
-    print(f"sol: {sol}")"""
-
-    Inputs.engine = create_engine(
+    engine = create_engine(
         no_of_stages = Inputs.no_of_stages, thrust = Inputs.thrust, phi = Inputs.phi,
         psi = Inputs.psi, M_1 = Inputs.M_1
     )
 
     # add geometry
-    Inputs.engine.geometry = {
+    engine.geometry = {
         "aspect_ratio": utils.Defaults.aspect_ratio,
         "diffusion_factor": utils.Defaults.diffusion_factor,
         "design_parameter": utils.Defaults.design_parameter
     }
 
-    # calculate blade angles and export engine
-    Inputs.engine.empirical_design()
-    print(f"{[blade_row.no_of_blades for blade_row in Inputs.engine.blade_rows]}")
-    #Inputs.engine.plot_section()
-    Inputs.engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")
+    # calculate blade angles
+    engine.empirical_design()
+
+    Inputs.engines.append(engine)
+
+    for blade_row in engine.blade_rows:
+
+        if blade_row.no_of_blades > Inputs.max_no_of_blades:
+
+            print(f"Error! Too many blades.")
+            return
+        
+        if np.any(np.abs(blade_row.exit.deviation) > Inputs.max_deviation):
+
+            print(f"Error! Deviation error.")
+            #print(blade_row)
+            return
+        
+        if np.any(blade_row.exit.chord > Inputs.max_chord):
+
+            print(f"Error! Chord error.")
+            #print(blade_row)
+            return
+
+    engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")
 
 if __name__ == "__main__":
 

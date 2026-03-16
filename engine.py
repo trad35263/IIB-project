@@ -30,6 +30,7 @@ from nozzle import Nozzle
 from flow_state import Flow_state
 from annulus import Annulus
 import utils
+from motor_database import Database
 
 # define Engine class
 class Engine:
@@ -440,7 +441,7 @@ class Engine:
         self.rr_j_initial = rr_j[:, index]
 
         # find nozzle area ratio
-        nozzle_area_ratio = self.rr_j_initial[-1]**2 / (1 - self.scenario.hub_tip_ratio**2)
+        nozzle_area_ratio = self.rr_j_initial[-1]**2 / (1 - self.hub_tip_ratio**2)
 
         # end timer
         t2 = timer()
@@ -507,33 +508,20 @@ class Engine:
             self.nozzle.exit.p * self.nozzle.exit.M**3 * np.sqrt(self.nozzle.exit.T)
             * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
         )
-        self.eta_nozz = (
-            (
-                2 * utils.gamma * (utils.gamma - 1) * self.nozzle_area_ratio
-                * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1], rho_v_3_r
-                )[-1]
-                - np.sqrt(utils.gamma - 1) * utils.mass_flow_function(self.M_1)
-                * utils.velocity_function(self.scenario.M)**2
-            ) / (
-                4 * utils.gamma * self.nozzle_area_ratio * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1],
-                    h_03s_h_01_r / self.nozzle.exit.rr[-1]
-                )[-1]
-            )
-        )
 
-        # calculate propulsive efficiency
+        # calculate propulsive efficiency - normalised by isentropic work done
         self.eta_prop = (
-            2 * self.C_th * utils.velocity_function(self.scenario.M)
-            / ( 
-                2 * self.nozzle_area_ratio * utils.gamma * np.sqrt(utils.gamma - 1)
-                * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1],
-                    self.nozzle.exit.p * self.nozzle.exit.M**3 * np.sqrt(self.nozzle.exit.T)
-                    * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
+            self.C_th * utils.velocity_function(self.scenario.M) * np.sqrt(utils.gamma - 1)
+            * (1 - self.hub_tip_ratio**2) / (
+                2 * utils.gamma * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr,
+                    np.power(
+                        1 + (utils.gamma - 1) / 2 * self.nozzle.exit.M**2,
+                        0.5 - utils.gamma / (utils.gamma - 1)
+                    ) * self.nozzle.exit.M * np.cos(self.nozzle.exit.alpha)
+                    * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
+                    * self.nozzle.exit.rr
                 )[-1]
-                - utils.mass_flow_function(self.M_1) * utils.velocity_function(self.scenario.M)**2
             )
         )
 
@@ -576,7 +564,7 @@ class Engine:
                 * np.sqrt(utils.gamma * utils.R * rotor.exit.T[-1] * self.scenario.T_0)
             )
             omega_blade = U_blade / (rotor.exit.rr[-1] * self.scenario.diameter / 2)
-            rpm_blade = utils.rad_s_to_rpm(omega_blade)
+            rotor.motor_rpm = utils.rad_s_to_rpm(omega_blade)
 
             # calculate required motor power input
             dP_dr = (
@@ -586,29 +574,24 @@ class Engine:
                 * rotor.inlet.p * rotor.inlet.M * np.cos(rotor.inlet.alpha)
                 * (rotor.exit.T_0 - rotor.inlet.T_0) / np.sqrt(rotor.inlet.T) * rotor.inlet.rr
             )
-            P = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]
+            rotor.motor_power = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]
 
             # store values as class attributes
-            setattr(self, f"rotor_{index + 1}_rpm", rpm_blade)
-            setattr(self, f"rotor_{index + 1}_power", P)
+            setattr(self, f"rotor_{index + 1}_rpm", rotor.motor_rpm)
+            setattr(self, f"rotor_{index + 1}_power", rotor.motor_power)
 
             # engine geometry has been calculated
             if hasattr(self, "geometry"):
 
-                # calculate minimum dimensional chord length in mm for both rotor and stator
-                self.geometry[f"rotor_{index + 1}_min_chord"] = (
-                    1000 * np.min(rotor.exit.chord) * self.scenario.diameter / 2
-                )
-                self.geometry[f"stator_{index + 1}_min_chord"] = (
-                    1000 * np.min(stator.exit.chord) * self.scenario.diameter / 2
+                # store chord range for display in the GUI
+                self.geometry[f"rotor_{index + 1}_chord"] = (
+                    f"{1000 * np.min(rotor.exit.chord) * self.scenario.diameter / 2:.4g} - "
+                    f"{1000 * np.max(rotor.exit.chord) * self.scenario.diameter / 2:.4g}"
                 )
 
-                # calculate maximum dimensional chord length in mm for both rotor and stator
-                self.geometry[f"rotor_{index + 1}_max_chord"] = (
-                    1000 * np.max(rotor.exit.chord) * self.scenario.diameter / 2
-                )
-                self.geometry[f"stator_{index + 1}_max_chord"] = (
-                    1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2
+                self.geometry[f"stator_{index + 1}_chord"] = (
+                    f"{1000 * np.min(stator.exit.chord) * self.scenario.diameter / 2:.4g} - "
+                    f"{1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2:.4g}"
                 )
 
     def empirical_design(self):
@@ -628,10 +611,15 @@ class Engine:
         self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
 
         # store separately for gui purposes
-        for index, value in enumerate(self.geometry["no_of_blades"]):
+        for index, stage in enumerate(self.stages):
 
-            self.geometry[f"no_of_blades{index}"] = value
-            
+            self.geometry[f"rotor_{index + 1}_no_of_blades"] = (
+                self.geometry["no_of_blades"][2 * index]
+            )
+            self.geometry[f"stator_{index + 1}_no_of_blades"] = (
+                self.geometry["no_of_blades"][2 * index + 1]
+            )
+
         # calculate array of blade row x-coordinates
         xx = np.array([
             blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation
@@ -655,16 +643,57 @@ class Engine:
     ):
 
         # convert max. thickness in mm into dimensionless value
-
         max_thickness = (
             self.geometry["thickness"]["max_thickness_mm"]
             / 1000 * 2 / self.scenario.diameter
         )
         thickness_fraction = self.geometry["thickness"]["thickness_fraction"]
 
+        # loop for each blade row
         for blade_row in self.blade_rows:
 
+            # draw blade shapes at hub, mid-span and tip and calculate blade row mass
             blade_row.draw_blades(max_thickness, thickness_fraction)
+            blade_row.calculate_mass(self.scenario.diameter / 2)
+
+        # loop for each stage
+        for index, stage in enumerate(self.stages):
+
+            # store chord range for display in the GUI
+            self.geometry["thickness"][f"rotor_{index + 1}_mass"] = stage.rotor.mass
+            self.geometry["thickness"][f"stator_{index + 1}_mass"] = stage.stator.mass
+
+    def select_motor(self):
+        """Selects an appropriate motor from the motor database."""
+        # store motor requirements separately for convenience
+        hub_diameter = self.hub_tip_ratio * self.scenario.diameter
+        power = [stage.rotor.motor_power for stage in self.stages]
+        rpm = [stage.rotor.motor_rpm for stage in self.stages]
+
+        print(f"hub_diameter: {hub_diameter}")
+        print(f"power: {power}")
+        print(f"rpm: {rpm}")
+
+        # get motor database
+        database = Database()
+        print(f"database: {database}")
+
+        for index in range(len(self.stages)):
+
+            if index == 0:
+
+                # filter database
+                motors = [motor for motor in database.motors if motor["rated_power_W"] > power[index]]
+                self.geometry["motor"]["no_of_motors_power"] = len(motors)
+                motors = [motor for motor in motors if motor["max_rpm"] > rpm[index]]
+                self.geometry["motor"]["no_of_motors_rpm"] = len(motors)
+                motors = [motor for motor in motors if motor["diameter_mm"] < hub_diameter * 1000]
+                self.geometry["motor"]["no_of_motors_diameter"] = len(motors)
+
+                print(
+                    f"Number of motors satisfying criteria: {utils.Colours.GREEN}{len(motors)}"
+                    f"{utils.Colours.END}"
+                )   
 
     def calculate_off_design(self):
         """Calculates the off-design performance characterstics of each stage."""
@@ -800,7 +829,7 @@ class Engine:
             "altitude": self.scenario.altitude,
             "flight_speed": self.scenario.flight_speed,
             "diameter": self.scenario.diameter,
-            "hub_tip_ratio": self.scenario.hub_tip_ratio,
+            "hub_tip_ratio": self.hub_tip_ratio,
             "thrust": self.scenario.thrust,
 
             # export dimensionless inputs
@@ -1058,6 +1087,7 @@ class Engine:
                 ha = "left", va = "center"
             )
 
+        # show plot
         plt.show()
 
     def plot_spanwise(self, quantities = utils.Defaults.quantity_list):
@@ -1071,15 +1101,9 @@ class Engine:
             # create plot with an axis for each blade row inlet and exit and reshape axes
             fig, axes = plt.subplots(ncols = len(self.blade_rows) + 2, figsize = (14, 6))
 
-            # plot initial guess of nozzle - temp code
-            """span = (
-                (self.nozzle.exit.rr_j_initial - self.nozzle.exit.rr_j_initial[0])
-                / (self.nozzle.exit.rr_j_initial[-1] - self.nozzle.exit.rr_j_initial[0])
-            )"""
-
             # assign values for capturing appropriate axis limits
-            x_min = 1e12
-            x_max = -1e12
+            x_min = 1e6
+            x_max = -1e6
 
             # loop over all quuantity-label pairs
             for quantity_label in quantity_labels:
@@ -1097,6 +1121,7 @@ class Engine:
                 # check if blade row has quantity stored
                 if hasattr(self.blade_rows[0].inlet, quantity):
 
+                    # get attribute and convert to degrees if necessary
                     x = getattr(self.blade_rows[0].inlet, quantity)
                     value = x.value if hasattr(x, "value") else x
                     value = utils.rad_to_deg(value) if "°" in label else value
@@ -1106,7 +1131,7 @@ class Engine:
                         (self.blade_rows[0].inlet.rr - self.blade_rows[0].inlet.rr[0])
                         / (self.blade_rows[0].inlet.rr[-1] - self.blade_rows[0].inlet.rr[0])
                     )
-                    axes[0].plot(value, span, alpha = 0.5, linewidth = 3, color = colour)
+                    axes[0].plot(value, span, linewidth = 2, color = colour)
 
                     # update x-axis limits
                     x_min = min(x_min, *value)
@@ -1128,14 +1153,14 @@ class Engine:
                             (blade_row.exit.rr - blade_row.exit.rr[0])
                             / (blade_row.exit.rr[-1] - blade_row.exit.rr[0])
                         )
-                        ax.plot(value, span, alpha = 0.5, linewidth = 3, color = colour)
+                        ax.plot(value, span, linewidth = 2, color = colour)
 
                         # update x-axis limits
                         x_min = min(x_min, *value)
                         x_max = max(x_max, *value)
 
             # loop over all axes in the figure
-            for ax in axes:
+            for index, ax in enumerate(axes):
 
                 # set axis x- and y-limits
                 ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
@@ -1144,6 +1169,22 @@ class Engine:
                 # set grid and maximum number pf x-ticks
                 ax.grid()
                 ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
+
+                # odd indices
+                if index % 2 == 1:
+
+                    # set title for rotor plot
+                    ax.set_title(f"Rotor {(index + 1) / 2:.0f}")
+
+                # even indicees
+                else:
+
+                    # set title for stator plot
+                    ax.set_title(f"Stator {index / 2:.0f}")
+
+            # set inlet and nozzle titles
+            axes[0].set_title("Inlet")
+            axes[-1].set_title("Nozzle")
 
             # set y-label and tight layout
             axes[0].set_ylabel('Dimensionless span')
@@ -1198,7 +1239,7 @@ class Engine:
             )
 
         # store nozzle exit values
-        xx[-1] = xx[-2] + 2 * self.scenario.hub_tip_ratio
+        xx[-1] = xx[-2] + 2 * self.hub_tip_ratio
         yy[:, -1] = self.nozzle.exit.rr
 
         for x in xx:
@@ -1446,600 +1487,6 @@ class Engine:
         plt.show()
 
 # obsolete functions
-    
-    def old_design(self):
-        """Determines appropriate values for blade metal angles for the given requirements."""
-        # iterate over all stages
-        print(f"\nself.M_1: {self.M_1}")
-        for index, stage in enumerate(self.stages):
-
-            # handle all other stages
-            if index != 0:
-
-                # set stage inlet to previous stage exit conditions
-                stage.rotor.inlet = copy.deepcopy(self.stages[index - 1].blade_rows[1].exit)
-
-            # define rotor blade geometry
-            t1 = timer()
-            stage.rotor.design(stage.phi, stage.psi, self.vortex_exponent)
-            t2 = timer()
-            utils.debug(f"Rotor design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-            # stator inlet conditions are rotor exit conditions
-            stage.stator.inlet = copy.deepcopy(stage.rotor.exit)
-
-            # define stator blade geometry
-            t1 = timer()
-            stage.stator.design()
-            t2 = timer()
-            utils.debug(f"Stator design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-        # nozzle inlet conditions are final stator exit conditions
-        self.nozzle.inlet = copy.deepcopy(self.blade_rows[-1].exit)
-
-        # design nozzle to match atmospheric pressure in jet periphery
-        self.p_atm = utils.stagnation_pressure_ratio(self.M_flight)
-        t1 = timer()
-        self.nozzle.design(self.p_atm)
-        t2 = timer()
-        utils.debug(f"Nozzle design duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-        # evaluate engine performance
-        t1 = timer()
-        self.evaluate()
-        t2 = timer()
-        utils.debug(f"Engine evaluation duration: {utils.Colours.GREEN}{t2 - t1:.3g}s{utils.Colours.END}")
-
-    def old_velocity_triangles(self):
-        """Function to plot the velocity triangles and pressure and temperature distributions."""
-        # determine factor to scale Mach triangles by
-        scaling = 1 / (4 * self.M_1)
-
-        # coordinates for a brace
-        verts = [
-            (-0.15, -0.30),
-            (-0.05, -0.30),
-            (-0.05, -0.125),
-            (-0.05, 0.00),
-            (0.00, 0.00),
-            (-0.05, 0.00),
-            (-0.05, 0.125),
-            (-0.05, 0.30),
-            (-0.15, 0.30)
-        ]
-
-        codes = [
-            Path.MOVETO,
-            Path.CURVE3,
-            Path.CURVE3,
-            Path.CURVE3,
-            Path.CURVE3,
-            Path.CURVE3,
-            Path.CURVE3,
-            Path.CURVE3,
-            Path.CURVE3
-        ]
-
-        # labels for plotting
-        labels = ["MID-SPAN"]
-
-        # initialise array of spanwise position indices to plot
-        spanwise_positions = [0]
-
-        # if more than 2 streamtubes exist
-        if len(self.blade_rows[0].inlet) > 2:
-
-            # plot central streamtube
-            spanwise_positions.append(int(np.floor(len(self.blade_rows[0].inlet) / 2)))
-            labels = ["HUB"] + labels
-
-        # if more than 1 streamtubes exist
-        if len(self.blade_rows[0].inlet) > 1:
-
-            # plot outer-most streamtube
-            spanwise_positions.append(-1)
-            labels.append("TIP")
-
-        # create plot for displaying velocity triangles
-        fig, ax = plt.subplots(figsize = (11, 6))
-
-        # set legend labels
-        ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
-        ax.plot([], [], color = 'C4', label = 'Relative Mach number')
-        ax.plot([], [], color = 'C3', label = 'Blade Mach number')
-
-        # configure plot
-        ax.set_aspect('equal')
-        ax.legend()
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-        # set axis limits
-        ax.set_xlim(-0.4, len(self.blade_rows) + 0.7)
-        ax.set_ylim(-0.7, len(spanwise_positions) - 0.2)
-
-        # set title
-        ax.text(
-            0.5, 1.02,
-            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
-            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.vortex_exponent:.3g}",
-            transform = ax.transAxes,
-            ha = 'center',
-            va = 'bottom',
-            fontsize = 12
-        )
-
-        # tight layout
-        plt.tight_layout()
-
-        # save figure
-        directory = "figures"
-        filename = f"{inspect.currentframe().f_code.co_name}"
-        path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
-
-        # iterate over all inlet and exit streamtubes chosen for plotting
-        for j, k in enumerate(spanwise_positions):
-                
-            # iterate over all blade rows
-            for index, blade_row in enumerate(self.blade_rows):
-
-                # plot blade row at chosen spanwise positions
-                blade_row.plot_blade_row(ax, index, j, k, scaling)
-
-                # add brace to plot
-                dx = 2 * len(self.stages)
-                dy = j - 0.1
-                brace = patches.PathPatch(
-                    Path([(x + dx, y + dy) for x, y in verts], codes),
-                    fill = False, linewidth = 1
-                )
-                ax.add_patch(brace)
-                ax.text(
-                    dx + 0.15, dy,
-                    f"{labels[j]}",
-                    ha = "left", va = "center"
-                )
-
-            # save figure
-            directory = "figures"
-            filename = f"{inspect.currentframe().f_code.co_name}_{j}"
-            path = os.path.join(directory, filename)
-            plt.savefig(path, dpi = 300)
-
-    def old_contours(self):
-        """Creates a plot of a section view of the engine with contours of a specified quantity."""
-        # plotting parameters
-        alpha = 0.5
-        rotor_tip_span = 0.98
-
-        # create a plot
-        fig, ax = plt.subplots(figsize = (11, 6))
-
-        # add axis labels
-        ax.set_xlabel('x-axis')
-        ax.set_ylabel('Dimensionless radius')
-
-        # remove x-ticks
-        ax.set_xticks([])
-
-        # set axis limits and aspect ratio
-        margin = 0.1
-        ax.set_xlim(-margin, len(self.blade_rows) + 0.5 + margin)
-        ax.set_ylim(-margin, 1 + margin)
-        ax.set_aspect('equal')
-
-        # set title
-        ax.text(
-            0.5, 1.02,
-            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
-            f"$ \\phi $ = {self.stages[0].phi:.3g}, $ \\psi $ = {self.stages[0].psi:.3g}, n = {self.vortex_exponent:.3g}",
-            transform = ax.transAxes,
-            ha = 'center',
-            va = 'bottom',
-            fontsize = 12
-        )
-
-        # tight layout
-        plt.tight_layout()
-
-        # save figure
-        directory = "figures"
-        filename = f"{inspect.currentframe().f_code.co_name}"
-        path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
-
-        # initialise fine array of x-values
-        xx = np.linspace(0, len(self.blade_rows) - 0.5, 200)
-        yy = np.linspace(xx[-1], xx[-1] + 1, 50)
-
-        # create spline for upper boundary of outer streamtube
-        spline = make_interp_spline(
-            [-1e-3] + [
-                x for blade_row in self.blade_rows 
-                for x in (blade_row.x_inlet, blade_row.x_exit)
-            ] + [xx[-1] + 1e-3],
-            [self.blade_rows[0].inlet[-1].r + self.blade_rows[0].inlet[-1].dr] + [
-                r for blade_row in self.blade_rows for r in (
-                    blade_row.inlet[-1].r + blade_row.inlet[-1].dr,
-                    blade_row.exit[-1].r + blade_row.exit[-1].dr
-                )
-            ] + [self.blade_rows[-1].exit[-1].r + self.blade_rows[-1].exit[-1].dr],
-            k = min(3, len(self.blade_rows))
-        )
-
-        # iterate over all stages
-        for stage in self.stages:
-
-            # store rotor and stator locally for convenience
-            rotor = stage.blade_rows[0]
-            stator = stage.blade_rows[1]
-
-            # get list of rotor hub and tip x-coordinates
-            x_hub = np.linspace(
-                rotor.x - 0.25 * min(rotor.exit[0].c, 1),
-                rotor.x + 0.25 * min(rotor.exit[0].c, 1), 100
-            )
-            x_tip = np.linspace(
-                rotor.x - 0.25 * min(rotor.exit[-1].c, 1),
-                rotor.x + 0.25 * min(rotor.exit[-1].c, 1), 100
-            )
-
-            # create array of rotor vertex positions
-            vertices = np.column_stack([
-                np.concatenate([x_tip, x_hub[::-1]]),
-                np.concatenate([rotor_tip_span * spline(x_tip), np.full_like(x_hub, rotor.r_hub)])
-            ])
-
-            # create rotor polygon and add
-            polygon = Polygon(
-                vertices, closed = True,
-                facecolor = (0.8392, 0.1529, 0.1569, alpha),
-                edgecolor = (0.8392, 0.1529, 0.1569),
-                linewidth = 2
-            )
-            ax.add_patch(polygon)
-
-            # draw x-shape over rotor
-            ax.plot([x_hub[0], x_tip[-1]], [rotor.r_hub, rotor_tip_span * spline(x_tip[-1])], color = 'C3')
-            ax.plot([x_tip[0], x_hub[-1]], [rotor_tip_span * spline(x_tip[0]), rotor.r_hub], color = 'C3')
-
-            # get list of stator hub and tip x-coordinates
-            x_hub = np.linspace(
-                stator.x - 0.25 * min(stator.exit[0].c, 1),
-                stator.x + 0.25 * min(stator.exit[0].c, 1), 100
-            )
-            x_tip = np.linspace(
-                stator.x - 0.25 * min(stator.exit[-1].c, 1),
-                stator.x + 0.25 * min(stator.exit[-1].c, 1), 100
-            )
-
-            # create array of stator vertex positions
-            vertices = np.column_stack([
-                np.concatenate([x_tip, x_hub[::-1]]),
-                np.concatenate([spline(x_tip), np.full_like(x_hub, rotor.r_hub)])
-            ])
-
-            # create stator polygon and add
-            polygon = Polygon(
-                vertices, closed = True,
-                facecolor = (0.1216, 0.4667, 0.7059, alpha),
-                edgecolor = (0.1216, 0.4667, 0.7059),
-                linewidth = 2
-            )
-            ax.add_patch(polygon)
-
-            # draw x-shape over stator
-            ax.plot([x_hub[0], x_tip[-1]], [stator.r_hub, spline(x_tip[-1])], color = 'C0')
-            ax.plot([x_tip[0], x_hub[-1]], [spline(x_tip[0]), stator.r_hub], color = 'C0')
-
-            # annotate rotor rows
-            ax.annotate(
-                "ROTOR",
-                xy = (0, 0),
-                xytext = ((rotor.x_inlet + rotor.x_exit) / 2, 3 * utils.Defaults.hub_tip_ratio / 4),
-                color = 'C3', fontsize = 12, ha = 'center', va = 'center'
-            )
-
-            # annotate stator rows
-            ax.annotate(
-                "STATOR",
-                xy = (0, 0),
-                xytext = ((stator.x_inlet + stator.x_exit) / 2, 3 * utils.Defaults.hub_tip_ratio / 4),
-                color = 'C0', fontsize = 12, ha = 'center', va = 'center'
-            )
-
-        # plot spline
-        ax.plot(xx, spline(xx), color = 'k')
-
-        # plot upper bound datapoints as dots
-        ax.plot(
-            [
-                x for blade_row in self.blade_rows 
-                for x in (blade_row.x_inlet, blade_row.x_exit)
-            ] + [self.nozzle.x_exit],
-            [
-                r for blade_row in self.blade_rows for r in (
-                    blade_row.inlet[-1].r + blade_row.inlet[-1].dr,
-                    blade_row.exit[-1].r + blade_row.exit[-1].dr
-                )
-            ] + [self.nozzle.exit[-1].r + self.nozzle.exit[-1].dr],
-            linestyle = '', marker = '.', color = 'k'
-        )
-
-        # create spline for upper bound of nozzle
-        spline = make_interp_spline(
-            [
-                xx[-1] - 1e-3, self.nozzle.x_inlet,
-                self.nozzle.x_exit, self.nozzle.x_exit + 1e-3
-            ],
-            [
-                self.nozzle.inlet[-1].r + self.nozzle.inlet[-1].dr,
-                self.nozzle.inlet[-1].r + self.nozzle.inlet[-1].dr,
-                self.nozzle.exit[-1].r + self.nozzle.exit[-1].dr,
-                self.nozzle.exit[-1].r + self.nozzle.exit[-1].dr
-            ],
-            k = 3
-        )
-
-        # plot spline
-        ax.plot(yy, spline(yy), color = 'k')
-        
-        # iterate over all radial positions, apart from outer streamtube
-        for index in range(len(self.blade_rows[0].inlet)):
-
-            # create spline for lower bound of streamtube
-            spline = make_interp_spline(
-                [-1e-3] + [
-                    x for blade_row in self.blade_rows 
-                    for x in (blade_row.x_inlet, blade_row.x_exit)
-                ] + [xx[-1] + 1e-3],
-                [self.blade_rows[0].inlet[index].r - self.blade_rows[0].inlet[index].dr] + [
-                    r for blade_row in self.blade_rows for r in (
-                        blade_row.inlet[index].r - blade_row.inlet[index].dr,
-                        blade_row.exit[index].r - blade_row.exit[index].dr
-                    )
-                ] + [self.blade_rows[-1].exit[index].r - self.blade_rows[-1].exit[index].dr],
-                k = min(3, len(self.blade_rows))
-            )
-
-            # plot spline
-            ax.plot(xx, spline(xx), color = 'k')
-
-            # plot lower bound datapoints as dots
-            ax.plot(
-                [
-                    x for blade_row in self.blade_rows 
-                    for x in (blade_row.x_inlet, blade_row.x_exit)
-                ] + [self.nozzle.x_exit],
-                [
-                    r for blade_row in self.blade_rows for r in (
-                        blade_row.inlet[index].r - blade_row.inlet[index].dr,
-                        blade_row.exit[index].r - blade_row.exit[index].dr
-                    )
-                ] + [self.nozzle.exit[index].r - self.nozzle.exit[index].dr],
-                linestyle = '', marker = '.', color = 'k'
-            )
-
-            # create spline for lower bound of nozzle
-            spline = make_interp_spline(
-                [
-                    xx[-1] - 1e-3, self.nozzle.x_inlet,
-                    self.nozzle.x_exit, self.nozzle.x_exit + 1e-3
-                ],
-                [
-                    self.nozzle.inlet[index].r - self.nozzle.inlet[index].dr,
-                    self.nozzle.inlet[index].r - self.nozzle.inlet[index].dr,
-                    self.nozzle.exit[index].r - self.nozzle.exit[index].dr,
-                    self.nozzle.exit[index].r - self.nozzle.exit[index].dr
-                ],
-                k = 3
-            )
-
-            # plot spline
-            ax.plot(yy, spline(yy), color = 'k')
-
-            # save figure with lower bound of hub streamtube plotted only
-            if index == 0:
-
-                # save figure
-                directory = "figures"
-                filename = f"{inspect.currentframe().f_code.co_name}_0"
-                path = os.path.join(directory, filename)
-                plt.savefig(path, dpi = 300)
-
-                # draw centreline
-                ax.axhline(y = 0, linestyle = '--', color = 'k')
-                ax.text(
-                    x = len(self.stages) + 0.25, y = 0.03, s = "Centreline",
-                    ha = 'center', va = 'center'
-                )
-
-                # save figure
-                directory = "figures"
-                filename = f"{inspect.currentframe().f_code.co_name}_1"
-                path = os.path.join(directory, filename)
-                plt.savefig(path, dpi = 300)
-
-                # draw inlet plane
-                ax.axvline(x = 0, linestyle = '--', color = 'C1')
-                ax.text(
-                    x = 0.03, y = self.blade_rows[0].r_hub / 4,
-                    s = "Compressor inlet plane", color = 'C1',
-                    ha = 'left', va = 'center'
-                )
-
-                # save figure
-                directory = "figures"
-                filename = f"{inspect.currentframe().f_code.co_name}_2"
-                path = os.path.join(directory, filename)
-                plt.savefig(path, dpi = 300)
-
-                # draw exit plane
-                ax.axvline(x = len(self.blade_rows) + 0.5, linestyle = '--', color = 'C1')
-                ax.text(
-                    x = len(self.blade_rows) + 0.5 - 0.03, y = 1,
-                    s = "Nozzle exit plane", color = 'C1',
-                    ha = 'right', va = 'center'
-                )
-
-                # save figure
-                directory = "figures"
-                filename = f"{inspect.currentframe().f_code.co_name}_3"
-                path = os.path.join(directory, filename)
-                plt.savefig(path, dpi = 300)
-
-        # save figure
-        directory = "figures"
-        filename = f"{inspect.currentframe().f_code.co_name}_4"
-        path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
-
-    def old_spanwise_variations(self, quantity_list = utils.Defaults.quantity_list):
-        """Creates a plot of the spanwise variations of a specified quantity for each blade row."""
-        # loop over all list entries
-        for quantities in quantity_list:
-
-            # separate input list into pairs of values
-            q_label_bools = [quantities[i:i + 3] for i in range(0, len(quantities), 3)]
-
-            # helper function to retrieve values from appropriate place and with correct units
-            def get_attribute(in_out, q, label, bool):
-                """Retrieves an attribute, handling cases where no attribute exists."""
-                # when value to be retrieved is a flow value
-                if bool:
-
-                    # return False if value does not exist
-                    if not hasattr(in_out.flow_state, q):
-
-                        return False
-
-                    # read attribute
-                    x = getattr(in_out.flow_state, q)
-
-                # when value to be retrieved is not a flow value
-                else:
-
-                    # return False if value does not exist
-                    if not hasattr(in_out, q):
-
-                        return False
-
-                    # read attribute
-                    x = getattr(in_out, q)
-
-                # if attribute is an angle
-                if "angle" in label or "Angle" in label:
-
-                    # convert to degrees and return
-                    return utils.rad_to_deg(x)
-                
-                # for all other attributes
-                else:
-
-                    # return as is
-                    return x
-
-            # create plot with an axis for each blade row inlet and exit and reshape axes
-            fig, axes = plt.subplots(ncols = 2 * len(self.blade_rows) + 2, figsize = (15, 7))
-            axes = np.reshape(axes, (len(self.blade_rows) + 1, 2))
-
-            # assign values for capturing appropriate axis limits
-            x_min = 1e12
-            x_max = -1e12
-            
-            # iterate over all pairs of quantity and label
-            for i, q_label_bool in enumerate(q_label_bools):
-
-                # separate into quantity, label and boolean value for convenience
-                q = q_label_bool[0]
-                label = q_label_bool[1]
-                bool = q_label_bool[2]
-
-                # set colour
-                colour = next(self.colour_cycle)
-
-                # set legend entry in final axis
-                axes[-1][1].plot([], [], color = colour, label = label)
-
-                # iterate over all axes:
-                for ax, blade_row in zip(axes, self.blade_rows + [self.nozzle]):
-
-                    # proceed with inlet and outlet successively
-                    for index, inlet_outlet in enumerate([blade_row.inlet, blade_row.exit]):
-
-                        # create array of radius values
-                        rr = np.linspace(
-                            inlet_outlet[0].r - inlet_outlet[0].dr, 
-                            inlet_outlet[-1].r + inlet_outlet[-1].dr,
-                            100
-                        )
-                        span = (rr - rr[0]) / (rr[-1] - rr[0])
-
-                        # store array of attributes separately for convenience
-                        qq = [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
-
-                        # if attribute is None, skip block of code
-                        if False in qq or None in qq:
-
-                            continue
-
-                        # handle case where only one inlet/exit datapoint is available
-                        if len(blade_row.inlet) == 1:
-
-                            # plot a constant value everywhere
-                            ax[index].plot(rr, np.full_like(rr, [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]))
-
-                        # if more than one inlet/exit datapoint exists, fit spline
-                        else:
-
-                            # fit spline and store corresponding outputs
-                            spline = make_interp_spline(
-                                [in_out.r for in_out in inlet_outlet],
-                                [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
-                                k = min(2, len(blade_row.inlet) - 1)
-                            )
-
-                            # plot spline
-                            ax[index].plot(spline(rr), span, alpha = 0.5, linewidth = 3, color = colour)
-
-                            # plot inlet conditions
-                            ax[index].plot(
-                                [get_attribute(in_out, q, label, bool) for in_out in inlet_outlet],
-                                (np.array([in_out.r for in_out in inlet_outlet]) - rr[0])
-                                / (rr[-1] - rr[0]),
-                                linestyle = '', marker = '.', markersize = 8, color = colour
-                            )
-
-                        # update x-axis limits
-                        x_min = min(
-                            x_min, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
-                        )
-                        x_max = max(
-                            x_max, *[get_attribute(in_out, q, label, bool) for in_out in inlet_outlet]
-                        )
-
-            # flatten axes and iterate
-            axes = axes.ravel()
-            for ax in axes:
-
-                # set axis x- and y-limits
-                ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
-                ax.set_ylim(0, 1)
-
-                # set grid and maximum number pf x-ticks
-                ax.grid()
-                ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
-
-            # set y-label and tight layout
-            axes[0].set_ylabel('Dimensionless span')
-            plt.tight_layout()
-
-            # set x-label
-            plt.subplots_adjust(bottom = 0.16)
-
-            # create legend
-            ax.legend(loc='center', bbox_to_anchor=(0.5, 0.05), bbox_transform=fig.transFigure)
 
     def analyse(self):
         """Analyses the entire engine system."""
