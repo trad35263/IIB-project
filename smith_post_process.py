@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io
 from scipy.interpolate import griddata
+import mat73
 
 # import high speed solver modules
 from engine import Engine
@@ -20,7 +21,8 @@ class Post:
 	def __init__(self):
 		"""Creates an instance of the Post class."""
 		# read post-processing .mat object
-		self.data = scipy.io.loadmat("../trad3-multistage-fans/CFD_data.mat")
+		#self.data = scipy.io.loadmat("CFD_data.mat")
+		self.data = mat73.loadmat("CFD_data.mat")
 		print(f"self.data: {self.data}")
 
 	def calculate_thrust(self):

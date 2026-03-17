@@ -173,7 +173,7 @@ def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
 
 # 0.4 upload NACA aerofoil for visualisation purposes
 
-filename = 'naca0009.txt'
+"""filename = 'naca0009.txt'
 data = np.loadtxt(
     filename,
     skiprows = 1
@@ -184,7 +184,7 @@ y = np.array(z[:-1, 1])[::-1]
 spline = make_interp_spline(x, y, k = 2)
 x_fine = np.linspace(x.min(), x.max(), 10000)
 y_fine = spline(x_fine)
-aerofoil_data = np.array([x_fine, y_fine])
+aerofoil_data = np.array([x_fine, y_fine])"""
 
 # 0.5 define Colours class
 
