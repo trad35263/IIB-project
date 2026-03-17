@@ -22,7 +22,7 @@ class Post:
 		"""Creates an instance of the Post class."""
 		# read post-processing .mat object
 		#self.data = scipy.io.loadmat("CFD_data.mat")
-		self.data = mat73.loadmat("CFD_data.mat")
+		self.data = mat73.loadmat("CFD_data.mat")["post"]
 		print(f"self.data: {self.data}")
 
 	def calculate_thrust(self):
@@ -32,11 +32,12 @@ class Post:
 
 			# create Flight_scenario object
 			scenario = Flight_scenario(
-				self.data["metadata"]["altitude"],
-				self.data["metadata"]["flight_speed"],
-				self.data["metadata"]["diameter"],
-				self.data["metadata"]["hub_tip_ratio"],
-				self.data["metadata"]["thrust"],
+				"",
+				self.data["metadata"][index]["altitude"],
+				self.data["metadata"][index]["flight_speed"],
+				self.data["metadata"][index]["diameter"],
+				self.data["metadata"][index]["hub_tip_ratio"],
+				self.data["metadata"][index]["thrust"],
 			)
 
 			# create engine
@@ -44,23 +45,29 @@ class Post:
 				scenario, self.data["metadata"][index]["no_of_stages"], self.data["phi"][index],
 				self.data["psi"][index], self.data["metadata"][index]["vortex_exponent"],
 				self.data["metadata"][index]["pressure_loss_coefficient"],
-				self.data["metadata"][index]["area_ratio"]
+				self.data["metadata"][index]["blade_row_area_ratio"],
+				self.data["metadata"][index]["inlet_mach_number"]
 			)
 
 			# store compressor exit properties at nozzle inlet
 			engine.nozzle.inlet.M = self.data["M"][index]
 			engine.nozzle.inlet.alpha = self.data["alpha"][index]
-			engine.nozzle.inlet.T_0 = self.data["T_0"][index] / self.data["metadata"]["T_0"]
-			engine.nozzle.inlet.p_0 = self.data["p_0"][index] / self.data["metadata"]["p_0"]
+			engine.nozzle.inlet.T_0 = self.data["T_0"][index] / self.data["metadata"][index]["T_0"]
+			engine.nozzle.inlet.p_0 = self.data["p_0"][index] / self.data["metadata"][index]["p_0"]
 
 			# calculate variation of radial positions from span
 			engine.nozzle.inlet.span = (
-				self.data["span"][index] * (1 - self.data["metadata"]["hub_tip_ratio"])
-				+ self.data["metadata"]["hub_tip_ratio"]
+				self.data["span"][index] * (1 - self.data["metadata"][index]["hub_tip_ratio"])
+				+ self.data["metadata"][index]["hub_tip_ratio"]
 			)
 
+			# delete list of blade rows attribute from engine
+			#delattr(engine, "blade_rows")
+			engine.blade_rows = []
+			engine.stages = []
+
 			# calculate nozzle exit conditions
-			engine.nozzle.design()
+			engine.design()
 
 			# set engine inlet conditions
 			engine.blade_rows[0].set_inlet_conditions(

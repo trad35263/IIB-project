@@ -206,10 +206,17 @@ class Engine:
         # root-finding function
         def solve_thrust(M_1):
             """Returns the thrust residual of the engine for a given inlet Mach number."""
-            # store inlet Mach number and set at rotor inlet
+            # store inlet Mach number
             self.M_1 = M_1
             self.M_1_guesses.append(self.M_1)
-            self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
+
+            # engine has at least one blade row
+            if len(self.blade_rows) > 0:
+
+            	# set inlet conditions at first rotor inlet
+            	self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
+
+            # store mass flow rate
             self.m_dot = utils.mass_flow_function(self.M_1)
             utils.debug(f"self.M_1: {self.M_1}")
 
