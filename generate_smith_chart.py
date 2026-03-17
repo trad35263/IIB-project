@@ -23,8 +23,8 @@ class Inputs:
     thrust = 30
     
     # variables to loop over
-    stages = [2]
-    phis = np.linspace(0.4, 1.0, 4)
+    stages = [1]
+    phis = np.linspace(0.5, 0.9, 3)
     psis = np.linspace(0.1, 0.3, 3)
 
     # inlet Mach number
@@ -64,6 +64,7 @@ def create_engine(
     engine = Engine(
         flight_scenario, no_of_stages, phi, psi, vortex_exponent, Y_p, area_ratio, M_1
     )
+    engine.design()
 
     # end timer
     t2 = timer()
@@ -163,6 +164,8 @@ def export_engine():
     Inputs.engines.append(engine)
 
     for blade_row in engine.blade_rows:
+
+        print(f"blade_row.no_of_blades: {blade_row.no_of_blades}")
 
         if blade_row.no_of_blades > Inputs.max_no_of_blades:
 
