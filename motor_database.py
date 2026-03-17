@@ -54,14 +54,11 @@ class Database:
     
     def __str__(self):
         """Prints a representation of the class."""
-        # create empty string to return
-        string = ""
-
         # print database reading duration
-        string += f"Motor database data read in {Colours.GREEN}{self.time:.4g}{Colours.END} s."
+        string = f"Motor database data read in {Colours.GREEN}{self.time:.4g}{Colours.END} s!\n"
 
         # print number of motors
-        string += f"Database contains {Colours.GREEN}{len(self.motors)}{Colours.END} motors!\n"
+        string += f"Database contains {Colours.GREEN}{len(self.motors)}{Colours.END} motors.\n"
 
         # print keys of first motor
         string += f"Available motor keys:\n{[key for key, value in self.motors[0].items()]}\n"

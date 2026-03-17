@@ -188,15 +188,16 @@ class MainFrame(wx.Frame):
         self.off_design = DataContainer("off_design", "Off-design", self.panel)
         data_containers = [
             self.scenario, self.engine,
-            self.geometry, self.thickness,
-            self.motor, self.off_design
+            self.geometry, self.off_design, self.thickness,
+            self.motor
         ]
 
         # set parent and child attributes
         parent = None
+        self.geometry.column_is_parent = True
+        self.off_design.column_is_child = True
         self.thickness.column_is_parent = True
         self.motor.column_is_child = True
-        self.off_design.column_is_child = True
 
         # loop for each kind of data container
         for data in data_containers:
@@ -240,9 +241,6 @@ class MainFrame(wx.Frame):
         # create export button and bind to event function
         self.export_button = wx.Button(self.panel, label = "Export Engine")
         self.export_button.Bind(wx.EVT_BUTTON, self.export_engine)
-        
-        # add stretch spacer to geometry column (after off_design is added)
-        #self.geometry.column.AddStretchSpacer()
 
         # toggle slider at the bottom of the scenario column
         self.toggle_slider = wx.Slider(
@@ -270,11 +268,9 @@ class MainFrame(wx.Frame):
         self.scenario.column.Add(self.export_button, 0, wx.ALL | wx.EXPAND, 8)
         
         # refresh grids
-        self.scenario.refresh_grid()
-        self.engine.refresh_grid()
-        self.geometry.refresh_grid()
-        self.off_design.refresh_grid()
-        self.thickness.refresh_grid()
+        for data in data_containers:
+
+            data.refresh_grid()
 
         # create root 
         root = wx.BoxSizer(wx.HORIZONTAL)
@@ -542,10 +538,16 @@ class MainFrame(wx.Frame):
         # close dialog box
         dialog.Destroy()
 
-        # update engine extra grid for number of blade rows
+        # reset output grid labels to default values
         self.engine.labels[-1] = copy.deepcopy(utils.Labels.engine_extra_labels)
+        self.geometry.labels[1] = copy.deepcopy(utils.Labels.geometry_output_labels)
+        self.thickness.labels[1] = copy.deepcopy(utils.Labels.thickness_output_labels)
+        self.motor.labels[1] = copy.deepcopy(utils.Labels.motor_output_labels)
+
+        # loop over all stages
         for index, stage in enumerate(self.engine.source.stages):
 
+            # update labels in engine extra grid
             self.engine.labels[-1].append(
                 [f"Rotor {index + 1} rpm", f"rotor_{index + 1}_rpm"]
             )
@@ -553,10 +555,7 @@ class MainFrame(wx.Frame):
                 [f"Rotor {index + 1} power (W)", f"rotor_{index + 1}_power"]
             )
 
-        # update geometry output grid for number of blade rows
-        self.geometry.labels[1] = copy.deepcopy(utils.Labels.geometry_output_labels)
-        for index, stage in enumerate(self.engine.source.stages):
-
+            # update labels in geometry output grid
             self.geometry.labels[1].append(
                 [f"Rotor {index + 1} blades", f"rotor_{index + 1}_no_of_blades"]
             )
@@ -570,10 +569,7 @@ class MainFrame(wx.Frame):
                 [f"Stator {index + 1} chord (mm)", f"stator_{index + 1}_chord"]
             )
 
-        # update thickness output grid for number of blade rows
-        self.thickness.labels[1] = copy.deepcopy(utils.Labels.thickness_output_labels)
-        for index, stage in enumerate(self.engine.source.stages):
-
+            # update labels in thickness output grid
             self.thickness.labels[1].append(
                 [f"Rotor {index + 1} mass (kg)", f"rotor_{index + 1}_mass"]
             )
@@ -687,10 +683,16 @@ class MainFrame(wx.Frame):
                     f"phi_min: {off_design['phi_min']} | phi_max: {off_design['phi_max']}"
                 )
 
-        # update engine extra grid for number of blade rows
+        # reset output grid labels to default values
         self.engine.labels[-1] = copy.deepcopy(utils.Labels.engine_extra_labels)
+        self.geometry.labels[1] = copy.deepcopy(utils.Labels.geometry_output_labels)
+        self.thickness.labels[1] = copy.deepcopy(utils.Labels.thickness_output_labels)
+        self.motor.labels[1] = copy.deepcopy(utils.Labels.motor_output_labels)
+
+        # loop over all stages
         for index, stage in enumerate(self.engine.source.stages):
 
+            # update labels in engine extra grid
             self.engine.labels[-1].append(
                 [f"Rotor {index + 1} rpm", f"rotor_{index + 1}_rpm"]
             )
@@ -698,10 +700,7 @@ class MainFrame(wx.Frame):
                 [f"Rotor {index + 1} power (W)", f"rotor_{index + 1}_power"]
             )
 
-        # update geometry output grid for number of blade rows
-        self.geometry.labels[1] = copy.deepcopy(utils.Labels.geometry_output_labels)
-        for index, stage in enumerate(self.engine.source.stages):
-
+            # update labels in geometry output grid
             self.geometry.labels[1].append(
                 [f"Rotor {index + 1} blades", f"rotor_{index + 1}_no_of_blades"]
             )
@@ -715,17 +714,14 @@ class MainFrame(wx.Frame):
                 [f"Stator {index + 1} chord (mm)", f"stator_{index + 1}_chord"]
             )
 
-        # update thickness output grid for number of blade rows
-        self.thickness.labels[1] = copy.deepcopy(utils.Labels.thickness_output_labels)
-        for index, stage in enumerate(self.engine.source.stages):
-
+            # update labels in thickness output grid
             self.thickness.labels[1].append(
                 [f"Rotor {index + 1} mass (kg)", f"rotor_{index + 1}_mass"]
             )
             self.thickness.labels[1].append(
                 [f"Stator {index + 1} mass (kg)", f"stator_{index + 1}_mass"]
             )
-        
+
         # refresh all grids
         self.panel.Freeze()
         self.engine.refresh_grid()
@@ -967,6 +963,13 @@ class MainFrame(wx.Frame):
             # do nothing
             return
         
+        # change default values for motor power, rpm and diameter to match current case
+        utils.Defaults.motor_power = round(self.engine.source.blade_rows[0].motor_power)
+        utils.Defaults.motor_rpm = round(self.engine.source.blade_rows[0].motor_rpm)
+        utils.Defaults.motor_diameter = (
+            self.engine.source.scenario.radius * self.engine.source.hub_tip_ratio
+        )
+        
         # create dialog box
         dialog = DialogBox(self, "Select Motor", self.motor.input_labels)
         
@@ -977,11 +980,15 @@ class MainFrame(wx.Frame):
             try:
 
                 # create and store new object
-
-                #max_thickness = float(dialog.arguments[0].GetValue())
-                #thickness_fraction = float(dialog.arguments[1].GetValue())
-
+                motor_power = float(dialog.arguments[0].GetValue())
+                motor_rpm = float(dialog.arguments[1].GetValue())
+                motor_diameter = float(dialog.arguments[2].GetValue())
+                cable_diameter = float(dialog.arguments[3].GetValue())
                 self.motor.source = {
+                    "motor_power": motor_power,
+                    "motor_rpm": motor_rpm,
+                    "motor_diameter": motor_diameter,
+                    "cable_diameter": cable_diameter
                 }
                 self.geometry.source["motor"] = self.motor.source
                 self.geometry.source["motors"].append(self.motor.source)
@@ -990,7 +997,7 @@ class MainFrame(wx.Frame):
                 # add new entry to dropdown
                 self.motor.dropdown.Append(
                     f"[{len(self.geometry.source['motors']) - 1}]        "
-                    #f"t_max: {max_thickness} mm | t_min / t_max: {thickness_fraction}"
+                    f"Power: {motor_power} W | RPM: {motor_rpm}"
                 )
 
             # catch non-numeric inputs

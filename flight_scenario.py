@@ -47,9 +47,10 @@ class Flight_scenario:
         self.rho = self.atmosphere.density[0]
         self.a = self.atmosphere.speed_of_sound[0]
 
-        # calculate derived non-dimensional quantities
+        # calculate derived quantities
+        self.radius = self.diameter / 2
+        self.A = np.pi * self.radius**2 * (1 - self.hub_tip_ratio**2)
         self.M = self.flight_speed / self.a
-        self.A = np.pi * (self.diameter / 2)**2 * (1 - self.hub_tip_ratio**2)
         self.T_0 = self.T / utils.stagnation_temperature_ratio(self.M)
         self.p_0 = self.p / utils.stagnation_pressure_ratio(self.M)
         self.C_th = self.thrust / (self.A * self.p_0)

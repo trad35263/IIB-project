@@ -11,6 +11,7 @@ c_p = 1005
 R = 287
 
 rho_aluminium = 2700
+resistivity_copper = 1.68e-8
 
 # 0.2 define Defaults class
 
@@ -19,18 +20,18 @@ class Defaults:
     # default dimensional values
     altitude = 0
     flight_speed = 170
-    thrust = 50
+    thrust = 1
 
     # default flight scenario parameters
     label = ""
     diameter = 0.2
     hub_tip_ratio = 0.3
     flight_scenarios = {
+        "Default": ["Default", altitude, flight_speed, diameter, hub_tip_ratio, thrust],
         "High speed": ["High speed", 0, 170, diameter, hub_tip_ratio, 100],
         "Take-off": ["Take-off", 0, 20, 0.14, 0.3571, 30],
         "Static": ["Static", 0, 0, 0.14, 0.3571, 50],
         "Cruise": ["Cruise", 3000, 40, 0.14, 0.3571, 20],
-        "Default": ["Default", altitude, flight_speed, diameter, hub_tip_ratio, thrust],
     }
 
     # default engine input parameters
@@ -55,6 +56,13 @@ class Defaults:
     # chord distribution limits
     max_chord_limit = 0.8
     chord_ratio_limit = 0.5
+
+    # default motor parameters
+    motor_power = 1000
+    motor_rpm = 10000
+    motor_diameter = 0.1
+    cable_diameter = 1
+    max_current_density = 5
 
     # default off_design parameters
     phi_min = 0.4
@@ -345,11 +353,23 @@ class Labels:
     thickness_output_labels = []
 
     # list of label-pairs required to make a motor object
-    motor_input_labels = []
+    motor_input_labels = [
+        ["Min. Power (W)", "motor_power"],
+        ["Min. RPM", "motor_rpm"],
+        ["Max. Diameter (m)", "motor_diameter"],
+        ["Cable Diameter (mm)", "cable_diameter"]
+    ]
     motor_output_labels = [
         ["No. of Motors (Power)", "no_of_motors_power"],
         ["No. of Motors (RPM)", "no_of_motors_rpm"],
-        ["No. of Motors (Diameter)", "no_of_motors_diameter"]
+        ["No. of Motors (Diameter)", "no_of_motors_diameter"],
+        ["Min. Motor Mass (g)", "motor_mass"],
+        ["No. of Variants", "no_of_variants"],
+        ["No. of Installable", "no_of_installable"],
+        ["Phase Voltage (V)", "phase_voltage"],
+        ["Phase Current (A)", "phase_current"],
+        ["Current Density (A/mm^2)", "current_density"],
+        ["Cable Voltage Drop (V/m)", "voltage_drop"]
     ]
 
     # list of label-pairs required to create an off_design object

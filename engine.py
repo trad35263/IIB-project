@@ -466,19 +466,19 @@ class Engine:
         self.nozzle_area_ratio = self.nozzle.area_ratio
 
         # calculate thrust coefficient (excluding pressure terms)
+        """self.C_th_without_p = (
+            self.nozzle.C_th[-1]
+            - utils.mass_flow_function(self.M_1)
+            * utils.velocity_function(self.M_flight)
+        )"""
+
+        # calculate thrust coefficient (including pressure terms)
         self.C_th = (
             self.nozzle.C_th[-1]
             - utils.mass_flow_function(self.M_1)
             * utils.velocity_function(self.M_flight)
-        )
-
-        # calculate thrust coefficient (including pressure terms)
-        """self.C_th_with_p = (
-            self.nozzle.C_th_with_p[-1]
-            - utils.mass_flow_function(self.M_1)
-            * utils.velocity_function(self.M_flight)
             - self.nozzle_area_ratio * self.p_atm
-        )"""
+        )
 
         # calculate jet velocity ratio
         rho_v_2_r = (
@@ -494,7 +494,7 @@ class Engine:
             )
         )
 
-        # calculate compressor (isentropic) efficiency
+        # calculate compressor (isentropic) efficiency - missing cos alpha terms?
         h_03s_h_01_r = (
             self.nozzle.exit.p * self.nozzle.exit.M / np.sqrt(self.nozzle.exit.T)
             * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
@@ -507,12 +507,6 @@ class Engine:
         self.eta_comp = (
             utils.cumulative_trapezoid(self.nozzle.exit.rr, h_03s_h_01_r)[-1]
             / utils.cumulative_trapezoid(self.nozzle.exit.rr, h_03_h_01_r)[-1]
-        )
-
-        # calculate nozzle efficiency
-        rho_v_3_r = (
-            self.nozzle.exit.p * self.nozzle.exit.M**3 * np.sqrt(self.nozzle.exit.T)
-            * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
         )
 
         # calculate propulsive efficiency - normalised by isentropic work done
@@ -531,23 +525,24 @@ class Engine:
             )
         )
 
-        # calculate overall efficiency
+        # calculate electrical motor efficiency
         self.eta_elec = 1
+
+        # calculate overall efficiency
         self.eta_overall = (
-            0.5 * np.sqrt(utils.gamma - 1) / utils.gamma * self.C_th
+            np.sqrt(utils.gamma - 1) * (1 - self.hub_tip_ratio**2) * self.C_th
             * utils.velocity_function(self.scenario.M) / (
-                self.nozzle_area_ratio * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1],
-                    h_03_h_01_r / self.nozzle.exit.rr[-1]
+                2 * utils.gamma * utils.cumulative_trapezoid(
+                    self.nozzle.exit.rr,
+                    self.nozzle.exit.p / np.sqrt(self.nozzle.exit.T) * self.nozzle.exit.M
+                    * np.cos(self.nozzle.exit.alpha) * (self.nozzle.exit.T_0 - 1)
+                    * self.nozzle.exit.rr
                 )[-1]
             )
         )
 
-        # iterate over all stages
-        """for stage in self.stages:
-
-            # investigate stage performance
-            stage.evaluate()"""
+        print(f"self.eta_overall: {self.eta_overall}")
+        print(f"self.eta_comp * self.eta_prop: {self.eta_comp * self.eta_prop}")
 
     def dimensional_values(self):
         """Converts dimensionless values back to dimensional ones after the design process."""
@@ -603,6 +598,17 @@ class Engine:
                     f"{1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2:.4g}"
                 )
 
+        # debugging propulsive efficiency
+        print(f"flight power: {self.scenario.thrust * self.scenario.flight_speed}")
+        print(f"compressor power: {self.blade_rows[0].motor_power * self.eta_comp}")
+        print(f"motor power: {self.blade_rows[0].motor_power}")
+
+        print(
+            f"flight power / motor power: "
+            f"{self.scenario.thrust * self.scenario.flight_speed / self.blade_rows[0].motor_power}"
+        )
+        print(f"self.eta_overall: {self.eta_overall}")
+
     def empirical_design(self):
         """Determines the actual geometry of the engine."""
         # store relevant geometry parameters separately for convenience
@@ -654,7 +660,7 @@ class Engine:
         # convert max. thickness in mm into dimensionless value
         max_thickness = (
             self.geometry["thickness"]["max_thickness_mm"]
-            / 1000 * 2 / self.scenario.diameter
+            / 1000 / self.scenario.radius
         )
         thickness_fraction = self.geometry["thickness"]["thickness_fraction"]
 
@@ -675,34 +681,98 @@ class Engine:
     def select_motor(self):
         """Selects an appropriate motor from the motor database."""
         # store motor requirements separately for convenience
-        hub_diameter = self.hub_tip_ratio * self.scenario.diameter
-        power = [stage.rotor.motor_power for stage in self.stages]
-        rpm = [stage.rotor.motor_rpm for stage in self.stages]
-
-        print(f"hub_diameter: {hub_diameter}")
-        print(f"power: {power}")
-        print(f"rpm: {rpm}")
+        motor_power = self.geometry["motor"]["motor_power"]
+        motor_rpm = self.geometry["motor"]["motor_rpm"]
+        motor_diameter = self.geometry["motor"]["motor_diameter"]
+        cable_diameter = self.geometry["motor"]["cable_diameter"]
 
         # get motor database
         database = Database()
         print(f"database: {database}")
 
-        for index in range(len(self.stages)):
+        # filter database by power
+        motors = [motor for motor in database.motors if motor["max_power_W"] >= motor_power]
+        self.geometry["motor"]["no_of_motors_power"] = len(motors)
 
-            if index == 0:
+        # filter database by rpm
+        motors = [motor for motor in motors if motor["max_rpm"] >= motor_rpm]
+        self.geometry["motor"]["no_of_motors_rpm"] = len(motors)
 
-                # filter database
-                motors = [motor for motor in database.motors if motor["rated_power_W"] > power[index]]
-                self.geometry["motor"]["no_of_motors_power"] = len(motors)
-                motors = [motor for motor in motors if motor["max_rpm"] > rpm[index]]
-                self.geometry["motor"]["no_of_motors_rpm"] = len(motors)
-                motors = [motor for motor in motors if motor["diameter_mm"] < hub_diameter * 1000]
-                self.geometry["motor"]["no_of_motors_diameter"] = len(motors)
+        # filter database by diameter
+        motors = [motor for motor in motors if motor["diameter_mm"] <= motor_diameter * 1000]
+        self.geometry["motor"]["no_of_motors_diameter"] = len(motors)
 
-                print(
-                    f"Number of motors satisfying criteria: {utils.Colours.GREEN}{len(motors)}"
-                    f"{utils.Colours.END}"
-                )   
+        # there exist motors which satisfy all criteria
+        if len(motors) > 0:
+
+            # find lightest possible motor
+            motor_index = np.argmin([motor["weight_g"] for motor in motors])
+            self.geometry["motor"][f"motor_mass"] = motors[motor_index]["weight_g"]
+
+            # find number of motors with same mass
+            motors = [motor for motor in motors if motor["weight_g"] == motors[motor_index]["weight_g"]]
+            self.geometry["motor"][f"no_of_variants"] = len(motors)
+
+            # calculate phase voltages based on rpm and assuming star configuration
+            V_emf = motor_rpm / np.array([motor["K_V"] for motor in motors])
+            V_ph = V_emf / np.sqrt(3)
+
+            # calculate phase current based on required motor power
+            I_ph = motor_power / (3 * V_ph)
+
+            # calculate cable area (in mm^2) and current density (A / mm^2)
+            cable_area = np.pi * (cable_diameter / 2)**2
+            current_density = I_ph / cable_area
+
+            # calculate voltage drop per unit length for a copper wire
+            voltage_drop = I_ph * cable_area * 1e-6 * utils.resistivity_copper
+
+            # mask for motors that remain in acceptable voltage/current (density) limits
+            mask = (
+                (V_emf < np.array([motor["max_volts"] for motor in motors]))
+                & (I_ph < np.array([motor["max_amps"] for motor in motors]))
+                & (current_density < utils.Defaults.max_current_density)
+            )
+
+            # valid motor installations exist
+            if mask.any():
+
+                # stores ranges of parameters for display in GUI
+                self.geometry["motor"]["no_of_installable"] = mask.sum()
+                self.geometry["motor"]["phase_voltage"] = (
+                    f"{np.min(V_ph[mask]):.4g} - {np.max(V_ph[mask]):.4g}"
+                )
+                self.geometry["motor"]["phase_current"] = (
+                    f"{np.min(I_ph[mask]):.4g} - {np.max(I_ph[mask]):.4g}"
+                )
+                self.geometry["motor"]["current_density"] = (
+                    f"{np.min(current_density[mask]):.4g} - {np.max(current_density[mask]):.4g}"
+                )
+                self.geometry["motor"]["voltage_drop"] = (
+                    f"{np.min(voltage_drop[mask]):.4g} - {np.max(voltage_drop[mask]):.4g}"
+                )
+
+            # no valid motor installations exist
+            else:
+
+                # set GUI fields to empty strings
+                self.geometry["motor"]["no_of_installable"] = 0
+                self.geometry["motor"]["phase_voltage"] = ""
+                self.geometry["motor"]["phase_current"] = ""
+                self.geometry["motor"]["current_density"] = ""
+                self.geometry["motor"]["voltage_drop"] = ""
+
+        # no motors meet requirements
+        else:
+
+            # set GUI fields to empty strings
+            self.geometry["motor"]["no_of_installable"] = 0
+            self.geometry["motor"][f"motor_mass"] = ""
+            self.geometry["motor"][f"no_of_variants"] = ""
+            self.geometry["motor"][f"phase_voltage"] = ""
+            self.geometry["motor"][f"phase_current"] = ""
+            self.geometry["motor"][f"current_density"] = ""
+            self.geometry["motor"][f"voltage_drop"] = ""
 
     def calculate_off_design(self):
         """Calculates the off-design performance characterstics of each stage."""
@@ -1494,92 +1564,3 @@ class Engine:
 
         # show all plots
         plt.show()
-
-# obsolete functions
-
-    def analyse(self):
-        """Analyses the entire engine system."""
-        # analyse all blade_rows
-        for index, blade_row in enumerate(self.blade_rows):
-
-            # skip for first blade row
-            if index > 0:
-
-                # create a nozzle and solve to account for inter-blade row area change
-                nozzle = Nozzle(
-                    #self.blade_rows[index - 1].casing_area_ratio,
-                    self.blade_rows[index - 1].exit
-                )
-                nozzle.solve_nozzle()
-                blade_row.inlet = nozzle.exit
-
-            # calculate conditions at blade row exit
-            blade_row.solve_blade_row()
-
-        # analyse nozzle
-        self.nozzle.inlet = self.blade_rows[-1].exit
-        self.nozzle.solve_nozzle()
-
-        # calculate engine and individual stage efficiencies
-        self.determine_efficiency()
-
-        # assign colours to stages and blade rows
-        self.assign_colours()
-
-    def collect_flow_states(self):
-        """Recursively collect all instances of a given class stored within the engine."""
-        # helper function
-        def _collect(obj, seen):
-
-            # prevent infinite recursion from cyclic references
-            if id(obj) in seen:
-
-                return []
-
-            # if unseen, add to set
-            seen.add(id(obj))
-            found = []
-
-            # direct match
-            if isinstance(obj, Flow_state):
-
-                found.append(obj)
-                return found
-
-            # recurse into class attributes
-            if hasattr(obj, "__dict__"):
-
-                for value in vars(obj).values():
-
-                    found.extend(_collect(value, seen))
-
-            # recurse into common containers
-            elif isinstance(obj, list):
-
-                for item in obj:
-
-                    found.extend(_collect(item, seen))
-
-            return found
-
-        self.flow_states = _collect(self, seen=set())
-
-    def assign_colours(self):
-        """"Assigns each stage a unique colour."""
-        # iterate over all stages
-        for index, stage in enumerate(self.stages):
-
-            # handle case where engine has only one stage
-            if len(self.stages) == 1:
-                
-                stage.colour = utils.Colours.rainbow_colour_map(0)
-
-            # for multi-stage engines
-            else:
-
-                stage.colour = utils.Colours.rainbow_colour_map(index / (len(self.stages) - 1))
-
-            # assign stage number and colour to blade row
-            for blade_row in stage.blade_rows:
-
-                blade_row.colour = stage.colour
