@@ -213,8 +213,8 @@ class Engine:
             # engine has at least one blade row
             if len(self.blade_rows) > 0:
 
-            	# set inlet conditions at first rotor inlet
-            	self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
+                # set inlet conditions at first rotor inlet
+                self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
 
             # store mass flow rate
             self.m_dot = utils.mass_flow_function(self.M_1)
@@ -278,7 +278,7 @@ class Engine:
 
                 # set initial guess
                 x0 = self.M_j_initial
-                x1 = 0.9 * x0 + 1e-3
+                x1 = 0.9 * x0 + 1e-1
 
                 # solve for nozzle exit conditions
                 sol = root_scalar(
@@ -606,7 +606,7 @@ class Engine:
                 )
 
         # debugging propulsive efficiency
-        print(f"flight power: {self.scenario.thrust * self.scenario.flight_speed}")
+        """print(f"flight power: {self.scenario.thrust * self.scenario.flight_speed}")
         print(f"compressor power: {self.blade_rows[0].motor_power * self.eta_comp}")
         print(f"motor power: {self.blade_rows[0].motor_power}")
 
@@ -614,7 +614,7 @@ class Engine:
             f"flight power / motor power: "
             f"{self.scenario.thrust * self.scenario.flight_speed / self.blade_rows[0].motor_power}"
         )
-        print(f"self.eta_overall: {self.eta_overall}")
+        print(f"self.eta_overall: {self.eta_overall}")"""
 
     def empirical_design(self):
         """Determines the actual geometry of the engine."""

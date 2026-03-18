@@ -45,6 +45,14 @@ class Nozzle:
         # impose bounds on hub velocity guess
         v_x_hub = utils.bound(v_x_hub)
 
+        # ensure exit arrays have the correct length
+        self.exit.rr = np.zeros(len(self.inlet.M))
+        self.exit.v_x = np.zeros(len(self.inlet.M))
+        self.exit.v_theta = np.zeros(len(self.inlet.M))
+        self.exit.M = np.zeros(len(self.inlet.M))
+        self.exit.T = np.zeros(len(self.inlet.M))
+        self.exit.p = np.zeros(len(self.inlet.M))
+
         # hub dimensionless axial velocity and radius are known
         self.exit.v_x[0] = v_x_hub
         self.exit.rr[0] = 1e-3
@@ -55,7 +63,7 @@ class Nozzle:
         self.exit.s = self.inlet.s
         
         # set exit angle distribution to zero (make this more general later)
-        self.exit.alpha = np.zeros(utils.Defaults.solver_grid)  # technically this is done already but included for clarity
+        self.exit.alpha = np.zeros(len(self.inlet.M))  # technically this is done already but included for clarity
 
         # determine inlet mass flow rate distribution
         self.inlet.dm_dot_dr = (
@@ -69,7 +77,7 @@ class Nozzle:
         dm_dot_1 = np.diff(self.inlet.m_dot)
 
         # loop over each streamtube
-        for index in range(utils.Defaults.solver_grid):
+        for index in range(len(self.inlet.M)):
                 
             # for all cases except hub streamline
             if index > 0:
@@ -78,7 +86,7 @@ class Nozzle:
                 r_2_fine = np.linspace(
                     self.exit.rr[index - 1],
                     self.exit.rr[index - 1] + 10 * (self.inlet.rr[index] - self.inlet.rr[index - 1]),
-                    utils.Defaults.solver_grid
+                    len(self.inlet.M)
                 )
 
                 # determine local exit mass flow rate distribution

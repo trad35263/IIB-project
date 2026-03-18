@@ -24,8 +24,8 @@ class Inputs:
     
     # variables to loop over
     stages = [1]
-    phis = np.linspace(0.5, 0.9, 3)
-    psis = np.linspace(0.1, 0.3, 3)
+    phis = np.linspace(0.4, 1, 7)
+    psis = np.linspace(0.05, 0.4, 8)
 
     # inlet Mach number
     M_1 = 0.15
