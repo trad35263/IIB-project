@@ -741,6 +741,31 @@ class Engine:
                 & (current_density < utils.Defaults.max_current_density)
             )
 
+            # create plot
+            if utils.debug:
+
+                fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+                ax.plot(
+                    [motor["K_V"] for motor in motors],
+                    [motor["torque_constant_mNm_A"] for motor in motors],
+                    label = "All variants",
+                    linestyle = '', marker = '.'
+                )
+                ax.plot(
+                    np.array([motor["K_V"] for motor in motors])[mask],
+                    np.array([motor["torque_constant_mNm_A"] for motor in motors])[mask],
+                    label = "Feasible installation",
+                    linestyle = '', marker = '.'
+                )
+
+                ax.grid()
+                ax.legend()
+                ax.set_xlabel("Voltage Constant, K_V (V / rpm)")
+                ax.set_ylabel("Torque Constant, K_tau (mNm / A)")
+
+                plt.show()
+
             # valid motor installations exist
             if mask.any():
 
