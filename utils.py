@@ -125,7 +125,7 @@ class Defaults:
     inlet_swirl = 0
 
     # whether or not debug mode is active
-    debug = True
+    debug = False
 
     # default dimensional blade thickness (in mm)
     max_thickness_mm = 2

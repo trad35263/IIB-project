@@ -111,6 +111,8 @@ class Post:
 		xx = self.data["phi"]
 		yy = self.data["psi"]
 		zz = self.data[attribute]
+		print(f"zz: {zz}")
+		print(f"[type(z) for z in zz]: {[type(z) for z in zz]}")
 
 		# convert to 1D
 		zz = zz.max(axis=1) if zz.ndim == 2 else zz
@@ -122,11 +124,14 @@ class Post:
 		# create meshed grid of x- and y-values
 		xx_grid, yy_grid = np.meshgrid(xx_fine, yy_fine, indexing = "ij")
 
+		# mask out NaNs
+		mask = ~np.isnan(zz)
+
 		# construct griddata interpolating object
 		grid = griddata(
-			points = (xx, yy), values = zz,
+			points = (xx[mask], yy[mask]), values = zz[mask],
 			xi = (xx_grid, yy_grid),
-			method = "linear"
+			method = "cubic"
 		)
 
 		# compute bounds from data
@@ -146,7 +151,7 @@ class Post:
 			vmin = vmin, vmax = vmax, extend = "both"
 		)
 		plt.colorbar(cf, ax = ax, label = label)
-		ax.scatter(xx, yy, c = "white", s = 10, zorder = 5, label = "Datapoints")
+		ax.scatter(xx, yy, c = "black", s = 10, zorder = 5, label = "Datapoints")
 
 		# configure plot
 		ax.set_xlabel('Flow Coefficient, φ')
@@ -169,6 +174,7 @@ def main():
 	post.plot_contours("eta_comp", "Compressor Polytropic Efficiency")
 	post.plot_contours("thrust", "Engine Thrust (N)")
 	post.plot_contours("no_of_blades", "Compressor No. of Blades")
+	post.plot_contours("power", "Motor Power (W)")
 
 # upon script execution
 if __name__ == "__main__":

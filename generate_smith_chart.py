@@ -25,7 +25,7 @@ class Inputs:
     # variables to loop over
     stages = [1]
     phis = np.linspace(0.4, 1, 7)
-    psis = np.linspace(0.05, 0.4, 8)
+    psis = np.linspace(0.05, 0.25, 3)
 
     # inlet Mach number
     M_1 = 0.15
@@ -189,7 +189,7 @@ def export_engine():
             print(f"Error! Diffusion factor error.")
             return
 
-    engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi}_psi_{Inputs.psi}")
+    engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi:.2g}_psi_{Inputs.psi:.2g}")
 
 if __name__ == "__main__":
 
