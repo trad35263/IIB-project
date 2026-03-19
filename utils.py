@@ -9,6 +9,7 @@ from scipy.interpolate import make_interp_spline
 gamma = 1.4
 c_p = 1005
 R = 287
+c_v = c_p / gamma
 
 rho_aluminium = 2700
 resistivity_copper = 1.68e-8

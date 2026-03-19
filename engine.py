@@ -929,6 +929,23 @@ class Engine:
                 "no_of_blades": blade_row.no_of_blades
             }
 
+        # calculate values for initial guess
+        rho_guess = (
+            self.blade_rows[0].inlet.p[0] * self.scenario.p_0
+            / (utils.R * self.blade_rows[0].inlet.T[0] * self.scenario.T_0)
+        )
+
+        rho_v_x_guess = (
+            rho_guess * self.blade_rows[0].inlet.v_x[0] * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+        )
+
+        rho_e_guess = (
+            rho_guess * (
+                utils.c_v * self.blade_rows[0].inlet.T[0] * self.scenario.T_0
+                + 0.5 * self.blade_rows[0].inlet.v_x[0]**2 * utils.gamma * utils.R * self.scenario.T_0
+            )
+        )
+
         # add metadata to dictionary
         self.export_dictionary["metadata"] = {
             # export date-time information
@@ -968,6 +985,11 @@ class Engine:
             "p": self.scenario.p,
             "rho": self.scenario.rho,
 
+            # export CFD initial guess
+            "rho_guess": rho_guess,
+            "rho_v_x_guess": rho_v_x_guess,
+            "rho_e_guess": rho_e_guess,
+
             # export geometry information
             "aspect_ratio": self.geometry["aspect_ratio"],
             "diffusion_factor": self.geometry["diffusion_factor"],
@@ -987,7 +1009,7 @@ class Engine:
             # set default filename
             filename = (
                 f"high_speed_"
-                f"{self.export_dictionary['metadata']['export_timestamp'].replace(':', '-')}"
+                f"{self.export_dictionary['metadata']['date_and_time'].replace(':', '-')}"
             )
 
         # save dictionary as .mat file
