@@ -929,21 +929,29 @@ class Engine:
                 "no_of_blades": blade_row.no_of_blades
             }
 
-        # calculate values for initial guess
+        # calculate compressor inlet density guess
         rho_guess = (
             self.blade_rows[0].inlet.p[0] * self.scenario.p_0
             / (utils.R * self.blade_rows[0].inlet.T[0] * self.scenario.T_0)
         )
 
+        # calculate compressor inlet axial momentum guess
         rho_v_x_guess = (
             rho_guess * self.blade_rows[0].inlet.v_x[0] * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
         )
 
+        # calculate compressor inlet energy per unit volume guess
         rho_e_guess = (
             rho_guess * (
                 utils.c_v * self.blade_rows[0].inlet.T[0] * self.scenario.T_0
                 + 0.5 * self.blade_rows[0].inlet.v_x[0]**2 * utils.gamma * utils.R * self.scenario.T_0
             )
+        )
+
+        # calculate compressor exit static pressure guess
+        p_guess = (
+            self.p_0_ratio * self.scenario.p_0
+            * utils.stagnation_pressure_ratio(self.blade_rows[-1].exit.M[-1])
         )
 
         # add metadata to dictionary
@@ -982,13 +990,12 @@ class Engine:
             "mass_flow_rate": self.m_dot,
             "p_0": self.scenario.p_0,
             "T_0": self.scenario.T_0,
-            "p": self.scenario.p,
-            "rho": self.scenario.rho,
 
             # export CFD initial guess
             "rho_guess": rho_guess,
             "rho_v_x_guess": rho_v_x_guess,
             "rho_e_guess": rho_e_guess,
+            "p_guess": p_guess,
 
             # export geometry information
             "aspect_ratio": self.geometry["aspect_ratio"],
