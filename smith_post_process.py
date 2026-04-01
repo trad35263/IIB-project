@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
 import mat73
+import sys
 
 # import high speed solver modules
 from engine import Engine
@@ -16,7 +17,16 @@ class Inputs:
 	N = 100
 
 	# default plotting parameters
-	figsize = (9, 6)
+	figsize = (7, 4)
+	dpi = 200
+	levels = 20
+
+	# phi-psi coordinate to produce a contour plot of
+	contour_ij = None
+
+	# default setting for plotting contours of rotor or stator and which stage
+	plot_rotor = True
+	plot_stage = 1
 
 # Post class
 class Post:
@@ -90,8 +100,6 @@ class Post:
 			engine.blade_rows = []
 			engine.stages = []
 
-			print(engine)
-
 			# calculate nozzle exit conditions
 			engine.design()
 
@@ -111,8 +119,6 @@ class Post:
 		xx = self.data["phi"]
 		yy = self.data["psi"]
 		zz = self.data[attribute]
-		print(f"zz: {zz}")
-		print(f"[type(z) for z in zz]: {[type(z) for z in zz]}")
 
 		# convert to 1D
 		zz = zz.max(axis=1) if zz.ndim == 2 else zz
@@ -131,19 +137,54 @@ class Post:
 		grid = griddata(
 			points = (xx[mask], yy[mask]), values = zz[mask],
 			xi = (xx_grid, yy_grid),
-			method = "cubic"
+			method = "linear"
 		)
 
 		# compute bounds from data
 		vmin, vmax = np.nanmin(zz), np.nanmax(zz)
 
+		# all z-value datapoints are integers
 		if np.all(zz == zz.astype(int)):
-			levels = np.arange(int(vmin), int(vmax) + 1)
-		else:
-			levels = 20
 
-		# create plot
-		fig, ax = plt.subplots(figsize = Inputs.figsize)
+			# manually specify contour bar levels to also be integers
+			levels = np.arange(int(vmin), int(vmax) + 1)
+
+		# all other cases
+		else:
+
+			# set default value of levels
+			levels = Inputs.levels
+
+		if Inputs.contour_ij == None:
+
+			# create plot
+			fig, ax = plt.subplots(figsize = Inputs.figsize)
+
+		else:
+
+			# create figure with 2 x 2 gridspec
+			fig = plt.figure(figsize = Inputs.figsize)
+			gs = fig.add_gridspec(2, 2)
+
+			# separate axes
+			ax = fig.add_subplot(gs[0, :])
+			ax_inlet = fig.add_subplot(gs[1, 0])
+			ax_outlet = fig.add_subplot(gs[1, 1])
+			axes = [ax, ax_inlet, ax_outlet]
+
+			# get inlet plane
+			c = self.data["C"][0].inlet
+			
+			# plot inlet slice
+			cf1 = ax_inlet.contourf(c["y"], c["z"], c["p_0"])
+			plt.colorbar(cf1, ax = ax_inlet)
+
+		    # get outlet plane
+			c = self.data["C"][-1].outlet
+			
+			# plot outlet slice
+			cf2 = ax_outlet.contourf(c["y"], c["z"], c["p_0"])
+			plt.colorbar(cf2, ax = ax_outlet)
 
 		# plot contours of interpolated data and individual datapoints
 		cf = ax.contourf(
@@ -159,6 +200,7 @@ class Post:
 		ax.set_title(f"{label} | No. of Stages: {self.data['metadata'][0]['no_of_stages']}")
 
 		# save figure
+		fig.tight_layout()
 		fig.savefig(f"contour_plot_{attribute}", dpi = 300, bbox_inches = "tight")
 
 # main function
@@ -178,6 +220,56 @@ def main():
 
 # upon script execution
 if __name__ == "__main__":
+
+	# minimum two command-line arguments were provided
+	if len(sys.argv) > 2:
+
+		# expand plot height
+		Inputs.figsize = (Inputs.figsize[0], 2 * Inputs.figsize[1])
+
+		# initialise variables for determining phi-psi coordinate to plot
+		bracket_flag = 0
+		ij = ""
+
+		# loop for each input argument
+		for arg in sys.argv[1:]:
+
+			# open bracket in argument
+			if "(" in arg:
+
+				# count bracket and store argument
+				bracket_flag += 1
+				ij += arg
+
+			# close bracket in argument
+			if ")" in arg:
+
+				# count bracket and store argument
+				bracket_flag -= 1
+				ij += arg
+
+			# number of open brackets equals closed brackets
+			if bracket_flag == 0:
+
+				# remove whitespace and brackets
+				ij.replace(" ", "")
+				ij = ij.strip("()")
+
+				# store tuple in inputs class
+				Inputs.contour_ij = tuple(float(x.strip()) for x in ij.split(","))
+				break
+
+		print(f"Inputs.contour_ij: {Inputs.contour_ij}")
+
+		# user has specified stator flag
+		if "s" in sys.argv[-1]:
+
+			# do not plot rotor
+			Inputs.plot_rotor == False
+
+		# extract all digits from final argument and determine stage number to plot (1-indexed)
+		digits = ''.join(filter(str.isdigit, sys.argv[-1]))
+		Inputs.plot_stage = int(digits) if digits else 1
 
 	# run main()
 	main()

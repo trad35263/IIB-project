@@ -26,7 +26,7 @@ class Defaults:
     # default flight scenario parameters
     label = ""
     diameter = 0.2
-    hub_tip_ratio = 0.3
+    hub_tip_ratio = 0.35714
     flight_scenarios = {
         "Default": ["Default", altitude, flight_speed, diameter, hub_tip_ratio, thrust],
         "High speed": ["High speed", 0, 170, diameter, hub_tip_ratio, 100],
@@ -52,7 +52,7 @@ class Defaults:
 
     # guardrails
     min_pitch_to_chord_ratio = 0.2
-    axial_separation = 0.15
+    axial_separation = 0.0
 
     # chord distribution limits
     max_chord_limit = 0.8
@@ -63,7 +63,7 @@ class Defaults:
     motor_rpm = 10000
     motor_diameter = 0.1
     cable_diameter = 1
-    max_current_density = 5
+    max_current_density = 5         # A/mm^2
 
     # default off_design parameters
     phi_min = 0.4
