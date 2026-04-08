@@ -1,6 +1,7 @@
 # import modules
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from scipy.interpolate import griddata
 import mat73
 import sys
@@ -17,7 +18,7 @@ class Inputs:
 	N = 100
 
 	# default plotting parameters
-	figsize = (7, 4)
+	figsize = (9, 4)
 	dpi = 200
 	levels = 20
 
@@ -34,6 +35,7 @@ class Post:
 	def __init__(self):
 		"""Creates an instance of the Post class."""
 		# read post-processing .mat object
+		print(f"{utils.Colours.GREEN}Loading data...{utils.Colours.END}")
 		self.data = mat73.loadmat("CFD_data.mat")["post"]
 		print(f"self.data: {self.data}")
 
@@ -170,21 +172,35 @@ class Post:
 			ax = fig.add_subplot(gs[0, :])
 			ax_inlet = fig.add_subplot(gs[1, 0])
 			ax_outlet = fig.add_subplot(gs[1, 1])
-			axes = [ax, ax_inlet, ax_outlet]
+			#axes = [ax, ax_inlet, ax_outlet]
 
-			# get inlet plane
-			c = self.data["C"][0].inlet
+			# get index of desired test case to investigate
+			index = np.where(
+				(np.array(self.data["phi"]) == Inputs.contour_ij[0])
+				& (np.array(self.data["psi"]) == Inputs.contour_ij[1])
+			)[0][0]
+
+			# get inlet and outlet planes
+			c_inlet = self.data["C"][index][0]["inlet"]
+			c_outlet = self.data["C"][index][1]["outlet"]
+
+			# get data lmits
+			vxmin = min(np.array(c_inlet["rovx"]).min(), np.array(c_outlet["rovx"]).min())
+			vxmax = max(np.array(c_inlet["rovx"]).max(), np.array(c_outlet["rovx"]).max())
 			
 			# plot inlet slice
-			cf1 = ax_inlet.contourf(c["y"], c["z"], c["p_0"])
-			plt.colorbar(cf1, ax = ax_inlet)
-
-		    # get outlet plane
-			c = self.data["C"][-1].outlet
+			cf1 = ax_inlet.contourf(c_inlet["r"], c_inlet["rt"], c_inlet["rovx"], vmin = vxmin, vmax = vxmax, levels = 50)
+			#plt.colorbar(cf1, ax = ax_inlet)
 			
 			# plot outlet slice
-			cf2 = ax_outlet.contourf(c["y"], c["z"], c["p_0"])
-			plt.colorbar(cf2, ax = ax_outlet)
+			cf2 = ax_outlet.contourf(c_outlet["r"], c_outlet["rt"], c_outlet["rovx"], vmin = vxmin, vmax = vxmax, levels = 50)
+			#plt.colorbar(cf2, ax = ax_outlet)
+			cbar = fig.colorbar(cf2, ax = [ax_inlet, ax_outlet])
+			cbar.set_label(rf"rovx ($kgm^{{-2}}s^{{-1}}$)")
+
+			# set titles
+			ax_inlet.set_title("Rotor inlet")
+			ax_outlet.set_title("Rotor outlet")
 
 		# plot contours of interpolated data and individual datapoints
 		cf = ax.contourf(
@@ -197,10 +213,22 @@ class Post:
 		# configure plot
 		ax.set_xlabel('Flow Coefficient, φ')
 		ax.set_ylabel('Stage Loading Coefficient, ψ')
-		ax.set_title(f"{label} | No. of Stages: {self.data['metadata'][0]['no_of_stages']}")
+		ax.set_title(
+			f"{label} | No. of Stages: {self.data['metadata'][0]['no_of_stages']} | "
+			f"Inlet Mach Number: {self.data['metadata'][0]['inlet_mach_number']}"
+		)
+
+		if Inputs.contour_ij is not None:
+			# add circle around specified phi-psi coordinate
+			circle = mpatches.Circle(Inputs.contour_ij, radius = 0.01, linewidth = 3, color = "red", fill = False)
+			ax.add_patch(circle)
+
+		# set axis limits
+		ax.set_xlim(np.min(self.data["phi"]), np.max(self.data["phi"]))
+		ax.set_ylim(np.min(self.data["psi"]), np.max(self.data["psi"]))
 
 		# save figure
-		fig.tight_layout()
+		#fig.tight_layout()
 		fig.savefig(f"contour_plot_{attribute}", dpi = 300, bbox_inches = "tight")
 
 # main function
@@ -235,14 +263,14 @@ if __name__ == "__main__":
 		for arg in sys.argv[1:]:
 
 			# open bracket in argument
-			if "(" in arg:
+			if "[" in arg:
 
 				# count bracket and store argument
 				bracket_flag += 1
 				ij += arg
 
 			# close bracket in argument
-			if ")" in arg:
+			if "]" in arg:
 
 				# count bracket and store argument
 				bracket_flag -= 1
@@ -253,7 +281,7 @@ if __name__ == "__main__":
 
 				# remove whitespace and brackets
 				ij.replace(" ", "")
-				ij = ij.strip("()")
+				ij = ij.strip("[]")
 
 				# store tuple in inputs class
 				Inputs.contour_ij = tuple(float(x.strip()) for x in ij.split(","))

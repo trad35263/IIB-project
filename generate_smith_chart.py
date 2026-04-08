@@ -25,10 +25,10 @@ class Inputs:
     # variables to loop over
     stages = [1]
     phis = np.linspace(0.4, 1, 7)
-    psis = np.linspace(0.05, 0.25, 3)
+    psis = np.linspace(0.05, 0.6, 12)
 
     # inlet Mach number
-    M_1 = 0.15
+    M_1 = 0.25
 
     # set guardrails to exclude bad engine designs
     max_no_of_blades = utils.Defaults.max_no_of_blades
@@ -166,30 +166,22 @@ def export_engine():
     for blade_row in engine.blade_rows:
 
         print(f"blade_row.no_of_blades: {blade_row.no_of_blades}")
-
-        if blade_row.no_of_blades > Inputs.max_no_of_blades:
-
-            print(f"Error! Too many blades.")
-            return
         
         if np.any(np.abs(blade_row.exit.deviation) > Inputs.max_deviation):
 
             print(f"Error! Deviation error.")
             #print(blade_row)
-            return
-        
-        if np.any(blade_row.exit.chord > Inputs.max_chord):
-
-            print(f"Error! Chord error.")
-            #print(blade_row)
-            return
+            #return
         
         if np.any(blade_row.exit.diffusion_factor > Inputs.max_diffusion_factor):
 
             print(f"Error! Diffusion factor error.")
-            return
+            #return
 
-    engine.export(f"smith_N_{Inputs.no_of_stages}_phi_{Inputs.phi:.2g}_psi_{Inputs.psi:.2g}")
+    engine.export(
+        f"smith_N_{Inputs.no_of_stages}_M_{Inputs.M_1:.3g}_phi_{Inputs.phi:.3g}_"
+        f"psi_{Inputs.psi:.3g}_n_{utils.Defaults.vortex_exponent:.3g}"
+    )
 
 if __name__ == "__main__":
 
