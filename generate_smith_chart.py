@@ -28,7 +28,7 @@ class Inputs:
     psis = np.linspace(0.05, 0.6, 12)
 
     # inlet Mach number
-    M_1 = 0.25
+    M_1 = 0.1
 
     # set guardrails to exclude bad engine designs
     max_no_of_blades = utils.Defaults.max_no_of_blades
