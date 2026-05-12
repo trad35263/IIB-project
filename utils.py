@@ -52,7 +52,7 @@ class Defaults:
 
     # guardrails
     min_pitch_to_chord_ratio = 0.2
-    axial_separation = 0.0
+    axial_separation = 0
 
     # chord distribution limits
     max_chord_limit = 0.8
