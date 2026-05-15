@@ -37,7 +37,7 @@ class Nozzle:
 
 # design functions --------------------------------------------------------------------------------
 
-    def design2(self, v_x_hub, hub_tip_ratio):
+    def design(self, v_x_hub, hub_tip_ratio):
         """Determines the flowfield through the nozzle and solves for its geometry."""
         # start timer
         t1 = timer()
@@ -149,7 +149,7 @@ class Nozzle:
             f"Nozzle design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
         )
 
-    def design(self, v_x_hub, hub_tip_ratio):
+    def design2(self, v_x_hub, hub_tip_ratio):
         """Determines the flowfield through the nozzle and solves for its area ratio."""
         # start timer
         t1 = timer()

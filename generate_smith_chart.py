@@ -19,11 +19,11 @@ class Inputs:
     # number of grid points for interpolation
     N = 100
 
-    # thrust for initial guesses
-    thrust = 30
+    # thrust - NOT USED
+    thrust = 0
     
     # variables to loop over
-    stages = [1]
+    stages = [3]
     phis = np.linspace(0.4, 1, 7)
     psis = np.linspace(0.05, 0.6, 12)
 
