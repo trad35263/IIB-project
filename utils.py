@@ -172,6 +172,10 @@ def inverse_pressure_ratio(p):
     """Calculates the Mach number corresponding to an input static-stagnation pressure ratio."""
     return np.sqrt(2 / (gamma - 1) * (np.power(p, (1 - gamma) / gamma) - 1))
 
+def inverse_temperature_ratio(T):
+    """Calculates the Mach number corresponding to an input static-stagnation temperature ratio."""
+    return np.sqrt(2 / (gamma - 1) * (1 / T - 1))
+
 def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
     if a_max is not None:
         x = a_max - (1 / sharpness) * np.log1p(np.exp(sharpness * (a_max - x)))

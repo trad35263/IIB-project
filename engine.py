@@ -15,6 +15,9 @@ from scipy.interpolate import interp1d
 from datetime import datetime
 import json
 
+# plotly graphs for sankey chart
+import plotly.graph_objects as go
+
 #import matlab.engine
 from pathlib import Path as FilePath
 
@@ -704,7 +707,6 @@ class Engine:
 
         # find dimensional thrust power
         self.P_flight = self.thrust * self.scenario.flight_speed
-        print(f"self.P_flight: {self.P_flight}")
 
         # find thrust power for zero nozzle exit swirl
         M_ideal = utils.inverse_pressure_ratio(
@@ -742,22 +744,6 @@ class Engine:
         )
         m_dot = utils.cumulative_trapezoid(r_ideal, dm_dot_dr)
 
-        fig, axes = plt.subplots(1, 5, figsize = (14, 7))
-        axes[0].plot(self.nozzle.exit.m_dot, self.nozzle.exit.rr, label = "Original")
-        axes[0].plot(m_dot, r_ideal, label = "Ideal")
-        axes[1].plot(self.nozzle.exit.p, self.nozzle.exit.rr, label = "Original")
-        axes[1].plot(p_ideal, r_ideal, label = "Ideal")
-        axes[2].plot(self.nozzle.exit.T, self.nozzle.exit.rr, label = "Original")
-        axes[2].plot(T_ideal, r_ideal, label = "Ideal")
-        axes[3].plot(self.nozzle.exit.M, self.nozzle.exit.rr, label = "Original")
-        axes[3].plot(M_ideal, r_ideal, label = "Ideal")
-        axes[4].plot(self.nozzle.exit.v_x, self.nozzle.exit.rr, label = "Original")
-        axes[4].plot(v_x_ideal, r_ideal, label = "Ideal")
-        for ax in axes:
-            ax.legend()
-            ax.grid()
-        plt.show()
-
         # calculate thrust coefficient contribution due to jet momentum flux
         dC_th_dr = (
             2 * utils.dynamic_pressure_function(M_ideal)
@@ -772,72 +758,11 @@ class Engine:
         )
         self.thrust_ideal = self.C_th_ideal * self.scenario.A * self.scenario.p_0
         self.P_no_swirl = self.thrust_ideal * self.scenario.flight_speed
-        print(f"self.P_no_swirl: {self.P_no_swirl}")
-
-        # calculate thrust averaged stagnation pressure
-        """p_0_thrust = (
-            utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
-                1 - 4 * utils.gamma**2 / ((1 - self.hub_tip_ratio**2)**2 * (utils.gamma - 1)) * (
-                    1 / utils.mass_flow_function(self.scenario.M) * utils.cumulative_trapezoid(
-                        r_ideal,
-                        r_ideal * np.sqrt(
-                            self.nozzle.exit.T_0 / self.T_0_ratio * (1 - np.power(
-                                utils.stagnation_pressure_ratio(self.scenario.M)
-                                / self.nozzle.exit.p_0,
-                                (utils.gamma - 1) / utils.gamma
-                            ))
-                        )
-                        * p_ideal * v_x_ideal / T_ideal
-                    )[-1]
-                )**2,
-                -utils.gamma / (utils.gamma - 1)
-            )
-        )
-
-        x = (
-            1 / utils.mass_flow_function(self.scenario.M) * utils.cumulative_trapezoid(
-            r_ideal,
-            r_ideal * np.sqrt(
-                self.nozzle.exit.T_0 / self.T_0_ratio * (1 - np.power(
-                    utils.stagnation_pressure_ratio(self.scenario.M)
-                    / self.nozzle.exit.p_0,
-                    (utils.gamma - 1) / utils.gamma
-                ))
-            )
-            * p_ideal * v_x_ideal / T_ideal
-        )[-1]**2
-        )
-        print(f"x: {x}")
-
-        # check thrust-averaged stagnation pressure calculation
-        M_j = utils.inverse_pressure_ratio(
-            utils.stagnation_pressure_ratio(self.scenario.M) * p_0_thrust
-        )
-        print(f"M_j: {M_j}")
-        T_j = utils.stagnation_temperature_ratio(M_j) * self.T_0_ratio
-        p_j = utils.stagnation_pressure_ratio(M_j) * p_0_thrust
-        th_j = (
-            self.m_dot * (
-                M_j * np.sqrt(utils.gamma * utils.R * T_j * self.scenario.T_0)
-                - self.scenario.flight_speed
-            )
-        )
-
-        print(f"p_0_thrust: {p_0_thrust}")
-        print(f"self.p_0_ratio: {self.p_0_ratio}")
-        print(f"th_j: {th_j}")"""
-
-        """M_j_thrust = 2
-        T_thrust = 2
-        p_0_thrust_2 = (
-            utils.stagnation_pressure_ratio(self.scenario.M) * (
-                1 + (utils.gamma - 1) / (2 * utils.gamma * R * )
-            )
-        )"""
 
         # VERSION 2
         # calculate 1D jet velocity required
         v_j_1D = self.thrust / self.m_dot + self.scenario.flight_speed
+        self.jet_velocity_ratio = self.scenario.flight_speed / v_j_1D
 
         # calculate velocity ratio dimensionless group
         v_c_p_T_0 = v_j_1D / np.sqrt(utils.c_p * self.T_0_ratio * self.scenario.T_0)
@@ -857,7 +782,6 @@ class Engine:
             self.m_dot * utils.c_p * (np.power(p_0_thrust, (utils.gamma - 1) / utils.gamma) - 1)
             * self.scenario.T_0
         )
-        #print(f"self.P_isen_thrust: {self.P_isen_thrust}")
 
         self.P_isen = (
             2 * utils.gamma * self.scenario.A * self.scenario.p_0
@@ -870,41 +794,22 @@ class Engine:
                 * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
             )[-1]
         )
-        #print(f"self.P_isen: {self.P_isen}")
 
         # calculate kinetic energy flux of uniform jet
         self.P_kinetic = (
             0.5 * self.m_dot * (v_j_1D**2 - self.scenario.flight_speed**2)
         )
-        print(f"self.P_kinetic: {self.P_kinetic}")
-
-        """self.P = (
-            2 * utils.gamma * self.scenario.A * self.scenario.p_0
-            * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
-            / ((utils.gamma - 1) * (1 - self.hub_tip_ratio**2))
-            * utils.cumulative_trapezoid(
-                self.nozzle.exit.rr,
-                self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.v_x
-                * (self.nozzle.exit.T_0 - 1) / self.nozzle.exit.T
-            )[-1]
-        )"""
 
         # define motor power
         self.P_in = (
             np.sum([blade_row.motor_power for blade_row in self.blade_rows])
         )
-        print(f"self.P_in: {self.P_in}")
 
         # calculate efficiency metrics
         self.eta_swirl = self.P_flight / self.P_no_swirl
         self.eta_prop = self.P_no_swirl / self.P_kinetic
         self.eta_comp = self.P_kinetic / self.P_in
         self.eta_overall = self.eta_swirl * self.eta_prop * self.eta_comp
-
-        print(f"self.eta_swirl: {self.eta_swirl}")
-        print(f"self.eta_prop: {self.eta_prop}")
-        print(f"self.eta_comp: {self.eta_comp}")
-        print(f"self.eta_overall: {self.eta_overall}")
 
     def empirical_design(self):
         """Determines the actual geometry of the engine."""
@@ -1916,37 +1821,268 @@ class Engine:
         # show all plots
         plt.show()
 
+    def plot_thrust2(self):
+        """Creates a Sankey chart detailing the loss of thrust power throughout the engine."""
+        # create figure
+        fig = go.Figure(data=[go.Sankey(
+            # set arrangement
+            arrangement = "snap",
+
+            # set node dictionary
+            node = {
+                "label": [
+                    "P_in",
+                    "P_kinetic", "Compressor loss",
+                    "P_no_swirl", "Propulsive loss",
+                    "P_flight", "Swirl loss"
+                ],
+                #"x": [0.01, 0.33, 0.33, 0.66, 0.66, 0.99, 0.99],
+                #"y": [0.4, 0.4, 0.8, 0.4, 0.8, 0.4, 0.8],
+                "pad": 15,
+                "thickness": 12,
+                "line": {"color": "black", "width": 0.5},
+                "color": "blue"
+            },
+
+            # set link dictionary
+            link = {
+                "source": [0, 0, 1, 1, 3, 3],
+                "target": [1, 2, 3, 4, 5, 6],
+                "value": [
+                    self.P_kinetic, self.P_in - self.P_kinetic,
+                    self.P_no_swirl, self.P_kinetic - self.P_no_swirl,
+                    self.P_flight, self.P_no_swirl - self.P_flight
+                ]
+            }
+        )])
+
+        # configure plot
+        fig.update_layout(
+            font_size = 20,
+            height = 600,
+            width = 1000,
+            margin = {"l": 20, "r": 20, "t": 40, "b": 40}
+        )
+
+        # save plot as .png
+        fig.write_image("thrust.png")
+
+    def old_plot_thrust(self):
+        """Creates a Sankey chart detailing the loss of thrust power throughout the engine."""
+        from matplotlib.sankey import Sankey
+        import matplotlib.pyplot as plt
+
+        # normalise flows relative to P_in so the diagram scales nicely
+        scale = 1 / self.P_in
+
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+        ax.axis("off")
+
+        sankey = Sankey(
+            ax = ax, scale = scale, offset = 0.3, head_angle = 180, margin = 0.4
+        )
+
+        # P_in -> P_kinetic + Compressor loss
+        sankey.add(
+            flows=[self.P_in, -self.P_kinetic, -(self.P_in - self.P_kinetic)],
+            labels=["P_in", "", "Compressor loss"],
+            orientations=[0, 0, -1],   # 0=right, -1=down, 1=up
+            pathlengths=[0.5, 0.5, 0.5],
+        )
+
+        # P_kinetic -> P_no_swirl + Propulsive loss
+        sankey.add(
+            flows=[self.P_kinetic, -self.P_no_swirl, -(self.P_kinetic - self.P_no_swirl)],
+            labels=["", "", "Propulsive loss"],
+            orientations=[0, 0, -1],
+            pathlengths=[0.5, 0.5, 0.5],
+            prior=0, connect=(1, 0),   # connect this input to output 1 of subprocess 0
+        )
+
+        # P_no_swirl -> P_flight + Swirl loss
+        sankey.add(
+            flows=[self.P_no_swirl, -self.P_flight, -(self.P_no_swirl - self.P_flight)],
+            labels=["", "P_flight", "Swirl loss"],
+            orientations=[0, 0, -1],
+            pathlengths=[0.5, 0.5, 0.5],
+            prior=1, connect=(1, 0),   # connect to output 1 of subprocess 1
+        )
+
+        diagrams = sankey.finish()
+
+        # colour each diagram
+        for diagram in diagrams:
+            diagram.patch.set_facecolor("steelblue")
+            diagram.patch.set_alpha(0.6)
+
+        plt.tight_layout()
+        #plt.savefig("thrust.png", dpi=150, bbox_inches="tight")
+        plt.show()
+
     def plot_thrust(self):
-        """"""
+        """Creates a Sankey chart."""
         # create plot
         fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
-        # 
-        ax.bar([0], self.C_th_1[-1], label = "Jet Momentum Flux")
-        ax.bar([1], -self.C_th_2[-1], label = "Inlet Momentum Flux")
-        ax.bar([0], self.C_th_3[-1], bottom = self.C_th_1[-1], label = "Jet Pressure")
-        ax.bar([1], -self.C_th_4[-1], bottom = -self.C_th_2[-1], label = "Ram Drag")
+        # arbitrary constants
+        N = 50
+        margin = 0.1
+        cutoff = 1e-3
 
-        # configure plot
-        ax.grid()
-        ax.legend()
+        # set node dictionary
+        node = {
+            "label": [
+                "P_in",
+                "P_kinetic", "Compressor loss",
+                "P_no_swirl", "Propulsive loss",
+                "P_flight", "Swirl loss"
+            ],
+            "x": [0, 1, 1, 2, 2, 3, 3],
+            "y": [0, 0, 0, 0, 0, 0, 0]
+        }
 
-        plt.show()
+        # store list for cumulative heights at each x-position
+        node["h_in"] = list(np.zeros(len(node["x"])))
+        node["h_out"] = list(np.zeros(len(node["x"])))
 
-        # create 2nd plot
-        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+        # set link dictionary
+        link = {
+            "source": [0, 0, 1, 1, 3, 3],
+            "target": [1, 2, 3, 4, 5, 6],
+            "value": np.array([
+                self.eta_comp, 1 - self.eta_comp,
+                self.eta_prop * self.eta_comp, self.eta_comp * (1 - self.eta_prop),
+                self.eta_swirl * self.eta_prop * self.eta_comp,
+                self.eta_comp * self.eta_prop * (1 - self.eta_swirl)
+            ])
+        }
 
+        # update margin size
+        margin *= link["value"][0]
 
-        #
-        ax.plot(self.C_th_1, self.nozzle.exit.rr, label = "Jet Momentum Flux")
-        ax.plot(self.C_th_2, self.nozzle.exit.rr, label = "Inlet Momentum Flux")
-        ax.plot(self.C_th_3, self.nozzle.exit.rr, label = "Jet Pressure")
-        ax.plot(self.C_th_4, self.nozzle.exit.rr, label = "Ram Drag")
+        # loop for each link
+        for index in range(len(link["value"])):
+            
+            # store source and target separately for convenience
+            source = link["source"][index]
+            target = link["target"][index]
 
-        #
+            # store coordinates separately for convenience
+            x_source = node["x"][source]
+            x_target = node["x"][target]
+            y_source = node["y"][source]
+            y_target = node["y"][target]
+            h_source = node["h_out"][source]
+            h_target = node["h_in"][target]
+            value = link["value"][index]
 
-        # configure plot
-        ax.grid()
-        ax.legend()
+            # fine grid of x-values to create a spline over
+            xx = np.linspace(x_source, x_target, N)
 
+            # lower bound
+            spline_lower = make_interp_spline(
+                [x_source, x_target],
+                [y_source + h_source, y_target + h_target],
+                k = 3,
+                bc_type = ([(1, 0.0)], [(1, 0.0)])
+            )
+            yy_lower = spline_lower(xx)
+            ax.plot(xx, yy_lower, color = "k")
+
+            # upper bound
+            spline_upper = make_interp_spline(
+                [x_source, x_target],
+                [y_source + h_source + value, y_target + h_target + value],
+                k = 3,
+                bc_type = ([(1, 0.0)], [(1, 0.0)])
+            )
+            yy_upper = spline_upper(xx)
+            ax.plot(xx, yy_upper, color = "k")
+
+            # shade region between splines
+            ax.fill_between(xx, yy_lower, yy_upper, alpha = 0.3, color = "C0")
+
+            # add text at midpoint
+            x_mid = (x_source + x_target) / 2
+            y_mid = (y_source + h_source + value / 2 + y_target + h_target + value / 2) / 2
+            ax.text(
+                x_mid, y_mid + margin if link["value"][index] < 0.1 else y_mid,
+                (
+                    (f"{node['label'][target]}" if target not in link["source"] else "")
+                    + ("\n" if target not in link["source"] and link["value"][index] > cutoff else "")
+                    + (f"{link['value'][index]:.4g}" if link["value"][index] > cutoff else "")
+                ),
+                ha = "center", va = "center", fontsize = 16
+            )
+
+            # update source and target heights independently
+            node["h_out"][source] += value
+            node["h_in"][target] += value + margin
+
+            # loop for each node
+            for i in range(len(node["x"])):
+
+                # check if node shares x-coordinate with source
+                if node["x"][i] == node["x"][source] and i != source:
+
+                    # increase y-coordinate of node
+                    node["y"][i] += value
+
+                # check if node shares x-coordinate with target
+                if node["x"][i] == node["x"][target] and i != target:
+
+                    # increase inlet height of node
+                    node["h_in"][i] += value + margin
+
+        # find source node (not in any target)
+        source_node = [i for i in range(len(node["x"])) if i not in link["target"]][0]
+
+        # brace parameters
+        x_brace   = node["x"][source_node] - 0.2
+        y_bottom  = node["y"][source_node]
+        y_top     = node["y"][source_node] + node["h_out"][source_node]
+        y_mid     = (y_bottom + y_top) / 2
+        brace_w   = 0.08  # horizontal extent of brace curls
+
+        # generate brace using two S-curves
+        t = np.linspace(0, 1, N)
+
+        def s_curve(t, x0, x1, y0, y1):
+            spline = make_interp_spline(
+                [0, 1], [y0, y1], k=3,
+                bc_type=([(1, 0.0)], [(1, 0.0)])
+            )
+            return x0 + (x1 - x0) * t, spline(t)
+
+        # bottom half: y_bottom -> y_mid
+        bx1, by1 = s_curve(t, x_brace, x_brace - brace_w, y_bottom, y_mid)
+        # top half: y_mid -> y_top
+        bx2, by2 = s_curve(t, x_brace - brace_w, x_brace, y_mid, y_top)
+
+        ax.plot(bx1, by1, color="k", linewidth=1.5)
+        ax.plot(bx2, by2, color="k", linewidth=1.5)
+
+        # add label to the left of the brace
+        ax.text(
+            x_brace - brace_w - 0.05, y_mid,
+            node["label"][source_node],
+            ha="right", va="center", fontsize=16
+        )
+
+        # get all terminal nodes
+        """terminal_nodes = [i for i in range(len(node["x"])) if i not in link["source"]]
+        
+        # loop for each terminal node
+        for index in terminal_nodes:
+
+            x = node["x"][index] + margin
+            y = node["y"][index] + 0.2 * node["h_in"][index]
+            ax.text(
+                x, y,
+                node["label"][index],
+                ha = "left", va = "center", fontsize = 16
+            )"""
+
+        # configure plot and show
+        ax.axis("off")
         plt.show()

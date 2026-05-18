@@ -188,7 +188,7 @@ class Stator(Blade_row):
         )
         utils.debug(f"sol: {sol}")
 
-    def design(self, v_x_hub, hub_tip_ratio):
+    def design2(self, v_x_hub, hub_tip_ratio):
         """Solves for the stator exit conditions and blade geometry."""
         # start timer
         t1 = timer()
@@ -312,6 +312,154 @@ class Stator(Blade_row):
             f"Stator design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
         )
 
+    def design(self, v_x_hub, hub_tip_ratio):
+        """"""
+        # start timer
+        t1 = timer()
+
+        # impose bounds on hub velocity guess  
+        v_x_hub = utils.bound(v_x_hub)
+
+        # hub dimensionless axial velocity and radius are known
+        self.exit.v_x[0] = v_x_hub
+        self.exit.rr[0] = self.inlet.rr[0]
+
+        # determine inlet mass flow rate distribution
+        self.inlet.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.inlet.p / np.sqrt(self.inlet.T)
+            * self.inlet.M * np.cos(self.inlet.alpha) * self.inlet.rr
+        )
+        self.inlet.m_dot = utils.cumulative_trapezoid(self.inlet.rr, self.inlet.dm_dot_dr)
+
+        # get mass flow rate through each streamtube
+        dm_dot = np.diff(self.inlet.m_dot)
+
+        # stagnation temperature is conserved across stator row
+        self.exit.T_0 = self.inlet.T_0
+        
+        # find exit stagnation pressure via stagnation pressure loss coefficient
+        self.exit.p_0 = (
+            self.inlet.p_0 * (1 - self.Y_p * (1 - utils.stagnation_pressure_ratio(self.inlet.M)))
+        )
+
+        # find corresponding change in dimensionless entropy
+        self.exit.s = self.inlet.s - np.log(self.exit.p_0 / self.inlet.p_0) / utils.gamma
+
+        # set exit angle distribution to zero as per design decision
+        self.exit.alpha = np.zeros(utils.Defaults.solver_grid)
+        self.exit.v_theta = np.zeros(utils.Defaults.solver_grid)
+
+        # loop over each streamtube
+        for index in range(len(self.inlet.M)):
+
+            # find Mach number
+            self.exit.M[index] = (
+                np.sqrt(
+                    (self.exit.v_x[index]**2 + self.exit.v_theta[index]**2) / (
+                        self.exit.T_0[index] - 0.5 * (utils.gamma - 1)
+                        * (self.exit.v_x[index]**2 + self.exit.v_theta[index]**2)
+                    )
+                )
+            )
+
+            # find static temperature and pressure
+            self.exit.T[index] = (
+                self.exit.T_0[index] * utils.stagnation_temperature_ratio(self.exit.M[index])
+            )
+            self.exit.p[index] = (
+                self.exit.p_0[index] * utils.stagnation_pressure_ratio(self.exit.M[index])
+            )
+
+            # for all but final streamline
+            if index < len(self.inlet.M) - 1:
+
+                # predictor step - calculate streamtube outer radius
+                self.exit.rr[index + 1] = (
+                    np.sqrt(
+                        self.exit.rr[index]**2
+                        + dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - hub_tip_ratio**2)
+                        * self.exit.T[index]
+                        / (utils.gamma * self.exit.p[index] * self.exit.v_x[index])
+                    )
+                )
+
+                # predictor step - calculate axial velocity at station index + 1
+                self.exit.v_x[index + 1] = (
+                    self.exit.v_x[index] + 1 / self.exit.v_x[index] * (
+                        1 / (utils.gamma - 1) * (self.exit.T_0[index + 1] - self.exit.T_0[index])
+                        - self.exit.T[index] * (self.exit.s[index + 1] - self.exit.s[index])
+                        - self.exit.v_theta[index] / self.exit.rr[index] * (
+                            self.exit.rr[index + 1] * self.exit.v_theta[index + 1]
+                            - self.exit.rr[index] * self.exit.v_theta[index]
+                        )
+                    )
+                )
+
+                # predictor step - find Mach number
+                self.exit.M[index + 1] = (
+                    np.sqrt(
+                        (self.exit.v_x[index + 1]**2 + self.exit.v_theta[index + 1]**2) / (
+                            self.exit.T_0[index + 1] - 0.5 * (utils.gamma - 1)
+                            * (self.exit.v_x[index + 1]**2 + self.exit.v_theta[index + 1]**2)
+                        )
+                    )
+                )
+
+                # predictor step - calculate static temperature and pressure
+                self.exit.T[index + 1] = (
+                    self.exit.T_0[index + 1]
+                    * utils.stagnation_temperature_ratio(self.exit.M[index + 1])
+                )
+                self.exit.p[index + 1] = (
+                    self.exit.p_0[index + 1]
+                    * utils.stagnation_pressure_ratio(self.exit.M[index + 1])
+                )
+
+                # corrector step - recalculate streamtube outer radius
+                self.exit.rr[index + 1] = (
+                    np.sqrt(
+                        self.exit.rr[index]**2
+                        + 2 * dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - hub_tip_ratio**2) / (
+                            utils.gamma * (
+                                self.exit.p[index] * self.exit.v_x[index] / self.exit.T[index]
+                                + self.exit.p[index + 1] * self.exit.v_x[index + 1]
+                                / self.exit.T[index + 1]
+                            )
+                        )
+                    )
+                )
+
+                # corrector step - recalculate axial velocity at station index + 1
+                self.exit.v_x[index + 1] = (
+                    self.exit.v_x[index] + 1 / (self.exit.v_x[index] + self.exit.v_x[index + 1]) * (
+                        2 / (utils.gamma - 1) * (self.exit.T_0[index + 1] - self.exit.T_0[index])
+                        - (self.exit.T_0[index] + self.exit.T_0[index + 1])
+                        * (self.exit.s[index + 1] - self.exit.s[index])
+                        - (self.exit.v_theta[index] + self.exit.v_theta[index + 1])
+                        / (self.exit.rr[index] + self.exit.rr[index + 1]) * (
+                            self.exit.rr[index + 1] * self.exit.v_theta[index + 1]
+                            - self.exit.rr[index] * self.exit.v_theta[index]
+                        )
+                    )
+                )
+
+        # calculate exit mass flow rate
+        self.exit.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.exit.p / np.sqrt(self.exit.T)
+            * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
+        )
+        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
+
+        utils.debug(f"Stator: {100 * (self.exit.m_dot / self.inlet.m_dot - 1)}")
+
+        # end timer
+        t2 = timer()
+        utils.debug(
+            f"Stator design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+        )
+
     def evaluate(self, T_1):
         """Evaluates performance of the stator blade row."""
         # solve for stage reaction
@@ -426,10 +574,6 @@ class Stator(Blade_row):
                     * np.sin(self.exit.alpha)
                 )
             )
-
-            # calculate mean-line diffusion factor
-            """r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
-            DF_mean = np.interp(r_mean, self.exit.rr, self.exit.diffusion_factor)"""
 
             # check if diffusion factor criterion is met
             if (

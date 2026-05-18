@@ -372,13 +372,10 @@ class Rotor(Blade_row):
             + (1 - hub_tip_ratio) * (np.linspace(0, 1, utils.Defaults.solver_grid))**2
         )
 
-    def design(self, v_x_hub, hub_tip_ratio):
+    def design2(self, v_x_hub, hub_tip_ratio):
         """Solves for the rotor exit conditions and blade geometry."""
         # start timer
         t1 = timer()
-
-        # sever relationship between inlet and previous blade row exit
-        #self.inlet = copy.deepcopy(self.inlet)
 
         # impose bounds on hub velocity guess
         v_x_hub = utils.bound(v_x_hub)
@@ -581,6 +578,334 @@ class Rotor(Blade_row):
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, dm_dr_2)
+
+        # end timer
+        t2 = timer()
+        utils.debug(
+            f"Rotor design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+        )
+
+    def design(self, v_x_hub, hub_tip_ratio):
+        """Determines the flowfield through the rotor and solves for the flow angles."""
+        # start timer
+        t1 = timer()
+
+        # impose bounds on hub velocity guess
+        v_x_hub = utils.bound(v_x_hub)
+
+        # create empty arrays of exit relative quantities
+        self.exit.M_rel = np.zeros(utils.Defaults.solver_grid)
+        self.exit.T_0_rel = np.zeros(utils.Defaults.solver_grid)
+        self.exit.p_0_rel = np.zeros(utils.Defaults.solver_grid)
+
+        # determine inlet mass flow rate distribution
+        self.inlet.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.inlet.p / np.sqrt(self.inlet.T)
+            * self.inlet.M * np.cos(self.inlet.alpha) * self.inlet.rr
+        )
+        self.inlet.m_dot = utils.cumulative_trapezoid(self.inlet.rr, self.inlet.dm_dot_dr)
+
+        # get mass flow rate through each streamtube
+        dm_dot = np.diff(self.inlet.m_dot)
+
+        # hub dimensionless axial velocity and radius are known
+        self.exit.v_x[0] = v_x_hub
+        self.exit.rr[0] = self.inlet.rr[0]
+
+        # get mean-line radius and conditions
+        self.inlet.r_mean = np.sqrt(0.5 * (self.inlet.rr[0]**2 + self.inlet.rr[-1]**2))
+        M_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.M)
+        T_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.T)
+        alpha_mean = np.interp(self.inlet.r_mean, self.inlet.rr, self.inlet.alpha)
+
+        # get variation in inlet blade Mach number
+        M_blade_mean = M_mean * np.cos(alpha_mean) / self.phi_mean
+        self.inlet.M_blade = (
+            M_blade_mean * (self.inlet.rr / self.inlet.r_mean)
+            * np.sqrt(T_mean / self.inlet.T)
+        )
+
+        # get variation in relative Mach number and flow angle via vector algebra
+        z_x = self.inlet.M * np.cos(self.inlet.alpha)
+        z_y = self.inlet.M * np.sin(self.inlet.alpha) - self.inlet.M_blade
+        self.inlet.M_rel = np.hypot(z_x, z_y)
+        self.inlet.beta = np.arctan2(z_y, z_x)
+
+        # get variation in stage loading coefficient
+        psi = self.psi_mean * np.power(self.inlet.r_mean / self.inlet.rr, self.n + 1)
+
+        # get spanwise variation of inlet relative stagnation properties
+        self.inlet.T_0_rel = self.inlet.T / utils.stagnation_temperature_ratio(self.inlet.M_rel)
+        self.inlet.p_0_rel = self.inlet.p / utils.stagnation_pressure_ratio(self.inlet.M_rel)
+
+        # loop over each streamtube
+        for index in range(len(self.inlet.M)):
+
+            if np.isnan(self.exit.rr[index]):
+
+                input()
+
+            # find relative stagnation temperature at upper bound of streamtube
+            self.exit.T_0_rel[index] = (
+                self.inlet.T_0_rel[index]
+                + 0.5 * (utils.gamma - 1) * self.inlet.M_blade[index]**2 * self.inlet.T[index]
+                * ((self.exit.rr[index] / self.inlet.rr[index])**2 - 1)
+            )
+
+            # find relative stagnation pressure from stagnation pressure loss coefficient
+            self.exit.p_0_rel[index] = (
+                self.inlet.p_0_rel[index] * (
+                    np.power(
+                        self.exit.T_0_rel[index] / self.inlet.T_0_rel[index],
+                        utils.gamma / (utils.gamma - 1)
+                    )
+                    - self.Y_p * (1 - self.inlet.p[index] / self.inlet.p_0_rel[index])
+                )
+            )
+
+            # find exit tangential velocity from specified stage loading coefficient
+            self.exit.v_theta[index] = (
+                self.inlet.rr[index] / self.exit.rr[index] * (
+                    psi[index] * self.inlet.M_blade[index]
+                    + self.inlet.M[index] * np.sin(self.inlet.alpha[index])
+                ) * np.sqrt(self.inlet.T[index])
+            )
+
+            # find entropy
+            self.exit.s[index] = (
+                self.inlet.s[index]
+                + np.log(self.exit.T_0_rel[index] / self.inlet.T_0_rel[index]) / (utils.gamma - 1)
+                - np.log(self.exit.p_0_rel[index] / self.inlet.p_0_rel[index]) / utils.gamma
+            )
+
+            # find stagnation temperature from specified stage loading coefficient
+            self.exit.T_0[index] = (
+                self.inlet.T_0[index] * (
+                    1 + psi[index] * (utils.gamma - 1) * self.inlet.M_blade[index]**2
+                    * self.inlet.T[index] / self.inlet.T_0[index]
+                )
+            )
+
+            # find Mach number
+            self.exit.M[index] = (
+                np.sqrt(
+                    (self.exit.v_x[index]**2 + self.exit.v_theta[index]**2) / (
+                        self.exit.T_0[index] - 0.5 * (utils.gamma - 1)
+                        * (self.exit.v_x[index]**2 + self.exit.v_theta[index]**2)
+                    )
+                )
+            )
+
+            # find static temperature
+            self.exit.T[index] = (
+                self.exit.T_0[index] * utils.stagnation_temperature_ratio(self.exit.M[index])
+            )
+
+            # find relative Mach number
+            self.exit.M_rel[index] = (
+                utils.inverse_temperature_ratio(self.exit.T[index] / self.exit.T_0_rel[index])
+            )
+
+            # find static pressure
+            self.exit.p[index] = (
+                self.exit.p_0_rel[index] * utils.stagnation_pressure_ratio(self.exit.M_rel[index])
+            )
+
+            # for all but final streamline
+            if index < len(self.inlet.M) - 1:
+
+                # predictor step - calculate streamtube outer radius
+                self.exit.rr[index + 1] = (
+                    np.sqrt(
+                        self.exit.rr[index]**2
+                        + dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - hub_tip_ratio**2)
+                        * self.exit.T[index]
+                        / (utils.gamma * self.exit.p[index] * self.exit.v_x[index])
+                    )
+                )
+
+                # predictor step - find relative stagnation temperature
+                self.exit.T_0_rel[index + 1] = (
+                    self.inlet.T_0_rel[index + 1]
+                    + 0.5 * (utils.gamma - 1) * self.inlet.M_blade[index + 1]**2 * self.inlet.T[index + 1]
+                    * ((self.exit.rr[index + 1] / self.inlet.rr[index + 1])**2 - 1)
+                )
+
+                # predictor step - find relative stagnation pressure
+                self.exit.p_0_rel[index + 1] = (
+                    self.inlet.p_0_rel[index + 1] * (
+                        np.power(
+                            self.exit.T_0_rel[index + 1] / self.inlet.T_0_rel[index + 1],
+                            utils.gamma / (utils.gamma - 1)
+                        )
+                        - self.Y_p * (1 - self.inlet.p[index + 1] / self.inlet.p_0_rel[index + 1])
+                    )
+                )
+
+                # predictor step - find tangential velocity
+                self.exit.v_theta[index + 1] = (
+                    self.inlet.rr[index + 1] / self.exit.rr[index + 1] * (
+                        psi[index + 1] * self.inlet.M_blade[index + 1]
+                        + self.inlet.M[index + 1] * np.sin(self.inlet.alpha[index + 1])
+                    ) * np.sqrt(self.inlet.T[index + 1])
+                )
+
+                # predictor step - find entropy
+                self.exit.s[index + 1] = (
+                    self.inlet.s[index + 1]
+                    + np.log(self.exit.T_0_rel[index + 1] / self.inlet.T_0_rel[index + 1])
+                    / (utils.gamma - 1)
+                    - np.log(self.exit.p_0_rel[index + 1] / self.inlet.p_0_rel[index + 1])
+                    / utils.gamma
+                )
+
+                # predictor step - find stagnation temperature
+                self.exit.T_0[index + 1] = (
+                    self.inlet.T_0[index + 1] * (
+                        1 + psi[index + 1] * (utils.gamma - 1) * self.inlet.M_blade[index + 1]**2
+                        * self.inlet.T[index + 1] / self.inlet.T_0[index + 1]
+                    )
+                )
+
+                # predictor step - calculate axial velocity at station index + 1
+                self.exit.v_x[index + 1] = (
+                    self.exit.v_x[index] + 1 / self.exit.v_x[index] * (
+                        1 / (utils.gamma - 1) * (self.exit.T_0[index + 1] - self.exit.T_0[index])
+                        - self.exit.T[index] * (self.exit.s[index + 1] - self.exit.s[index])
+                        - self.exit.v_theta[index] / self.exit.rr[index] * (
+                            self.exit.rr[index + 1] * self.exit.v_theta[index + 1]
+                            - self.exit.rr[index] * self.exit.v_theta[index]
+                        )
+                    )
+                )
+
+                # predictor step - calculate Mach number
+                self.exit.M[index + 1] = (
+                    np.sqrt(
+                        (self.exit.v_x[index + 1]**2 + self.exit.v_theta[index + 1]**2) / (
+                            self.exit.T_0[index + 1] - 0.5 * (utils.gamma - 1)
+                            * (self.exit.v_x[index + 1]**2 + self.exit.v_theta[index + 1]**2)
+                        )
+                    )
+                )
+
+                # find static temperature
+                self.exit.T[index + 1] = (
+                    self.exit.T_0[index + 1]
+                    * utils.stagnation_temperature_ratio(self.exit.M[index + 1])
+                )
+
+                # find relative Mach number
+                self.exit.M_rel[index + 1] = utils.inverse_temperature_ratio(
+                    self.exit.T[index + 1] / self.exit.T_0_rel[index + 1]
+                )
+
+                # find static pressure
+                self.exit.p[index + 1] = (
+                    self.exit.p_0_rel[index + 1]
+                    * utils.stagnation_pressure_ratio(self.exit.M_rel[index + 1])
+                )
+
+                # corrector step - recalculate streamtube outer radius
+                self.exit.rr[index + 1] = (
+                    np.sqrt(
+                        self.exit.rr[index]**2
+                        + 2 * dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - hub_tip_ratio**2) / (
+                            utils.gamma * (
+                                self.exit.p[index] * self.exit.v_x[index] / self.exit.T[index]
+                                + self.exit.p[index + 1] * self.exit.v_x[index + 1]
+                                / self.exit.T[index + 1]
+                            )
+                        )
+                    )
+                )
+
+                # corrector step - find relative stagnation temperature
+                self.exit.T_0_rel[index + 1] = (
+                    self.inlet.T_0_rel[index + 1]
+                    + 0.5 * (utils.gamma - 1) * self.inlet.M_blade[index + 1]**2 * self.inlet.T[index + 1]
+                    * ((self.exit.rr[index + 1] / self.inlet.rr[index + 1])**2 - 1)
+                )
+
+                # corrector step - find relative stagnation pressure
+                self.exit.p_0_rel[index + 1] = (
+                    self.inlet.p_0_rel[index + 1] * (
+                        np.power(
+                            self.exit.T_0_rel[index + 1] / self.inlet.T_0_rel[index + 1],
+                            utils.gamma / (utils.gamma - 1)
+                        )
+                        - self.Y_p * (1 - self.inlet.p[index + 1] / self.inlet.p_0_rel[index + 1])
+                    )
+                )
+
+                # corrector step - find tangential velocity
+                self.exit.v_theta[index + 1] = (
+                    self.inlet.rr[index + 1] / self.exit.rr[index + 1] * (
+                        psi[index + 1] * self.inlet.M_blade[index + 1]
+                        + self.inlet.M[index + 1] * np.sin(self.inlet.alpha[index + 1])
+                    ) * np.sqrt(self.inlet.T[index + 1])
+                )
+
+                # corrector step - find entropy
+                self.exit.s[index + 1] = (
+                    self.inlet.s[index + 1]
+                    + np.log(self.exit.T_0_rel[index + 1] / self.inlet.T_0_rel[index + 1]) / (utils.gamma - 1)
+                    - np.log(self.exit.p_0_rel[index + 1] / self.inlet.p_0_rel[index + 1]) / utils.gamma
+                )
+
+                # corrector step - find stagnation temperature
+                self.exit.T_0[index + 1] = (
+                    self.inlet.T_0[index + 1] * (
+                        1 + psi[index + 1] * (utils.gamma - 1) * self.inlet.M_blade[index + 1]**2
+                        * self.inlet.T[index + 1] / self.inlet.T_0[index + 1]
+                    )
+                )
+
+                # corrector step - recalculate axial velocity at station index + 1
+                self.exit.v_x[index + 1] = (
+                    self.exit.v_x[index] + 1 / (self.exit.v_x[index] + self.exit.v_x[index + 1]) * (
+                        2 / (utils.gamma - 1) * (self.exit.T_0[index + 1] - self.exit.T_0[index])
+                        - (self.exit.T_0[index] + self.exit.T_0[index + 1])
+                        * (self.exit.s[index + 1] - self.exit.s[index])
+                        - (self.exit.v_theta[index] + self.exit.v_theta[index + 1])
+                        / (self.exit.rr[index] + self.exit.rr[index + 1]) * (
+                            self.exit.rr[index + 1] * self.exit.v_theta[index + 1]
+                            - self.exit.rr[index] * self.exit.v_theta[index]
+                        )
+                    )
+                )
+
+        # calculate flow angle from dimensionless velocity information
+        self.exit.alpha = np.arctan2(self.exit.v_theta, self.exit.v_x)
+
+        # calculate stagnation pressure
+        self.exit.p_0 = self.exit.p / utils.stagnation_pressure_ratio(self.exit.M)
+
+        # find blade Mach number
+        self.exit.M_blade = (
+            self.inlet.M_blade * self.exit.rr / self.inlet.rr
+            * np.sqrt(self.inlet.T / self.exit.T)
+        )
+
+        # get variation in relative Mach number and flow angle via vector algebra
+        z_x = self.exit.M * np.cos(self.exit.alpha)
+        z_y = self.exit.M * np.sin(self.exit.alpha) - self.exit.M_blade
+        self.exit.M_rel = np.hypot(z_x, z_y)
+        self.exit.beta = np.arctan2(z_y, z_x)
+
+        # calculate geometric mean-line radius
+        self.exit.r_mean = np.sqrt(0.5 * (self.exit.rr[0]**2 + self.exit.rr[-1]**2))
+
+        # calculate exit mass flow rate
+        self.exit.dm_dot_dr = (
+            2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * self.exit.p / np.sqrt(self.exit.T)
+            * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
+        )
+        self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
+
+        utils.debug(f"Rotor: {100 * (self.exit.m_dot / self.inlet.m_dot - 1)}")
 
         # end timer
         t2 = timer()

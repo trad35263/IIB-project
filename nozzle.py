@@ -166,6 +166,10 @@ class Nozzle:
         self.exit.v_x = np.zeros(len(self.inlet.M))
         self.exit.v_theta = np.zeros(len(self.inlet.M))
 
+        # set hub dimensionless axial velocity and radius
+        self.exit.v_x[0] = v_x_hub
+        self.exit.rr[0] = 1e-2
+
         # determine inlet mass flow rate distribution
         self.inlet.dm_dot_dr = (
             2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
@@ -176,10 +180,6 @@ class Nozzle:
 
         # get mass flow rate through each streamtube
         dm_dot = np.diff(self.inlet.m_dot)
-
-        # set hub dimensionless axial velocity and radius
-        self.exit.v_x[0] = v_x_hub
-        self.exit.rr[0] = 1e-2
 
         # nozzle is isentropic
         self.exit.T_0 = self.inlet.T_0
@@ -303,6 +303,8 @@ class Nozzle:
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
+
+        utils.debug(f"Nozzle: {100 * (self.exit.m_dot / self.inlet.m_dot - 1)}")
 
         # end timer
         t2 = timer()
