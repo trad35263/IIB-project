@@ -343,6 +343,7 @@ class Engine:
         self.dimensional_values()
 
         print(f"utils.mass_flow_function(self.M_1): {utils.mass_flow_function(self.M_1)}")
+        print(f"self.nozzle.inlet.m_dot[-1]: {self.nozzle.inlet.m_dot[-1]}")
         print(f"self.nozzle.exit.m_dot[-1]: {self.nozzle.exit.m_dot[-1]}")
 
         # end timer and print feedback
@@ -566,33 +567,39 @@ class Engine:
 
         # mass average nozzle properties
         self.T_0_ratio = (
-            utils.cumulative_trapezoid(
+            2 * utils.gamma / (
+                (1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1)
+                * self.nozzle.exit.m_dot[-1]
+            ) * utils.cumulative_trapezoid(
                 self.nozzle.exit.rr,
-                self.nozzle.exit.rr * self.nozzle.exit.m_dot
-                * self.nozzle.exit.p_0 / np.sqrt(self.nozzle.exit.T_0)
-                * self.nozzle.exit.T_0
-            ) / utils.mass_flow_function(self.M_1)
+                self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.v_x
+                / utils.stagnation_temperature_ratio(self.nozzle.exit.M)
+            )[-1]
         )
         self.p_0_ratio = (
-            utils.cumulative_trapezoid(
+            2 * utils.gamma / (
+                (1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1)
+                * self.nozzle.exit.m_dot[-1]
+            ) * utils.cumulative_trapezoid(
                 self.nozzle.exit.rr,
-                self.nozzle.exit.rr * self.nozzle.exit.m_dot
-                * self.nozzle.exit.p_0 / np.sqrt(self.nozzle.exit.T_0)
-                * self.nozzle.exit.p_0
-            ) / utils.mass_flow_function(self.M_1)
+                self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.p_0
+                * self.nozzle.exit.v_x / self.nozzle.exit.T
+            )[-1]
         )
 
         # find mass-averaged stagnation temperature and pressure ratios
-        self.T_0_ratio = (
+        """self.T_0_ratio = (
             utils.cumulative_trapezoid(
                 self.nozzle.exit.rr, self.nozzle.exit.dm_dot_dr * self.nozzle.exit.T_0 # is this correct? dm/dA??
             )[-1] / utils.mass_flow_function(self.M_1)
         )
+        print(f"self.T_0_ratio: {self.T_0_ratio}")
         self.p_0_ratio = (
             utils.cumulative_trapezoid(
                 self.nozzle.exit.rr, self.nozzle.exit.dm_dot_dr * self.nozzle.exit.p_0
             )[-1] / utils.mass_flow_function(self.M_1)
         )
+        print(f"self.p_0_ratio: {self.p_0_ratio}\n")"""
 
         # calculate thrust coefficient contribution due to jet momentum flux
         dC_th_1_dr = (
@@ -696,7 +703,8 @@ class Engine:
                 )
 
         # find dimensional thrust power
-        self.P_out = self.thrust * self.scenario.flight_speed
+        self.P_flight = self.thrust * self.scenario.flight_speed
+        print(f"self.P_flight: {self.P_flight}")
 
         # find thrust power for zero nozzle exit swirl
         M_ideal = utils.inverse_pressure_ratio(
@@ -767,7 +775,7 @@ class Engine:
         print(f"self.P_no_swirl: {self.P_no_swirl}")
 
         # calculate thrust averaged stagnation pressure
-        p_0_thrust = (
+        """p_0_thrust = (
             utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
                 1 - 4 * utils.gamma**2 / ((1 - self.hub_tip_ratio**2)**2 * (utils.gamma - 1)) * (
                     1 / utils.mass_flow_function(self.scenario.M) * utils.cumulative_trapezoid(
@@ -817,7 +825,7 @@ class Engine:
 
         print(f"p_0_thrust: {p_0_thrust}")
         print(f"self.p_0_ratio: {self.p_0_ratio}")
-        print(f"th_j: {th_j}")
+        print(f"th_j: {th_j}")"""
 
         """M_j_thrust = 2
         T_thrust = 2
@@ -826,6 +834,30 @@ class Engine:
                 1 + (utils.gamma - 1) / (2 * utils.gamma * R * )
             )
         )"""
+
+        # VERSION 2
+        # calculate 1D jet velocity required
+        v_j_1D = self.thrust / self.m_dot + self.scenario.flight_speed
+
+        # calculate velocity ratio dimensionless group
+        v_c_p_T_0 = v_j_1D / np.sqrt(utils.c_p * self.T_0_ratio * self.scenario.T_0)
+
+        # calculate 1D jet Mach number
+        M_j_1D = v_c_p_T_0 / np.sqrt((utils.gamma - 1) * (1 - 0.5 * v_c_p_T_0**2))
+
+        # calculate thrust-averaged stagnation pressure
+        p_0_thrust = (
+            utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
+                1 + 0.5 * (utils.gamma - 1) * M_j_1D**2, utils.gamma / (utils.gamma - 1)
+            )
+        )
+
+        # calculate thrust-averaged isentropic efficiency
+        self.P_isen_thrust = (
+            self.m_dot * utils.c_p * (np.power(p_0_thrust, (utils.gamma - 1) / utils.gamma) - 1)
+            * self.scenario.T_0
+        )
+        #print(f"self.P_isen_thrust: {self.P_isen_thrust}")
 
         self.P_isen = (
             2 * utils.gamma * self.scenario.A * self.scenario.p_0
@@ -838,8 +870,15 @@ class Engine:
                 * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
             )[-1]
         )
+        #print(f"self.P_isen: {self.P_isen}")
 
-        self.P = (
+        # calculate kinetic energy flux of uniform jet
+        self.P_kinetic = (
+            0.5 * self.m_dot * (v_j_1D**2 - self.scenario.flight_speed**2)
+        )
+        print(f"self.P_kinetic: {self.P_kinetic}")
+
+        """self.P = (
             2 * utils.gamma * self.scenario.A * self.scenario.p_0
             * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
             / ((utils.gamma - 1) * (1 - self.hub_tip_ratio**2))
@@ -848,7 +887,7 @@ class Engine:
                 self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.v_x
                 * (self.nozzle.exit.T_0 - 1) / self.nozzle.exit.T
             )[-1]
-        )
+        )"""
 
         # define motor power
         self.P_in = (
@@ -856,16 +895,16 @@ class Engine:
         )
         print(f"self.P_in: {self.P_in}")
 
-        # debugging propulsive efficiency
-        """print(f"flight power: {self.scenario.thrust * self.scenario.flight_speed}")
-        print(f"compressor power: {self.blade_rows[0].motor_power * self.eta_comp}")
-        print(f"motor power: {self.blade_rows[0].motor_power}")
+        # calculate efficiency metrics
+        self.eta_swirl = self.P_flight / self.P_no_swirl
+        self.eta_prop = self.P_no_swirl / self.P_kinetic
+        self.eta_comp = self.P_kinetic / self.P_in
+        self.eta_overall = self.eta_swirl * self.eta_prop * self.eta_comp
 
-        print(
-            f"flight power / motor power: "
-            f"{self.scenario.thrust * self.scenario.flight_speed / self.blade_rows[0].motor_power}"
-        )
-        print(f"self.eta_overall: {self.eta_overall}")"""
+        print(f"self.eta_swirl: {self.eta_swirl}")
+        print(f"self.eta_prop: {self.eta_prop}")
+        print(f"self.eta_comp: {self.eta_comp}")
+        print(f"self.eta_overall: {self.eta_overall}")
 
     def empirical_design(self):
         """Determines the actual geometry of the engine."""
