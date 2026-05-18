@@ -27,6 +27,10 @@ class Blade_row:
         self.inlet = Annulus()
         self.exit = Annulus()
 
+        # set default power and rpm as zero
+        self.motor_power = 0
+        self.motor_rpm = 0
+
     def __str__(self):
         """Prints a string representation of the blade row."""
         string = f"{self.label}\n"

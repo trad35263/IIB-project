@@ -37,7 +37,7 @@ class Nozzle:
 
 # design functions --------------------------------------------------------------------------------
 
-    def design(self, v_x_hub, hub_tip_ratio):
+    def design2(self, v_x_hub, hub_tip_ratio):
         """Determines the flowfield through the nozzle and solves for its geometry."""
         # start timer
         t1 = timer()
@@ -149,17 +149,13 @@ class Nozzle:
             f"Nozzle design completed in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
         )
 
-    def design2(self, v_x_hub, hub_tip_ratio):
+    def design(self, v_x_hub, hub_tip_ratio):
         """Determines the flowfield through the nozzle and solves for its area ratio."""
         # start timer
         t1 = timer()
 
-        print(f"v_x_hub: {v_x_hub}")
-
         # impose bounds on hub velocity guess
         v_x_hub = utils.bound(v_x_hub)
-
-        print(f"v_x_hub: {v_x_hub}")
 
         # ensure exit arrays have the correct length
         self.exit.rr = np.zeros(len(self.inlet.M))
@@ -270,9 +266,9 @@ class Nozzle:
                         self.exit.rr[index]**2
                         + 2 * dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - hub_tip_ratio**2) / (
                             utils.gamma * (
-                                self.exit.p[index] * self.exit.T[index] / self.exit.v_x[index]
-                                + self.exit.p[index + 1] * self.exit.T[index + 1]
-                                / self.exit.v_x[index + 1]
+                                self.exit.p[index] * self.exit.v_x[index] / self.exit.T[index]
+                                + self.exit.p[index + 1] * self.exit.v_x[index + 1]
+                                / self.exit.T[index + 1]
                             )
                         )
                     )
@@ -307,12 +303,6 @@ class Nozzle:
             * self.exit.M * np.cos(self.exit.alpha) * self.exit.rr
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
-
-        print(f"self.exit.m_dot: {self.exit.m_dot}")
-        print(f"self.exit.v_x: {self.exit.v_x}")
-        print(f"self.exit.M: {self.exit.M}")
-        print(f"self.exit.alpha: {self.exit.alpha}")
-        print(f"self.exit.p: {self.exit.p}")
 
         # end timer
         t2 = timer()

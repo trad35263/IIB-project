@@ -111,6 +111,9 @@ class Defaults:
         ],
         [
             'p', 'Static pressure'
+        ],
+        [
+            'epsilon', 'Jet Velocity Ratio'
         ]
     ]
 
@@ -159,11 +162,15 @@ def impulse_function(M):
 
 def dynamic_pressure_function(M):
     """Calculates the ratio of dynamic pressure to stagnation pressure for a given Mach number."""
-    return gamma * M**2 / 2 * np.power(1 + (gamma - 1) * M**2 / 2, -gamma / (gamma - 1))
+    return 0.5 * gamma * M**2 * np.power(1 + 0.5 * (gamma - 1) * M**2, -gamma / (gamma - 1))
 
 def velocity_function(M):
     """Calculates the non-dimensional velocity for a given Mach number."""
     return np.sqrt(gamma - 1) * M * np.power(1 + (gamma - 1) * M**2 / 2, -1 / 2)
+
+def inverse_pressure_ratio(p):
+    """Calculates the Mach number corresponding to an input static-stagnation pressure ratio."""
+    return np.sqrt(2 / (gamma - 1) * (np.power(p, (1 - gamma) / gamma) - 1))
 
 def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
     if a_max is not None:
