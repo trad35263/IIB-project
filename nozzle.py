@@ -224,8 +224,10 @@ class Nozzle:
                 )
 
                 # predictor step - calculate tangential velocity at station index + 1
+                # CORRECTED
                 self.exit.v_theta[index + 1] = (
-                    self.exit.v_theta[index] * self.exit.rr[index] / self.exit.rr[index + 1]
+                    self.inlet.v_theta[index + 1] * self.inlet.rr[index + 1]
+                    / self.exit.rr[index + 1]
                 )
 
                 # predictor step - calculate axial velocity at station index + 1
@@ -275,8 +277,10 @@ class Nozzle:
                 )
 
                 # corrector step - recalculate tangential velocity at station index + 1
+                # CORRECTED
                 self.exit.v_theta[index + 1] = (
-                    self.exit.v_theta[index] * self.exit.rr[index] / self.exit.rr[index + 1]
+                    self.inlet.v_theta[index + 1] * self.inlet.rr[index + 1]
+                    / self.exit.rr[index + 1]
                 )
 
                 # corrector step - recalculate axial velocity at station index + 1
@@ -304,7 +308,7 @@ class Nozzle:
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
 
-        utils.debug(f"Nozzle: {100 * (self.exit.m_dot / self.inlet.m_dot - 1)}")
+        utils.debug(f"Nozzle mass error: {100 * (self.exit.m_dot / self.inlet.m_dot - 1)}")
 
         # end timer
         t2 = timer()
