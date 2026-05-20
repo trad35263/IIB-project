@@ -656,11 +656,6 @@ class Engine:
                 )
             )
 
-        print(f"self.nozzle.inlet.v_theta: {self.nozzle.inlet.v_theta}")
-        print(f"self.nozzle.exit.v_theta: {self.nozzle.exit.v_theta}")
-        print(f"self.nozzle.exit.rr: {self.nozzle.exit.rr}")
-        print(f"r_ideal: {r_ideal}")
-
         # check inlet mass flow rate distribution
         dm_dot_dr = (
             2 * utils.gamma / ((1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
@@ -668,8 +663,6 @@ class Engine:
             * M_ideal * r_ideal
         )
         m_dot = utils.cumulative_trapezoid(r_ideal, dm_dot_dr)
-
-        #print(f"m_dot[-1]: {m_dot[-1]}")
 
         # calculate thrust coefficient contribution due to jet momentum flux
         dC_th_dr = (
@@ -1232,13 +1225,6 @@ class Engine:
 
         # tight layout
         plt.tight_layout()
-
-        # loop over all blade rows
-        """for blade_row in self.blade_rows:
-
-            # draw blades
-            thickness = utils.Defaults.max_thickness * 2 / self.scenario.diameter
-            blade_row.draw_blades(thickness, 0.5)"""
 
         # iterate over all inlet and exit streamtubes chosen for plotting
         for row, index in enumerate(indices):

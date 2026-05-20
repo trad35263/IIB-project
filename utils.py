@@ -134,7 +134,7 @@ class Defaults:
     debug = False
 
     # default dimensional blade thickness (in mm)
-    max_thickness_mm = 2
+    max_thickness_mm = 3
     thickness_fraction = 0.5
 
 # 0.3 compressible flow perfect gas relations
