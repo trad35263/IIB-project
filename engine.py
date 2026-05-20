@@ -16,7 +16,7 @@ from datetime import datetime
 import json
 
 # plotly graphs for sankey chart
-import plotly.graph_objects as go
+#import plotly.graph_objects as go
 
 #import matlab.engine
 from pathlib import Path as FilePath
@@ -469,90 +469,6 @@ class Engine:
             f"Nozzle area ratio: {utils.Colours.GREEN}{nozzle_area_ratio:.4g}{utils.Colours.END}"
         )
 
-    def evaluate2(self):
-        """Determine key performance metrics for the engine system."""
-        # investigate nozzle performance and extract properties
-        self.nozzle.evaluate(self.hub_tip_ratio)
-        self.T_0_ratio = self.nozzle.T_0_ratio
-        self.p_0_ratio = self.nozzle.p_0_ratio
-        self.nozzle_area_ratio = self.nozzle.area_ratio
-
-        # calculate thrust coefficient (excluding pressure terms)
-        """self.C_th_without_p = (
-            self.nozzle.C_th[-1]
-            - utils.mass_flow_function(self.M_1)
-            * utils.velocity_function(self.M_flight)
-        )"""
-
-        # calculate thrust coefficient (including pressure terms)
-        self.C_th = (
-            self.nozzle.C_th[-1]
-            - utils.mass_flow_function(self.M_1)
-            * utils.velocity_function(self.M_flight)
-            - self.nozzle_area_ratio * self.p_atm
-        )
-
-        # calculate jet velocity ratio
-        rho_v_2_r = (
-            self.nozzle.exit.p * self.nozzle.exit.M**2
-            * self.nozzle.exit.rr / self.nozzle.exit.rr[-1]
-        )
-        self.jet_velocity_ratio = (
-            utils.mass_flow_function(self.M_1) * utils.velocity_function(self.scenario.M)
-            / (
-                2 * utils.gamma * self.nozzle_area_ratio * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr / self.nozzle.exit.rr[-1], rho_v_2_r
-                )[-1]
-            )
-        )
-
-        # calculate compressor (isentropic) efficiency - missing cos alpha terms?
-        h_03s_h_01_r = (
-            self.nozzle.exit.p * self.nozzle.exit.M / np.sqrt(self.nozzle.exit.T)
-            * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
-            * self.nozzle.exit.rr
-        )
-        h_03_h_01_r = (
-            self.nozzle.exit.p * self.nozzle.exit.M / np.sqrt(self.nozzle.exit.T)
-            * (self.nozzle.exit.T_0 - 1) * self.nozzle.exit.rr
-        )
-        self.eta_comp = (
-            utils.cumulative_trapezoid(self.nozzle.exit.rr, h_03s_h_01_r)[-1]
-            / utils.cumulative_trapezoid(self.nozzle.exit.rr, h_03_h_01_r)[-1]
-        )
-
-        # calculate propulsive efficiency - normalised by isentropic work done
-        self.eta_prop = (
-            self.C_th * utils.velocity_function(self.scenario.M) * np.sqrt(utils.gamma - 1)
-            * (1 - self.hub_tip_ratio**2) / (
-                2 * utils.gamma * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr,
-                    np.power(
-                        1 + (utils.gamma - 1) / 2 * self.nozzle.exit.M**2,
-                        0.5 - utils.gamma / (utils.gamma - 1)
-                    ) * self.nozzle.exit.M * np.cos(self.nozzle.exit.alpha)
-                    * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
-                    * self.nozzle.exit.rr
-                )[-1]
-            )
-        )
-
-        # calculate electrical motor efficiency
-        self.eta_elec = 1
-
-        # calculate overall efficiency
-        self.eta_overall = (
-            np.sqrt(utils.gamma - 1) * (1 - self.hub_tip_ratio**2) * self.C_th
-            * utils.velocity_function(self.scenario.M) / (
-                2 * utils.gamma * utils.cumulative_trapezoid(
-                    self.nozzle.exit.rr,
-                    self.nozzle.exit.p / np.sqrt(self.nozzle.exit.T) * self.nozzle.exit.M
-                    * np.cos(self.nozzle.exit.alpha) * (self.nozzle.exit.T_0 - 1)
-                    * self.nozzle.exit.rr
-                )[-1]
-            )
-        )
-
     def evaluate(self):
         """Calculates the thrust and key efficiency metrics of the engine."""
         # store dimensionless mass flow rate
@@ -674,12 +590,20 @@ class Engine:
             rotor.motor_rpm = utils.rad_s_to_rpm(omega_blade)
 
             # calculate required motor power input
-            dP_dr = (
+            """dP_dr = (
                 np.pi * self.scenario.diameter**2 / 2 * utils.gamma * np.sqrt(
                     utils.c_p / (utils.gamma - 1)
                 ) * self.scenario.p_0 * np.sqrt(self.scenario.T_0)
                 * rotor.inlet.p * rotor.inlet.M * np.cos(rotor.inlet.alpha)
                 * (rotor.exit.T_0 - rotor.inlet.T_0) / np.sqrt(rotor.inlet.T) * rotor.inlet.rr
+            )
+            rotor.motor_power = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]"""
+            dP_dr = (
+                2 * self.scenario.A / (1 - self.hub_tip_ratio**2) * utils.gamma
+                * np.sqrt(utils.c_p / (utils.gamma - 1)) * self.scenario.p_0
+                * np.sqrt(self.scenario.T_0)
+                * rotor.inlet.p * rotor.inlet.v_x * (rotor.exit.T_0 - rotor.inlet.T_0)
+                * rotor.inlet.rr / rotor.inlet.T
             )
             rotor.motor_power = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]
 
@@ -732,6 +656,11 @@ class Engine:
                 )
             )
 
+        print(f"self.nozzle.inlet.v_theta: {self.nozzle.inlet.v_theta}")
+        print(f"self.nozzle.exit.v_theta: {self.nozzle.exit.v_theta}")
+        print(f"self.nozzle.exit.rr: {self.nozzle.exit.rr}")
+        print(f"r_ideal: {r_ideal}")
+
         # check inlet mass flow rate distribution
         dm_dot_dr = (
             2 * utils.gamma / ((1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
@@ -739,6 +668,8 @@ class Engine:
             * M_ideal * r_ideal
         )
         m_dot = utils.cumulative_trapezoid(r_ideal, dm_dot_dr)
+
+        #print(f"m_dot[-1]: {m_dot[-1]}")
 
         # calculate thrust coefficient contribution due to jet momentum flux
         dC_th_dr = (
@@ -792,14 +723,24 @@ class Engine:
         )
 
         # calculate kinetic energy flux of uniform jet
+        # maybe not the right metric
         self.P_kinetic = (
             0.5 * self.m_dot * (v_j_1D**2 - self.scenario.flight_speed**2)
         )
+        #self.P_kinetic = self.m_dot * utils.c_p * (self.T_0_ratio - 1) * self.scenario.T_0
 
-        # define motor power
-        self.P_in = (
-            np.sum([blade_row.motor_power for blade_row in self.blade_rows])
-        )
+        # check if engine does not yet have recorded input power
+        if not hasattr(self, "P_in"):
+
+            # define motor power
+            self.P_in = (
+                np.sum([blade_row.motor_power for blade_row in self.blade_rows])
+            )
+
+        print(f"self.P_in: {self.P_in}")
+        print(f"self.P_kinetic: {self.P_kinetic}")
+        print(f"self.P_no_swirl: {self.P_no_swirl}")
+        print(f"self.P_flight: {self.P_flight}")
 
         # calculate efficiency metrics
         self.eta_swirl = self.P_flight / self.P_no_swirl
@@ -1817,104 +1758,6 @@ class Engine:
         # show all plots
         plt.show()
 
-    def plot_thrust2(self):
-        """Creates a Sankey chart detailing the loss of thrust power throughout the engine."""
-        # create figure
-        fig = go.Figure(data=[go.Sankey(
-            # set arrangement
-            arrangement = "snap",
-
-            # set node dictionary
-            node = {
-                "label": [
-                    "P_in",
-                    "P_kinetic", "Compressor loss",
-                    "P_no_swirl", "Propulsive loss",
-                    "P_flight", "Swirl loss"
-                ],
-                #"x": [0.01, 0.33, 0.33, 0.66, 0.66, 0.99, 0.99],
-                #"y": [0.4, 0.4, 0.8, 0.4, 0.8, 0.4, 0.8],
-                "pad": 15,
-                "thickness": 12,
-                "line": {"color": "black", "width": 0.5},
-                "color": "blue"
-            },
-
-            # set link dictionary
-            link = {
-                "source": [0, 0, 1, 1, 3, 3],
-                "target": [1, 2, 3, 4, 5, 6],
-                "value": [
-                    self.P_kinetic, self.P_in - self.P_kinetic,
-                    self.P_no_swirl, self.P_kinetic - self.P_no_swirl,
-                    self.P_flight, self.P_no_swirl - self.P_flight
-                ]
-            }
-        )])
-
-        # configure plot
-        fig.update_layout(
-            font_size = 20,
-            height = 600,
-            width = 1000,
-            margin = {"l": 20, "r": 20, "t": 40, "b": 40}
-        )
-
-        # save plot as .png
-        fig.write_image("thrust.png")
-
-    def old_plot_thrust(self):
-        """Creates a Sankey chart detailing the loss of thrust power throughout the engine."""
-        from matplotlib.sankey import Sankey
-        import matplotlib.pyplot as plt
-
-        # normalise flows relative to P_in so the diagram scales nicely
-        scale = 1 / self.P_in
-
-        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
-        ax.axis("off")
-
-        sankey = Sankey(
-            ax = ax, scale = scale, offset = 0.3, head_angle = 180, margin = 0.4
-        )
-
-        # P_in -> P_kinetic + Compressor loss
-        sankey.add(
-            flows=[self.P_in, -self.P_kinetic, -(self.P_in - self.P_kinetic)],
-            labels=["P_in", "", "Compressor loss"],
-            orientations=[0, 0, -1],   # 0=right, -1=down, 1=up
-            pathlengths=[0.5, 0.5, 0.5],
-        )
-
-        # P_kinetic -> P_no_swirl + Propulsive loss
-        sankey.add(
-            flows=[self.P_kinetic, -self.P_no_swirl, -(self.P_kinetic - self.P_no_swirl)],
-            labels=["", "", "Propulsive loss"],
-            orientations=[0, 0, -1],
-            pathlengths=[0.5, 0.5, 0.5],
-            prior=0, connect=(1, 0),   # connect this input to output 1 of subprocess 0
-        )
-
-        # P_no_swirl -> P_flight + Swirl loss
-        sankey.add(
-            flows=[self.P_no_swirl, -self.P_flight, -(self.P_no_swirl - self.P_flight)],
-            labels=["", "P_flight", "Swirl loss"],
-            orientations=[0, 0, -1],
-            pathlengths=[0.5, 0.5, 0.5],
-            prior=1, connect=(1, 0),   # connect to output 1 of subprocess 1
-        )
-
-        diagrams = sankey.finish()
-
-        # colour each diagram
-        for diagram in diagrams:
-            diagram.patch.set_facecolor("steelblue")
-            diagram.patch.set_alpha(0.6)
-
-        plt.tight_layout()
-        #plt.savefig("thrust.png", dpi=150, bbox_inches="tight")
-        plt.show()
-
     def plot_thrust(self):
         """Creates a Sankey chart."""
         # create plot
@@ -1952,6 +1795,8 @@ class Engine:
                 self.eta_comp * self.eta_prop * (1 - self.eta_swirl)
             ])
         }
+
+        print(f"link['value']: {link['value']}")
 
         # update margin size
         margin *= link["value"][0]
@@ -2065,20 +1910,7 @@ class Engine:
             ha="right", va="center", fontsize=16
         )
 
-        # get all terminal nodes
-        """terminal_nodes = [i for i in range(len(node["x"])) if i not in link["source"]]
-        
-        # loop for each terminal node
-        for index in terminal_nodes:
-
-            x = node["x"][index] + margin
-            y = node["y"][index] + 0.2 * node["h_in"][index]
-            ax.text(
-                x, y,
-                node["label"][index],
-                ha = "left", va = "center", fontsize = 16
-            )"""
-
         # configure plot and show
         ax.axis("off")
-        plt.show()
+        #plt.show()
+        return fig, ax
