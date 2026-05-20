@@ -345,10 +345,6 @@ class Engine:
         # calculate dimensional values
         self.dimensional_values()
 
-        print(f"utils.mass_flow_function(self.M_1): {utils.mass_flow_function(self.M_1)}")
-        print(f"self.nozzle.inlet.m_dot[-1]: {self.nozzle.inlet.m_dot[-1]}")
-        print(f"self.nozzle.exit.m_dot[-1]: {self.nozzle.exit.m_dot[-1]}")
-
         # end timer and print feedback
         t2 = timer()
         print(

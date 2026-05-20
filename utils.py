@@ -73,7 +73,9 @@ class Defaults:
     fontsize = 12
 
     # default figure size tuple
-    figsize = (10, 6)
+    figsize = (8, 4)
+
+    dpi = 600
 
     # default plotting parameters
     quantity_list = [
@@ -175,6 +177,9 @@ def inverse_pressure_ratio(p):
 def inverse_temperature_ratio(T):
     """Calculates the Mach number corresponding to an input static-stagnation temperature ratio."""
     return np.sqrt(2 / (gamma - 1) * (1 / T - 1))
+
+def inverse_velocity_function(v):
+    return v / np.sqrt((gamma - 1) * (1 - 0.5 * v**2))
 
 def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
     if a_max is not None:

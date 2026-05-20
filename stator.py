@@ -444,6 +444,9 @@ class Stator(Blade_row):
                     )
                 )
 
+        # calculate geometric mean-line radius
+        self.exit.r_mean = 0.5 * np.sqrt(self.exit.rr[0]**2 + self.exit.rr[-1]**2)
+
         # calculate exit mass flow rate
         self.exit.dm_dot_dr = (
             2 * utils.gamma / ((1 - hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
