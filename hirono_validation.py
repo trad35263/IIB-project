@@ -17,7 +17,7 @@ import io
 
 # load Latex font
 font_path = r"C:\Windows\Fonts\texgyretermes-regular.otf"
-prop = fm.FontProperties(fname=font_path)
+prop = fm.FontProperties(fname = font_path)
 
 # update matplotlib global parameters
 plt.rcParams.update({

@@ -1243,7 +1243,10 @@ class Blade_row:
         self.yy = np.zeros((3, 2 * len(self.zz[0])))
 
         # get indices corresponding to hub, mid-span and tip
-        indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
+        mid_index = int(np.round(np.interp(
+            0.5 * (self.exit.rr[0] + self.exit.rr[-1]), self.exit.rr, np.arange(utils.Defaults.solver_grid)
+        )))
+        indices = [0, mid_index, -1]
 
         # loop for each spanwise position
         for j, index in enumerate(indices):
