@@ -628,119 +628,6 @@ class Engine:
         # find dimensional thrust power
         self.P_flight = self.thrust * self.scenario.flight_speed
 
-        # find thrust power for zero nozzle exit swirl
-        M_ideal = utils.inverse_pressure_ratio(
-            utils.stagnation_pressure_ratio(self.scenario.M) / self.nozzle.exit.p_0
-        )
-        T_ideal = utils.stagnation_temperature_ratio(M_ideal) * self.nozzle.exit.T_0
-        p_ideal = utils.stagnation_pressure_ratio(M_ideal) * self.nozzle.exit.p_0
-        v_x_ideal = M_ideal * np.sqrt(T_ideal)
-
-        # find radial streamline positions for ideal nozzle
-        r_ideal = np.zeros(len(M_ideal))
-        r_ideal[0] = self.nozzle.exit.rr[0]
-        dm_dot = np.diff(self.nozzle.inlet.m_dot)
-        for index in range(len(M_ideal) - 1):
- 
-            # corrector step - recalculate streamtube outer radius
-            r_ideal[index + 1] = (
-                np.sqrt(
-                    r_ideal[index]**2
-                    + 2 * dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - self.hub_tip_ratio**2) / (
-                        utils.gamma * (
-                            p_ideal[index] * v_x_ideal[index] / T_ideal[index]
-                            + p_ideal[index + 1] * v_x_ideal[index + 1]
-                            / T_ideal[index + 1]
-                        )
-                    )
-                )
-            )
-
-        # check inlet mass flow rate distribution
-        dm_dot_dr = (
-            2 * utils.gamma / ((1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
-            * p_ideal / np.sqrt(T_ideal)
-            * M_ideal * r_ideal
-        )
-        m_dot = utils.cumulative_trapezoid(r_ideal, dm_dot_dr)
-
-        # calculate thrust coefficient contribution due to jet momentum flux
-        dC_th_dr = (
-            2 * utils.dynamic_pressure_function(M_ideal)
-            * self.nozzle.exit.p_0 * (
-                1 - self.scenario.M / M_ideal
-                * np.sqrt(utils.stagnation_temperature_ratio(self.scenario.M) / T_ideal)
-            ) * r_ideal
-        )
-        self.C_th_ideal = (
-            2 * utils.cumulative_trapezoid(r_ideal, dC_th_dr)[-1]
-            / (1 - self.hub_tip_ratio**2)
-        )
-        self.thrust_ideal = self.C_th_ideal * self.scenario.A * self.scenario.p_0
-        self.P_no_swirl = self.thrust_ideal * self.scenario.flight_speed
-
-        # VERSION 2
-        # calculate 1D jet velocity required
-        v_j_1D = self.thrust / self.m_dot + self.scenario.flight_speed
-        self.jet_velocity_ratio = self.scenario.flight_speed / v_j_1D
-
-        # calculate velocity ratio dimensionless group
-        v_c_p_T_0 = v_j_1D / np.sqrt(utils.c_p * self.T_0_ratio * self.scenario.T_0)
-
-        # calculate 1D jet Mach number
-        M_j_1D = v_c_p_T_0 / np.sqrt((utils.gamma - 1) * (1 - 0.5 * v_c_p_T_0**2))
-
-        # calculate thrust-averaged stagnation pressure
-        p_0_thrust = (
-            utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
-                1 + 0.5 * (utils.gamma - 1) * M_j_1D**2, utils.gamma / (utils.gamma - 1)
-            )
-        )
-
-        # calculate thrust-averaged isentropic efficiency
-        self.P_isen_thrust = (
-            self.m_dot * utils.c_p * (np.power(p_0_thrust, (utils.gamma - 1) / utils.gamma) - 1)
-            * self.scenario.T_0
-        )
-
-        self.P_isen = (
-            2 * utils.gamma * self.scenario.A * self.scenario.p_0
-            * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
-            / ((utils.gamma - 1) * (1 - self.hub_tip_ratio**2))
-            * utils.cumulative_trapezoid(
-                self.nozzle.exit.rr,
-                self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.v_x
-                / self.nozzle.exit.T
-                * (np.power(self.nozzle.exit.p_0, (utils.gamma - 1) / utils.gamma) - 1)
-            )[-1]
-        )
-
-        # calculate kinetic energy flux of uniform jet
-        # maybe not the right metric
-        self.P_kinetic = (
-            0.5 * self.m_dot * (v_j_1D**2 - self.scenario.flight_speed**2)
-        )
-        #self.P_kinetic = self.m_dot * utils.c_p * (self.T_0_ratio - 1) * self.scenario.T_0
-
-        # check if engine does not yet have recorded input power
-        if not hasattr(self, "P_in"):
-
-            # define motor power
-            self.P_in = (
-                np.sum([blade_row.motor_power for blade_row in self.blade_rows])
-            )
-
-        print(f"self.P_in: {self.P_in}")
-        print(f"self.P_kinetic: {self.P_kinetic}")
-        print(f"self.P_no_swirl: {self.P_no_swirl}")
-        print(f"self.P_flight: {self.P_flight}")
-
-        # calculate efficiency metrics
-        self.eta_swirl = self.P_flight / self.P_no_swirl
-        self.eta_prop = self.P_no_swirl / self.P_kinetic
-        self.eta_comp = self.P_kinetic / self.P_in
-        self.eta_overall = self.eta_swirl * self.eta_prop * self.eta_comp
-
     def empirical_design(self):
         """Determines the actual geometry of the engine."""
         # store relevant geometry parameters separately for convenience
@@ -1526,119 +1413,6 @@ class Engine:
             fontsize = 16
         )
 
-    #def plot_matlab(self):
-        """Creates a spanwise flow angle plot with matlab results overlaid."""
-        # run matlab engine
-        """eng = matlab.engine.start_matlab()
-        eng.eval("set(0, 'DefaultFigureVisible', 'off')", nargout=0)
-
-        # path to matlab_folder
-        python_dir = FilePath(__file__).resolve().parent
-        parent_dir = python_dir.parent
-        matlab_dir = parent_dir / "forSlava"
-
-        # add MATLAB folder to MATLAB search path
-        eng.addpath(str(matlab_dir), nargout = 0)
-
-        # create dummy buffers
-        out = io.StringIO()
-        err = io.StringIO()
-
-        # run script rejecting terminal outputs
-        eng.run("DuctedFanDesign_220503", nargout = 0, stdout = out, stderr = err)
-
-        # extract information
-        a = eng.workspace['a']
-        m_dot = eng.workspace['mdot']
-        rho = eng.workspace['ro']
-
-        # convert to numpy arrays
-        alpha = np.array(a['alpha'], dtype = float)
-        v_x = np.array(a['vx'], dtype = float)
-        m_dot = np.array(m_dot, dtype = float)
-        rho = np.array(rho, dtype = float)[0][0]
-
-        # shut down engine
-        eng.quit()
-
-        # create array of x-values on matlab grid and solver grid
-        xx_matlab = np.linspace(0, 1, alpha.shape[0])
-        xx = np.linspace(0, 1, utils.Defaults.solver_grid)
-
-        # get array of radii from array of spans
-        rr = self.hub_tip_ratio + (1 - self.hub_tip_ratio) * xx
-
-        # store matlab flow angles
-        self.blade_rows[0].inlet.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 0, 1])
-        self.blade_rows[0].exit.matlab_rel_angle = np.interp(xx, xx_matlab, alpha[:, 1, 1])
-        self.blade_rows[0].exit.matlab_angle = np.interp(xx, xx_matlab, alpha[:, 1, 2])
-
-        # store matlab axial velocity
-        self.blade_rows[0].inlet.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 0, 0])
-        self.blade_rows[0].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 1, 0])
-        self.blade_rows[1].exit.matlab_v_x = np.interp(xx, xx_matlab, v_x[:, 2, 0])
-
-        # loop over all blade rows
-        for blade_row in self.blade_rows:
-
-            # calculate cumulative (dimensional) mass flow rate
-            dm_dr = 2 * rho * blade_row.exit.matlab_v_x * rr * self.scenario.A / (1 - self.hub_tip_ratio**2)
-            blade_row.exit.m_dot_matlab = utils.cumulative_trapezoid(dm_dr, rr)
-            blade_row.exit.m_dot_kg_s = (
-                blade_row.exit.m_dot * self.scenario.A * self.scenario.p_0 / np.sqrt(utils.c_p * self.scenario.T_0)
-            )
-
-            # calculate dimensional density variation
-            blade_row.exit.rho_kg_m_3 = (
-                blade_row.exit.p / (utils.R * blade_row.exit.T) * self.scenario.p_0 / self.scenario.T_0
-            )
-            blade_row.exit.rho_matlab = rho * np.ones(utils.Defaults.solver_grid)
-
-            # calculate solver flow velocity in m_s
-            blade_row.exit.v_x_m_s = blade_row.exit.v_x * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
-
-        # calculate cumulative (dimensional) mass flow rate at inlet
-        dm_dr = 2 * rho * self.blade_rows[0].inlet.matlab_v_x * rr * self.scenario.A / (1 - self.hub_tip_ratio**2)
-        self.blade_rows[0].inlet.m_dot_matlab = utils.cumulative_trapezoid(dm_dr, rr)
-        self.blade_rows[0].inlet.m_dot_kg_s = (
-            self.blade_rows[0].inlet.m_dot * self.scenario.A * self.scenario.p_0 / np.sqrt(utils.c_p * self.scenario.T_0)
-        )
-
-        # calculate dimensional density variation at inlet
-        self.blade_rows[0].inlet.rho_kg_m_3 = (
-            self.blade_rows[0].inlet.p / (utils.R * self.blade_rows[0].inlet.T) * self.scenario.p_0 / self.scenario.T_0
-        )
-
-        # calculate solver flow velocity in m/s at inlet
-        self.blade_rows[0].inlet.v_x_m_s = (
-            self.blade_rows[0].inlet.v_x * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
-        )
-
-        # define quantities to plot
-        quantities = [
-            [
-                'matlab_angle', 'MatLab absolute flow angle',
-                'matlab_rel_angle', 'MatLab relative flow angle',
-                'alpha', 'Absolute flow angle (°)',
-                'beta', 'Relative flow angle (°)'
-            ],
-            [
-                'matlab_v_x', 'MatLab axial flow velocity (m/s)',
-                'v_x_m_s', 'Axial flow velocity (m/s)'
-            ],
-            [
-                'm_dot_matlab', 'MatLab cumulative mass flow rate (kg/s)',
-                'm_dot_kg_s', 'Cumulative mass flow rate (kg/s)'
-            ],
-            [
-                'rho_matlab', 'MatLab density (kg/m^3)',
-                'rho_kg_m_3', 'Density (kg/m^3)'
-            ]
-        ]
-
-        # plot spanwise variation
-        self.plot_spanwise(quantities)"""
-
     def plot_convergence(self):
         """Plots the thrust calculation convergence history for the engine."""
         # create plot
@@ -1744,8 +1518,140 @@ class Engine:
         # show all plots
         plt.show()
 
+    def calc_thrust(self):
+        """Calculates thrust parameters."""
+        # find exit conditions for zero nozzle exit swirl
+        M_no_swirl = utils.inverse_pressure_ratio(
+            utils.stagnation_pressure_ratio(self.scenario.M) / self.nozzle.exit.p_0
+        )
+        T_no_swirl = utils.stagnation_temperature_ratio(M_no_swirl) * self.nozzle.exit.T_0
+        p_no_swirl = utils.stagnation_pressure_ratio(M_no_swirl) * self.nozzle.exit.p_0
+        v_x_no_swirl = M_no_swirl * np.sqrt(T_no_swirl)
+
+        # find radial streamline positions for zero swirl nozzle
+        r_no_swirl = np.zeros(len(M_no_swirl))
+        r_no_swirl[0] = self.nozzle.exit.rr[0]
+        dm_dot = np.diff(self.nozzle.inlet.m_dot)
+        for index in range(len(M_no_swirl) - 1):
+ 
+            # corrector step - recalculate streamtube outer radius
+            r_no_swirl[index + 1] = (
+                np.sqrt(
+                    r_no_swirl[index]**2
+                    + 2 * dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - self.hub_tip_ratio**2) / (
+                        utils.gamma * (
+                            p_no_swirl[index] * v_x_no_swirl[index] / T_no_swirl[index]
+                            + p_no_swirl[index + 1] * v_x_no_swirl[index + 1]
+                            / T_no_swirl[index + 1]
+                        )
+                    )
+                )
+            )
+
+        # check inlet mass flow rate distribution
+        """dm_dot_dr = (
+            2 * utils.gamma / ((1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
+            * p_no_swirl / np.sqrt(T_no_swirl)
+            * M_no_swirl * r_no_swirl
+        )
+        m_dot = utils.cumulative_trapezoid(r_no_swirl, dm_dot_dr)"""
+
+        # calculate thrust coefficient contribution due to jet momentum flux
+        dC_th_dr = (
+            2 * utils.dynamic_pressure_function(M_no_swirl)
+            * self.nozzle.exit.p_0 * (
+                1 - self.scenario.M / M_no_swirl
+                * np.sqrt(utils.stagnation_temperature_ratio(self.scenario.M) / T_no_swirl)
+            ) * r_no_swirl
+        )
+        self.C_th_no_swirl = (
+            2 * utils.cumulative_trapezoid(r_no_swirl, dC_th_dr)[-1]
+            / (1 - self.hub_tip_ratio**2)
+        )
+        self.thrust_no_swirl = self.C_th_no_swirl * self.scenario.A * self.scenario.p_0
+        self.P_no_swirl = self.thrust_no_swirl * self.scenario.flight_speed
+
+        # VERSION 2
+        # calculate 1D jet velocity required
+        v_j_1D = self.thrust / self.m_dot + self.scenario.flight_speed
+        self.jet_velocity_ratio = self.scenario.flight_speed / v_j_1D
+
+        # calculate velocity ratio dimensionless group
+        v_c_p_T_0 = v_j_1D / np.sqrt(utils.c_p * self.T_0_ratio * self.scenario.T_0)
+
+        # calculate 1D jet Mach number
+        M_j_1D = v_c_p_T_0 / np.sqrt((utils.gamma - 1) * (1 - 0.5 * v_c_p_T_0**2))
+
+        # calculate thrust-averaged stagnation pressure
+        p_0_thrust = (
+            utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
+                1 + 0.5 * (utils.gamma - 1) * M_j_1D**2, utils.gamma / (utils.gamma - 1)
+            )
+        )
+
+        # find isentropic stagnation pressure and Mach number
+        p_0js = np.power(self.T_0_ratio, utils.gamma / (utils.gamma - 1))
+        M_js = utils.inverse_pressure_ratio(
+            utils.stagnation_pressure_ratio(self.scenario.M) / p_0js
+        )
+
+        # find isentropic jet velocity and thrust produced
+        T_js = self.T_0_ratio * utils.stagnation_temperature_ratio(M_js)
+        v_xjs = M_js * np.sqrt(T_js)
+        thrust_s = (
+            self.m_dot * (
+                v_xjs * np.sqrt(utils.gamma * utils.R * self.scenario.T_0) - self.scenario.flight_speed
+            )
+        )
+
+        # find isentropic power
+        self.P_isen = thrust_s * self.scenario.flight_speed
+
+        # check if engine does not yet have recorded input power
+        if not hasattr(self, "P_in"):
+
+            # define motor power
+            self.P_in = (
+                np.sum([blade_row.motor_power for blade_row in self.blade_rows])
+            )
+
+        print(f"self.P_in: {self.P_in}")
+        print(f"self.P_isen: {self.P_isen}")
+        print(f"self.P_no_swirl: {self.P_no_swirl}")
+        print(f"self.P_flight: {self.P_flight}")
+
+        # calculate efficiency metrics
+        self.eta_prop = self.P_isen / self.P_in
+        self.eta_comp = self.P_no_swirl / self.P_isen
+        self.eta_swirl = self.P_flight / self.P_no_swirl
+        self.eta_overall = self.eta_prop * self.eta_comp * self.eta_swirl
+
+        print(f"self.eta_prop: {self.eta_prop}")
+        print(f"self.eta_comp: {self.eta_comp}")
+        print(f"self.eta_swirl: {self.eta_swirl}")
+
+        # plot
+        v_j_1D = v_j_1D / np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+        fig, ax = plt.subplots()
+        ax.plot(self.nozzle.exit.v_x, self.nozzle.exit.rr, label = "Original")
+        ax.plot(v_x_no_swirl, r_no_swirl, label = "No swirl")
+        ax.plot([v_j_1D, v_j_1D], [1e-2, self.nozzle.exit.rr[-1]], label = "1D")
+        ax.plot([v_xjs, v_xjs], [1e-2, self.nozzle.exit.rr[-1]], label = "1Ds")
+        ax.grid()
+        ax.legend()
+
+        # plot
+        fig, ax = plt.subplots()
+        ax.plot(self.nozzle.exit.p, self.nozzle.exit.rr, label = "Original")
+        ax.plot(p_no_swirl, r_no_swirl, label = "No swirl")
+        ax.grid()
+        ax.legend()
+
     def plot_thrust(self):
         """Creates a Sankey chart."""
+        # run thrust calculations process
+        self.calc_thrust()
+
         # create plot
         fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
@@ -1758,8 +1664,8 @@ class Engine:
         node = {
             "label": [
                 "P_in",
-                "P_kinetic", "Compressor loss",
-                "P_no_swirl", "Propulsive loss",
+                "P_isen", "Propulsive loss",
+                "P_no_swirl", "Compressor loss",
                 "P_flight", "Swirl loss"
             ],
             "x": [0, 1, 1, 2, 2, 3, 3],
@@ -1775,10 +1681,10 @@ class Engine:
             "source": [0, 0, 1, 1, 3, 3],
             "target": [1, 2, 3, 4, 5, 6],
             "value": np.array([
-                self.eta_comp, 1 - self.eta_comp,
-                self.eta_prop * self.eta_comp, self.eta_comp * (1 - self.eta_prop),
-                self.eta_swirl * self.eta_prop * self.eta_comp,
-                self.eta_comp * self.eta_prop * (1 - self.eta_swirl)
+                self.eta_prop, 1 - self.eta_prop,
+                self.eta_prop * self.eta_comp, self.eta_prop * (1 - self.eta_comp),
+                self.eta_prop * self.eta_comp * self.eta_swirl,
+                self.eta_prop * self.eta_comp * (1 - self.eta_swirl)
             ])
         }
 
