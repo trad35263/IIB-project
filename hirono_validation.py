@@ -2,7 +2,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-import matplotlib.font_manager as fm
 from time import perf_counter as timer
 
 # import high speed solver
@@ -16,6 +15,7 @@ from pathlib import Path as FilePath
 import io
 
 # load Latex font
+import matplotlib.font_manager as fm
 font_path = r"C:\Windows\Fonts\texgyretermes-regular.otf"
 prop = fm.FontProperties(fname = font_path)
 

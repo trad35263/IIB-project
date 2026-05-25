@@ -1233,23 +1233,20 @@ class Blade_row:
         aerofoils = Aerofoils()
         self.zz = aerofoils.thick_aerofoil(thickness_fraction)
 
-        """fig, ax = plt.subplots()
-        ax.plot(self.zz[0], self.zz[1])
-        ax.grid()
-        ax.set_aspect("equal")"""
+        # set number of sections to consider
+        N = 5
 
         # initiialise empty arrays of x- and y-coordinates
-        self.xx = np.zeros((3, 2 * len(self.zz[0])))
-        self.yy = np.zeros((3, 2 * len(self.zz[0])))
+        self.xx = np.zeros((N, 2 * len(self.zz[0])))
+        self.yy = np.zeros((N, 2 * len(self.zz[0])))
 
         # get indices corresponding to hub, mid-span and tip
-        mid_index = int(np.round(np.interp(
-            0.5 * (self.exit.rr[0] + self.exit.rr[-1]), self.exit.rr, np.arange(utils.Defaults.solver_grid)
-        )))
-        indices = [0, mid_index, -1]
+        rr = np.linspace(self.exit.rr[0], self.exit.rr[-1], N)
+        indices = np.interp(rr, self.exit.rr, np.arange(len(self.exit.rr)))
+        self.indices = np.round(indices).astype(int).tolist()
 
         # loop for each spanwise position
-        for j, index in enumerate(indices):
+        for j, index in enumerate(self.indices):
 
             # find centre-point of circular camberline
             r = 1 / (self.exit.metal_angle[index] - self.inlet.metal_angle[index])

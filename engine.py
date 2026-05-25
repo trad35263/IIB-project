@@ -1111,7 +1111,7 @@ class Engine:
         )
 
         # tight layout
-        plt.tight_layout()
+        #plt.tight_layout()
 
         # iterate over all inlet and exit streamtubes chosen for plotting
         for row, index in enumerate(indices):
@@ -1615,24 +1615,15 @@ class Engine:
                 np.sum([blade_row.motor_power for blade_row in self.blade_rows])
             )
 
-        print(f"self.P_in: {self.P_in}")
-        print(f"self.P_isen: {self.P_isen}")
-        print(f"self.P_no_swirl: {self.P_no_swirl}")
-        print(f"self.P_flight: {self.P_flight}")
-
         # calculate efficiency metrics
         self.eta_prop = self.P_isen / self.P_in
         self.eta_comp = self.P_no_swirl / self.P_isen
         self.eta_swirl = self.P_flight / self.P_no_swirl
         self.eta_overall = self.eta_prop * self.eta_comp * self.eta_swirl
 
-        print(f"self.eta_prop: {self.eta_prop}")
-        print(f"self.eta_comp: {self.eta_comp}")
-        print(f"self.eta_swirl: {self.eta_swirl}")
-
         # plot
         v_j_1D = v_j_1D / np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
-        fig, ax = plt.subplots()
+        """fig, ax = plt.subplots()
         ax.plot(self.nozzle.exit.v_x, self.nozzle.exit.rr, label = "Original")
         ax.plot(v_x_no_swirl, r_no_swirl, label = "No swirl")
         ax.plot([v_j_1D, v_j_1D], [1e-2, self.nozzle.exit.rr[-1]], label = "1D")
@@ -1645,7 +1636,7 @@ class Engine:
         ax.plot(self.nozzle.exit.p, self.nozzle.exit.rr, label = "Original")
         ax.plot(p_no_swirl, r_no_swirl, label = "No swirl")
         ax.grid()
-        ax.legend()
+        ax.legend()"""
 
     def plot_thrust(self):
         """Creates a Sankey chart."""

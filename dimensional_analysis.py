@@ -3,13 +3,29 @@
 
 # import modules
 import numpy as np
+
+# import matplotlib
 import matplotlib.pyplot as plt
-from scipy.interpolate import CubicSpline
+import matplotlib.patches as patches
+import matplotlib
+from matplotlib.colors import ListedColormap
 
 # import high speed solver
 from flight_scenario import Flight_scenario
 from engine import Engine
 import utils
+
+# load Latex font
+import matplotlib.font_manager as fm
+font_path = r"C:\Windows\Fonts\texgyretermes-regular.otf"
+prop = fm.FontProperties(fname = font_path)
+
+# update matplotlib global parameters
+plt.rcParams.update({
+    "font.family": "TeX Gyre Termes",
+    "font.size": 12,
+    "mathtext.fontset": "stix",
+})
 
 def project(xx, yy, zz, theta = np.pi / 4, phi = np.pi / 4):
     """Projects an array of 3D coordinates onto a 2D plane."""
@@ -102,40 +118,7 @@ def offset(x, y, scale_factor):
 
     return x_offset, y_offset
 
-def vertical_end_spline(
-    p0,
-    p1,
-    N=200
-):
-    p0 = np.asarray(p0, dtype=float)
-    p1 = np.asarray(p1, dtype=float)
-
-    x0, y0, z0 = p0
-    x1, y1, z1 = p1
-
-    s = np.linspace(0.0, 1.0, N)
-
-    dx = x1 - x0
-
-    x = (
-        x0
-        + 2.0 * dx * s
-        - dx * s**2
-    )
-
-    dy = y1 - y0
-
-    y = (
-        y0
-        + 2.0 * dy * s
-        - dy * s**2
-    )
-
-    z = z0 + (z1 - z0) * s
-
-    return x, y, z
-
-def quadratic(p0, p1, p2, num_samples=100):
+def quadratic(p0, p1, p2, no_of_samples=100):
     """Fits a single parametric quadratic curve through 3 points in 3D space.
 
     Parameters:
@@ -155,7 +138,7 @@ def quadratic(p0, p1, p2, num_samples=100):
     # C is simply p0
 
     # Generate parameter t from 0 to 1
-    t = np.linspace(0, 1, num_samples)
+    t = np.linspace(0, 1, no_of_samples)
 
     # Evaluate the quadratic equation for all t values
     # np.outer handles multiplying the t-vectors by the coefficient vectors
@@ -165,98 +148,230 @@ def quadratic(p0, p1, p2, num_samples=100):
 
     return np.transpose(curve)  # Returns an array of shape (num_samples, 3)^T
 
-def plot_blade(blade_row, fig, ax, theta = np.pi / 4, phi = -np.pi / 4, overlap = 0.4):
+def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
     """Plots a 2D projection of a 3D blade shape onto a given axis."""
     # extract chord distribution
     chord = blade_row.exit.chord
 
-    # get index of midspan
-    index = int(np.round(np.interp(
-        0.5 * (blade_row.exit.rr[0] + blade_row.exit.rr[-1]), blade_row.exit.rr,
-        np.arange(utils.Defaults.solver_grid)
-    )))
+    # lists of blade geometries to be populated
+    xx = []
+    yy = []
+    zz = []
+    te = []
+    le = []
+    j_le = []
+    xx_offset = []
+    yy_offset = []
 
-    # extract blade_row hub blade geometry
-    xx_hub = blade_row.xx[0] - overlap * chord[0] * np.cos(blade_row.inlet.metal_angle[0])
-    yy_hub = blade_row.yy[0] - overlap * chord[0] * np.sin(blade_row.inlet.metal_angle[0])
-    zz_hub = np.zeros_like(xx_hub)
+    # loop for each slice produced through the blade row
+    for i, index in enumerate(blade_row.indices):
 
-    # extract blade_row mid-span blade geometry
-    xx_mid = blade_row.xx[1] - overlap * chord[index] * np.cos(blade_row.inlet.metal_angle[index])
-    yy_mid = blade_row.yy[1] - overlap * chord[index] * np.sin(blade_row.inlet.metal_angle[index])
-    zz_mid = np.ones_like(xx_mid) * (blade_row.exit.rr[index] - blade_row.exit.rr[0])
+        # extract blade section information
+        xx.append(
+            blade_row.xx[i] - lean * chord[index] * np.cos(blade_row.inlet.metal_angle[index])
+        )
+        yy.append(
+            blade_row.yy[i] - lean * chord[index] * np.sin(blade_row.inlet.metal_angle[index])
+            + sweep * chord[index] * i * (len(blade_row.indices) - 1 - i)
+        )
+        zz.append(
+            np.ones(len(blade_row.xx[i])) * (blade_row.exit.rr[index] - blade_row.exit.rr[0])
+        )
 
-    # extract blade_row tip blade geometry
-    xx_tip = blade_row.xx[-1] - overlap * chord[-1] * np.cos(blade_row.inlet.metal_angle[-1])
-    yy_tip = blade_row.yy[-1] - overlap * chord[-1] * np.sin(blade_row.inlet.metal_angle[-1])
-    zz_tip = np.ones_like(xx_tip) * (blade_row.exit.rr[-1] - blade_row.exit.rr[0])
+        # find trailing edge coordinates
+        te.append((xx[i][0], yy[i][0]))
 
-    # find trailing edge coordinates
-    te_hub = (xx_hub[0], yy_hub[0])
-    te_mid = (xx_mid[0], yy_mid[0])
-    te_tip = (xx_tip[0], yy_tip[0])
+        # find leading edge coordinates
+        rr = np.sqrt((xx[i] - xx[i][0])**2 + (yy[i] - yy[i][0])**2)
+        j = np.argmax(rr)
+        le.append((xx[i][j], yy[i][j]))
+        j_le.append(j)
 
-    # find leading edge coordinates
-    rr_hub = np.sqrt((xx_hub - xx_hub[0])**2 + (yy_hub - yy_hub[0])**2)
-    i = np.argmax(rr_hub)
-    le_hub = (xx_hub[i], yy_hub[i])
-    rr_mid = np.sqrt((xx_mid - xx_mid[0])**2 + (yy_mid - yy_mid[0])**2)
-    i = np.argmax(rr_mid)
-    le_mid = (xx_mid[i], yy_mid[i])
-    rr_tip = np.sqrt((xx_tip - xx_tip[0])**2 + (yy_tip - yy_tip[0])**2)
-    i = np.argmax(rr_tip)
-    le_tip = (xx_tip[i], yy_tip[i])
+        # for hub index
+        if i == 0:
 
-    # construct spline between leading edges
-    """xx_le, yy_le, zz_le = vertical_end_spline(
-        [le_hub[0], le_hub[1], zz_hub[0]],
-        [le_tip[0], le_tip[1], zz_tip[0]]
-    )
+            # plot blade section
+            ax.plot(*project(xx[i][:j], yy[i][:j], zz[i][:j], theta, phi), color = "k")
 
-    # construct spline between trailing edges
-    xx_te, yy_te, zz_te = vertical_end_spline(
-        [te_hub[0], te_hub[1], zz_hub[0]],
-        [te_tip[0], te_tip[1], zz_tip[0]]
-    )"""
+        # for tip index
+        elif i == len(blade_row.indices) - 1:
+
+            ax.plot(*project(xx[i], yy[i], zz[i], theta, phi), color = "k")
+
+        # mid-span indices
+        else:
+
+            # find offset of midspan
+            x, y = offset(xx[i], yy[i], -0.02)
+            z = zz[i]
+
+            # plot flow over mid-span as offset of cross-section
+            j = j_le[i]
+            xx_proj, yy_proj = project(x[:j], y[:j], z[:j], theta, phi)
+            xx_inlet, yy_inlet = project(
+                x[j] - chord[0] * np.array([np.cos(blade_row.inlet.metal_angle[index]), 1e-6]),
+                y[j] - chord[0] * np.array([np.sin(blade_row.inlet.metal_angle[index]), 1e-6]),
+                z[0] + np.array([0, 0]),
+                theta, phi
+            )
+            xx_outlet, yy_outlet = project(
+                x[0] + chord[0] * np.array([1e-6, np.cos(blade_row.exit.metal_angle[index])]),
+                y[0] + chord[0] * np.array([1e-6, np.sin(blade_row.exit.metal_angle[index])]),
+                z[0] + np.array([0, 0]),
+                theta, phi
+            )
+            
+            # combine arrays
+            j = 500
+            k = 40
+            x = np.concatenate((xx_inlet[:1], xx_proj[::-1][j:-k], xx_outlet[1:]))
+            y = np.concatenate((yy_inlet[:1], yy_proj[::-1][j:-k], yy_outlet[1:]))
+
+            # append to list
+            xx_offset.append(x)
+            yy_offset.append(y)
+
+        if i == 2:
+
+            x = np.concatenate((xx_offset[0], xx_offset[1][::-1]))
+            y = np.concatenate((yy_offset[0], yy_offset[1][::-1]))
+            vertices = np.transpose(np.vstack((x, y)))
+            
+            # create Polygon patch for inlet streamtube
+            polygon = patches.Polygon(vertices, closed = True, facecolor = "C0", alpha = 0.3, linestyle = "")
+            ax.add_patch(polygon)
+
+            # annotate mass flow rate
+            ax.text(0.5 * (x[0] + x[1]), 0.5 * (y[0] + yy_offset[1][0]), r"$\dot m_k$")
+            ax.text(
+                0.5 * np.mean(xx_offset[0][-2:] + xx_offset[1][-2:]),
+                0.5 * np.mean(yy_offset[0][-2:] + yy_offset[1][-2:]), r"$\dot m_k$"
+            )
+
+    # plot shadow
+    x, y = offset(xx[0], yy[0], -0.1)
+    x, y = project(x, y, zz[0], theta, phi)
+    vertices = np.transpose(np.vstack((x, y)))
+    polygon = patches.Polygon(vertices, closed = True, facecolor = "k", alpha = 0.5, linestyle = "")
+    ax.add_patch(polygon)
 
     # construct spline between leading edges
     xx_le, yy_le, zz_le = quadratic(
-        [le_hub[0], le_hub[1], zz_hub[0]],
-        [le_mid[0], le_mid[1], zz_mid[0]],
-        [le_tip[0], le_tip[1], zz_tip[0]]
+        [le[0][0], le[0][1], zz[0][0]],
+        [le[2][0], le[2][1], zz[2][0]],
+        [le[-1][0], le[-1][1], zz[-1][0]]
     )
 
     # construct spline between trailing edges
     xx_te, yy_te, zz_te = quadratic(
-        [te_hub[0], te_hub[1], zz_hub[0]],
-        [te_mid[0], te_mid[1], zz_mid[0]],
-        [te_tip[0], te_tip[1], zz_tip[0]]
+        [te[0][0], te[0][1], zz[0][0]],
+        [te[2][0], te[2][1], zz[2][0]],
+        [te[-1][0], te[-1][1], zz[-1][0]]
     )
 
-    # clip hub section by intersects with chord
-    j = next(
-        i for i, x in enumerate(xx_hub)
-        if (np.abs(xx_hub[i] - le_hub[0]) < 1e-6) and (np.abs(yy_hub[i] - le_hub[1]) < 1e-6)
-    )
-    #xx_hub = xx_hub[j:]
-    #yy_hub = yy_hub[j:]
-    #zz_hub = zz_hub[j:]
+    # prepare grid for shading contours
+    M = 10
+    N = 100
+    X_grid = np.zeros((M, N))
+    Y_grid = np.zeros((M, N))
+    Z_grid = np.zeros((M, N))
+    
+    #
+    indices = np.linspace(0, j_le[0] - 1, M).astype(int)
 
-    # determine projection of datapoints on an angled plane
-    xx_proj_le, yy_proj_le = project(xx_le, yy_le, zz_le, theta, phi)
-    xx_proj_te, yy_proj_te = project(xx_te, yy_te, zz_te, theta, phi)
-    xx_proj_hub, yy_proj_hub = project(xx_hub, yy_hub, zz_hub, theta, phi)
-    xx_proj_tip, yy_proj_tip = project(xx_tip, yy_tip, zz_tip, theta, phi)
+    for i, index in enumerate(indices):
 
-    # plot 3D data
+        x, y, z = quadratic(
+            [xx[0][index], yy[0][index], zz[0][index]],
+            [xx[2][index], yy[2][index], zz[2][index]],
+            [xx[-1][index], yy[-1][index], zz[-1][index]],
+            no_of_samples = N
+        )
+
+        # store results in grid
+        X_grid[i, :] = x
+        Y_grid[i, :] = y
+        Z_grid[i, :] = z
+
+    # calculate derivatives
+    dz_du, dz_dv = np.gradient(Z_grid)
+    dy_du, dy_dv = np.gradient(Y_grid)
+    dx_du, dx_dv = np.gradient(X_grid)
+
+    # 2. Reconstruct the tangent vectors]
+    u = np.stack([dx_du, dy_du, dz_du], axis=-1)
+    # Tangent vector V (along columns)
+    v = np.stack([dx_dv, dy_dv, dz_dv], axis=-1)
+
+    # compute cross product to get the normal vectors
+    normals = np.cross(u, v)
+
+    # normalise the vectors
+    magnitude = np.linalg.norm(normals, axis=-1, keepdims=True)
+    magnitude[magnitude == 0] = 1.0 
+    normals = normals / magnitude
+
+    # retrieve x-component    
+    x_component = normals[..., 0]
+
+    # plot contours
+    grey = matplotlib.colormaps["gray"]
+    colors = grey(np.linspace(0.7, 0.95, 256))
+    grey_map = ListedColormap(colors)
+    ax.contourf(*project(X_grid, Y_grid, Z_grid, theta, phi), x_component, cmap = grey_map)
+
+    # plot leading and trailing edge splines
     ax.plot(*project(xx_le, yy_le, zz_le, theta, phi), color = "k")
     ax.plot(*project(xx_te, yy_te, zz_te, theta, phi), color = "k")
-    ax.plot(*project(xx_hub[j:], yy_hub[j:], zz_hub[j:], theta, phi), color = "k", linestyle = "--")
-    ax.plot(*project(xx_hub[:j], yy_hub[:j], zz_hub[:j], theta, phi), color = "k")
-    ax.plot(*project(xx_tip, yy_tip, zz_tip, theta, phi), color = "k")
+
+    # loop for hub-mid and mid streamlines
+    for i in range(len(xx_offset)):
+
+        # retrieve relevant streamline curve
+        x = xx_offset[i]
+        y = yy_offset[i]
+
+        # plot streamline
+        ax.plot(x, y, color = "C0")
+
+        # add flow direction arrows
+        ax.annotate(
+            "",
+            xy=(0.5 * (x[0] + x[1]), 0.5 * (y[0] + y[1])),
+            xytext=(x[0], y[0]),
+            arrowprops=dict(arrowstyle="-|>", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+        )
+        j = 0.5 * (x[1] + x[-2])
+        k = int(np.interp(j, x, np.arange(len(x))))
+        ax.annotate(
+            "",
+            xy = (x[k + 1], y[k + 1]),
+            xytext = (x[k], y[k]),
+            arrowprops=dict(arrowstyle="-|>", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+        )
+        ax.annotate(
+            "",
+            xy = (0.5 * (x[-1] + x[-2]), 0.5 * (y[-1] + y[-2])),
+            xytext = (x[-2], y[-2]),
+            arrowprops=dict(arrowstyle="-|>", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+        )
+        
+
+        if i == 0:
+
+            #
+            ax.text(x[-1] + 1e-2, y[-1], "i")
+
+        else:
+
+            #
+            ax.text(x[-1] + 1e-2, y[-1], f"i + {i}")
 
     # define origin and unit vectors
-    origin = np.array([1.5 * chord[0], 0, 0.5 * chord[0]])
+    origin = np.array([
+        le[0][0] + 1.7 * chord[0] * np.cos(blade_row.inlet.metal_angle[0]),
+        le[0][1] + 1.7 * chord[0] * np.sin(blade_row.inlet.metal_angle[0]), 0
+    ])
 
     # define array of unit vectors
     axes = np.array([
@@ -271,57 +386,31 @@ def plot_blade(blade_row, fig, ax, theta = np.pi / 4, phi = -np.pi / 4, overlap 
 
         # calculate start and end positions and plot projected points
         vector = np.transpose([origin, origin + 0.1 * axis])
-        xx, yy = project(*vector, theta, phi)
+        x, y = project(*vector, theta, phi)
 
         # plot coordinates spanned by arrow to force bounding box to encompass arrows
-        ax.plot(xx, yy, linestyle = "")
+        ax.plot(x, y, linestyle = "")
 
         # annotate arrow corresponding to unit vector
         ax.annotate(
             "",
-            xy=(xx[0], yy[0]),
-            xytext=(xx[1], yy[1]),
-            arrowprops=dict(arrowstyle="<|-", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+            xy=(x[0], y[0]),
+            xytext=(x[1], y[1]),
+            arrowprops=dict(arrowstyle = "<|-", color = "k", lw = 1.5, shrinkA = 0, shrinkB = 0)
         )
 
         # add arrow text
-        ax.text(xx[1], yy[1], f" {label}", va='center', ha='left')
+        ax.text(x[1] + 1e-2, y[1] - 1e-2, f"{label}", va = 'center', ha = 'left')
 
-    # plot mid-span section as hidden lines
-    ax.plot(*project(xx_mid, yy_mid, zz_mid, theta, phi), color = "k", linestyle = "--")
+    # loop for each slice produced through the blade row
+    """for i in range(len(xx_offset)):
 
-    # find offset of midspan
-    xx_offset, yy_offset = offset(xx_mid, yy_mid, -0.02)
+        # extract relevant coordinates
+        x = xx_offset[i]
+        y = yy_offset[i]"""
 
-    # plot flow over mid-span as offset of cross-section
-    i = np.argmax(rr_mid)
-    xx_proj, yy_proj = project(xx_offset[:i], yy_offset[:i], zz_mid[:i], theta, phi)
-    ax.plot(xx_proj, yy_proj, color = "C0")
-    ax.plot(
-        *project(
-            xx_offset[0] + chord[0] * np.array([0, np.cos(blade_row.exit.metal_angle[index])]),
-            yy_offset[0] + chord[0] * np.array([0, np.sin(blade_row.exit.metal_angle[index])]),
-            zz_mid[0] + np.array([0, 0]),
-            theta, phi
-        ),
-        color = "C0"
-    )
-    ax.plot(
-        *project(
-            xx_offset[i] - chord[0] * np.array([0, np.cos(blade_row.inlet.metal_angle[index])]),
-            yy_offset[i] - chord[0] * np.array([0, np.sin(blade_row.inlet.metal_angle[index])]),
-            zz_mid[0] + np.array([0, 0]),
-            theta, phi
-        ),
-        color = "C0"
-    )
-
-    """ax.plot(*project(*te_hub, zz_hub[0], theta, phi), marker = ".", markersize = 12)
-    ax.plot(*project(*te_mid, zz_mid[0], theta, phi), marker = ".", markersize = 12)
-    ax.plot(*project(*te_tip, zz_tip[0], theta, phi), marker = ".", markersize = 12)
-    ax.plot(*project(*le_hub, zz_hub[0], theta, phi), marker = ".", markersize = 12)
-    ax.plot(*project(*le_mid, zz_mid[0], theta, phi), marker = ".", markersize = 12)
-    ax.plot(*project(*le_tip, zz_tip[0], theta, phi), marker = ".", markersize = 12)"""
+    x, y = project(*le[0], 0, theta, phi)
+    ax.text(x + 1e-2, y + 1e-2, f"{tag}")
 
 # main function
 def main():
@@ -360,22 +449,26 @@ def main():
     stator = engine.blade_rows[1]
 
     # create plot of rotor
-    fig, ax = plt.subplots(figsize=utils.Defaults.figsize)
-    plot_blade(rotor, fig, ax, theta = np.pi / 2, phi = np.pi / 6)
+    fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+    plot_blade(rotor, "PS", ax, theta = np.pi / 3, phi = np.pi / 6)
 
     # configure plot
     ax.set_aspect("equal")
-    ax.grid()
     ax.axis("off")
+
+    # save figure
+    fig.savefig("exports/dimensional_analysis_rotor.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
 
     # create plot of stator
     fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
-    plot_blade(stator, fig, ax, theta = 2 * np.pi / 3, phi = np.pi / 6)
+    plot_blade(stator, "SS", ax, theta = 2 * np.pi / 3, phi = np.pi / 6)
 
     # configure plot
     ax.set_aspect("equal")
-    ax.grid()
     ax.axis("off")
+
+    # save figure
+    fig.savefig("exports/dimensional_analysis_stator.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
 
 if __name__ == "__main__":
 

@@ -455,7 +455,7 @@ class Stator(Blade_row):
         )
         self.exit.m_dot = utils.cumulative_trapezoid(self.exit.rr, self.exit.dm_dot_dr)
 
-        utils.debug(f"Stator: {100 * (self.exit.m_dot / self.inlet.m_dot - 1)}")
+        utils.debug(f"Stator: {100 * (self.exit.m_dot[-1] / self.inlet.m_dot[-1] - 1)}")
 
         # end timer
         t2 = timer()
