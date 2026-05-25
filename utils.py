@@ -73,7 +73,7 @@ class Defaults:
     fontsize = 12
 
     # default figure size tuple
-    figsize = (8, 4)
+    figsize = (8, 3.2)
 
     dpi = 600
 

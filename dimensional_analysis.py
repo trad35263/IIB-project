@@ -27,6 +27,12 @@ plt.rcParams.update({
     "mathtext.fontset": "stix",
 })
 
+# Inputs class
+class Inputs:
+
+    # default plotting parameters
+    line_width = 1
+
 def project(xx, yy, zz, theta = np.pi / 4, phi = np.pi / 4):
     """Projects an array of 3D coordinates onto a 2D plane."""
     # unit projection vector
@@ -242,10 +248,13 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
             ax.add_patch(polygon)
 
             # annotate mass flow rate
-            ax.text(0.5 * (x[0] + x[1]), 0.5 * (y[0] + yy_offset[1][0]), r"$\dot m_k$")
             ax.text(
-                0.5 * np.mean(xx_offset[0][-2:] + xx_offset[1][-2:]),
-                0.5 * np.mean(yy_offset[0][-2:] + yy_offset[1][-2:]), r"$\dot m_k$"
+                0.5 * np.mean(xx_offset[0][:2] + xx_offset[1][:2]) - 4e-2,
+                0.5 * np.mean(yy_offset[0][:2] + yy_offset[1][:2]) - 2e-2, r"$\dot m_k$"
+            )
+            ax.text(
+                0.5 * np.mean(xx_offset[0][-2:] + xx_offset[1][-2:]) - 4e-2,
+                0.5 * np.mean(yy_offset[0][-2:] + yy_offset[1][-2:]) - 2e-2, r"$\dot m_k$"
             )
 
     # plot shadow
@@ -332,14 +341,14 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
         y = yy_offset[i]
 
         # plot streamline
-        ax.plot(x, y, color = "C0")
+        ax.plot(x, y, color = "C0", linewidth = Inputs.line_width)
 
         # add flow direction arrows
         ax.annotate(
             "",
             xy=(0.5 * (x[0] + x[1]), 0.5 * (y[0] + y[1])),
             xytext=(x[0], y[0]),
-            arrowprops=dict(arrowstyle="-|>", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+            arrowprops=dict(arrowstyle="-|>", color="C0", lw = Inputs.line_width, shrinkA=0, shrinkB=0)
         )
         j = 0.5 * (x[1] + x[-2])
         k = int(np.interp(j, x, np.arange(len(x))))
@@ -347,13 +356,13 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
             "",
             xy = (x[k + 1], y[k + 1]),
             xytext = (x[k], y[k]),
-            arrowprops=dict(arrowstyle="-|>", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+            arrowprops=dict(arrowstyle="-|>", color="C0", lw = Inputs.line_width, shrinkA=0, shrinkB=0)
         )
         ax.annotate(
             "",
             xy = (0.5 * (x[-1] + x[-2]), 0.5 * (y[-1] + y[-2])),
             xytext = (x[-2], y[-2]),
-            arrowprops=dict(arrowstyle="-|>", color="C0", lw=1.5, shrinkA=0, shrinkB=0)
+            arrowprops=dict(arrowstyle="-|>", color="C0", lw = Inputs.line_width, shrinkA=0, shrinkB=0)
         )
         
 
@@ -375,9 +384,9 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
 
     # define array of unit vectors
     axes = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, 1.0, 0.0],
-        [0.0, 0.0, 1.0]
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1]
     ])
     labels = ["x", r"r$\theta$", "r"]
 
@@ -396,21 +405,36 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
             "",
             xy=(x[0], y[0]),
             xytext=(x[1], y[1]),
-            arrowprops=dict(arrowstyle = "<|-", color = "k", lw = 1.5, shrinkA = 0, shrinkB = 0)
+            arrowprops=dict(arrowstyle = "<|-", color = "k", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
         )
 
+        # recalculate text positions
+        vector = np.transpose([origin, origin + 0.12 * axis])
+        x, y = project(*vector, theta, phi)
+
+        if y[1] < y[0]:
+
+            y[1] -= 2e-2
+
         # add arrow text
-        ax.text(x[1] + 1e-2, y[1] - 1e-2, f"{label}", va = 'center', ha = 'left')
-
-    # loop for each slice produced through the blade row
-    """for i in range(len(xx_offset)):
-
-        # extract relevant coordinates
-        x = xx_offset[i]
-        y = yy_offset[i]"""
+        ax.text(x[1], y[1], f"{label}", va = 'center', ha = 'left')
 
     x, y = project(*le[0], 0, theta, phi)
     ax.text(x + 1e-2, y + 1e-2, f"{tag}")
+
+def annotate(ax, label, position):
+    
+    #
+    ax.annotate(
+        label,
+        xy = position,
+        xytext = (0, 0),
+		textcoords = "offset points",
+        color = "k"
+    )
+
+    #
+    ax.plot(*position, linestyle = "")
 
 # main function
 def main():
@@ -450,22 +474,36 @@ def main():
 
     # create plot of rotor
     fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
-    plot_blade(rotor, "PS", ax, theta = np.pi / 3, phi = np.pi / 6)
+    plot_blade(rotor, "PS", ax, theta = np.pi / 3, phi = np.pi / 8)
 
     # configure plot
     ax.set_aspect("equal")
     ax.axis("off")
+
+    # annotate rotor plot
+    annotate(ax, r"$r_\text{1,tip}$", (-0.2, 0.60))
+    annotate(ax, r"$r_\text{2,tip}$", (0.17, 0.62))
+    annotate(ax, r"$r_\text{1,hub}$", (-0.35, 0))
+    annotate(ax, r"$r_\text{2,hub}$", (0.2, 0.05))
+    annotate(ax, r"$v_x(r)$", (-0.23, 0.45))
+    annotate(ax, r"$U(r)$", (-0.02, 0.5))
+    annotate(ax, r"$\Delta h_0 (r)$", (0.15, 0.37))
+    annotate(ax, r"$\Delta s(r)$", (0.15, 0.52))
 
     # save figure
     fig.savefig("exports/dimensional_analysis_rotor.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
 
     # create plot of stator
     fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
-    plot_blade(stator, "SS", ax, theta = 2 * np.pi / 3, phi = np.pi / 6)
+    plot_blade(stator, "SS", ax, theta = 2 * np.pi / 3, phi = np.pi / 8)
 
     # configure plot
     ax.set_aspect("equal")
     ax.axis("off")
+
+    # annotate stator plot
+    annotate(ax, r"$\alpha_3(r)$", (0.17, 0.4))
+    annotate(ax, r"$\Delta s(r)$", (0.15, 0.54))
 
     # save figure
     fig.savefig("exports/dimensional_analysis_stator.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
