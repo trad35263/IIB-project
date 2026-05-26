@@ -204,11 +204,11 @@ def main():
 	ax.spines['top'].set_visible(False)
 	ax.spines['right'].set_visible(False)
 
-	# 2. Move the remaining left and bottom spines to the origin (0,0)
+	# move the remaining left and bottom spines to the origin
 	ax.spines['left'].set_position('zero')
 	ax.spines['bottom'].set_position('zero')
 
-	# 3. Remove all ticks and tick labels
+	# remove all ticks and tick labels
 	ax.set_xticks([])
 	ax.set_yticks([])
 	ax.set_ylim(0, 1.2 * tau)

@@ -71,11 +71,12 @@ class Defaults:
 
     # fonts
     fontsize = 12
+    titlesize = 14
 
     # default figure size tuple
     figsize = (8, 3.2)
 
-    dpi = 600
+    dpi = 400
 
     # default plotting parameters
     quantity_list = [
@@ -344,7 +345,9 @@ class Labels:
         ["Pressure Ratio", "p_0_ratio"],
         ["Nozzle Area Ratio", "nozzle_area_ratio"],
         ["Jet Velocity Ratio", "jet_velocity_ratio"],
-        ["Compressor Efficiency", "eta_comp"],
+        ["Swirl Efficiency", "eta_swirl"],
+        ["Polytropic Efficiency", "eta_poly"],
+        ["Thrust-averaged Efficiency", "eta_thrust"],
         ["Propulsive Efficiency", "eta_prop"],
         ["Overall Efficiency", "eta_overall"]
     ]

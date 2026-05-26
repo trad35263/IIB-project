@@ -4,8 +4,14 @@
 # import modules
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import griddata
+#from scipy.interpolate import griddata
 import mat73
+
+import itertools
+import matplotlib.pyplot as plt
+
+import matplotlib.colors as mcolors
+import colorsys
 
 from scipy.interpolate import CloughTocher2DInterpolator
 
@@ -37,9 +43,9 @@ prop = fm.FontProperties(fname = font_path)
 
 # update matplotlib global parameters
 plt.rcParams.update({
-    "font.family": "TeX Gyre Termes",
-    "font.size": 12,
-    "mathtext.fontset": "stix",
+	"font.family": "TeX Gyre Termes",
+	"font.size": 12,
+	"mathtext.fontset": "stix",
 })
 
 # Inputs class
@@ -63,8 +69,8 @@ class Inputs:
 	gridlines = 10
 
 	# default plotting parameters
-	figsize = (8, 4)
-	dpi = 300
+	#figsize = (8, )
+	#dpi = 300
 	fontsize = 12
 	titlesize = 14
 	colours = "viridis"
@@ -90,7 +96,7 @@ class Inputs:
 	saved_figures = []
 
 	# mass flow rate threshold for classification as a boundary layer
-	BL_threshold = 0.05
+	BL_threshold = 0.1
 
 # Post class
 class Post:
@@ -118,11 +124,6 @@ class Post:
 		# print keys to terminal
 		self.print_keys(self.data[0])
 
-		# preliminary data analysis
-		self.calc_secondary()
-		self.analyse()
-		#self.quantify_loss()
-
 	def load_mat(self, filepath):
 		"""Loads the data from a .mat file."""
 		# load .mat object using mat73 package
@@ -141,16 +142,7 @@ class Post:
 
 	def calc_secondary(self):
 		"""Calculates secondary flow properties at inlet and exit to each blade row."""
-		# get index of desired test case to investigate
-		"""phi, psi = Inputs.contour_ij
-		index = next(
-			i for i, d in enumerate(self.data)
-			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
-		)
-
-		# get relevant data object
-		data = self.data[index]"""
-
+		# loop for each test case
 		for data in self.data:
 
 			# loop for each blade row
@@ -218,7 +210,7 @@ class Post:
 	def analyse(self):
 		"""Carries out preliminary analysis for each loaded test case."""
 		# loop for each test case
-		for i, data in enumerate(self.data):
+		for data in self.data:
 
 			# loop for each blade row
 			for j, blade_row in enumerate(data["blade_rows"]):
@@ -266,7 +258,8 @@ class Post:
 					# find hub and tip radii for pitch-averaged boundary layer thickness
 					plane["r_boundary_hub"] = (
 						np.interp(
-							data["metadata"]["hub_tip_ratio"] * Inputs.BL_threshold
+							#data["metadata"]["hub_tip_ratio"] * Inputs.BL_threshold
+							Inputs.BL_threshold
 							* plane["m_dot_avg"][-1],
 							plane["m_dot_avg"], plane["r"]
 						)
@@ -294,7 +287,8 @@ class Post:
 					# calculate hub boundary layer indices
 					indices = np.argmax(
 						plane["m_dot_cumulative"]
-						>= data["metadata"]["hub_tip_ratio"] * Inputs.BL_threshold
+						#>= data["metadata"]["hub_tip_ratio"] * Inputs.BL_threshold
+						>= Inputs.BL_threshold
 						* plane["m_dot_cumulative"][-1, :],
 						axis = 0
 					)
@@ -307,7 +301,7 @@ class Post:
 						z[indices, columns], z[indices[-1], columns[-1] + 1]
 					)
 
-					# find mask for hub  boundary layer
+					# find mask for hub boundary layer
 					num_rows, num_cols = plane["m_dot_cumulative"].shape
 					row_indices = np.arange(num_rows)[:, np.newaxis]
 					plane["boundary_hub"] = row_indices <= indices
@@ -357,10 +351,12 @@ class Post:
 				blade_row["outlet"]["s_flux_hub"] = (
 					np.sum(
 						blade_row["outlet"]["rovx_cell"] * blade_row["outlet"]["s_cell"]
-						* blade_row["outlet"]["A"] * blade_row["outlet"]["boundary_hub"]
+						* blade_row["outlet"]["A"] * blade_row["no_of_blades"]
+						* blade_row["outlet"]["boundary_hub"]
 					) - np.sum(
 						blade_row["inlet"]["rovx_cell"] * blade_row["inlet"]["s_cell"]
-						* blade_row["inlet"]["A"] * blade_row["inlet"]["boundary_hub"]
+						* blade_row["inlet"]["A"] * blade_row["no_of_blades"]
+						* blade_row["inlet"]["boundary_hub"]
 					)
 				)
 
@@ -368,10 +364,12 @@ class Post:
 				blade_row["outlet"]["s_flux_tip"] = (
 					np.sum(
 						blade_row["outlet"]["rovx_cell"] * blade_row["outlet"]["s_cell"]
-						* blade_row["outlet"]["A"] * blade_row["outlet"]["boundary_tip"]
+						* blade_row["outlet"]["A"] * blade_row["no_of_blades"]
+						* blade_row["outlet"]["boundary_tip"]
 					) - np.sum(
 						blade_row["inlet"]["rovx_cell"] * blade_row["inlet"]["s_cell"]
-						* blade_row["inlet"]["A"] * blade_row["inlet"]["boundary_tip"]
+						* blade_row["inlet"]["A"] * blade_row["no_of_blades"]
+						* blade_row["inlet"]["boundary_tip"]
 					)
 				)
 
@@ -379,12 +377,23 @@ class Post:
 				blade_row["outlet"]["s_flux_midspan"] = (
 					np.sum(
 						blade_row["outlet"]["rovx_cell"] * blade_row["outlet"]["s_cell"]
-						* blade_row["outlet"]["A"]
+						* blade_row["outlet"]["A"] * blade_row["no_of_blades"]
 						* (~blade_row["outlet"]["boundary_hub"] & ~blade_row["outlet"]["boundary_tip"])
 					) - np.sum(
 						blade_row["inlet"]["rovx_cell"] * blade_row["inlet"]["s_cell"]
-						* blade_row["inlet"]["A"]
+						* blade_row["inlet"]["A"] * blade_row["no_of_blades"]
 						* (~blade_row["inlet"]["boundary_hub"] & ~blade_row["inlet"]["boundary_tip"])
+					)
+				)
+
+				# calculate entire blade row entropy flux
+				blade_row["outlet"]["s_flux"] = (
+					np.sum(
+						blade_row["outlet"]["rovx_cell"] * blade_row["outlet"]["s_cell"]
+						* blade_row["outlet"]["A"] * blade_row["no_of_blades"]
+					) - np.sum(
+						blade_row["inlet"]["rovx_cell"] * blade_row["inlet"]["s_cell"]
+						* blade_row["inlet"]["A"] * blade_row["no_of_blades"]
 					)
 				)
 
@@ -487,31 +496,30 @@ class Post:
 					/ np.sum([blade_row["power"] for blade_row in data["blade_rows"]])
 				)
 
-				# calculate second derivative of mass flux
-				inlet["d2_rovx_dr2_avg"] = (
-					np.gradient(np.gradient(inlet["rovx_avg"], inlet["r"]), inlet["r"])
+			# calculate machine entropy flux
+			data["s_flux"] = (
+				np.sum(
+					data["blade_rows"][-1]["outlet"]["rovx_cell"] * data["blade_rows"][-1]["outlet"]["s_cell"]
+					* data["blade_rows"][-1]["outlet"]["A"] * data["blade_rows"][-1]["no_of_blades"]
+				) - np.sum(
+					data["blade_rows"][0]["inlet"]["rovx_cell"] * data["blade_rows"][0]["inlet"]["s_cell"]
+					* data["blade_rows"][0]["inlet"]["A"] * data["blade_rows"][0]["no_of_blades"]
 				)
-				outlet["d2_rovx_dr2_avg"] = (
-					np.gradient(np.gradient(outlet["rovx_avg"], outlet["r"]), outlet["r"])
-				)
+			)
 
-				# find all crossing points for determination of boundary layer
-				sign_changes = np.diff(np.sign(outlet["d2_rovx_dr2_avg"])) != 0
-				idx = np.where(sign_changes)[0]
-				
-				# linear interpolation formulas to find exact x-crossings
-				x0, x1 = outlet["r"][idx], outlet["r"][idx + 1]
-				y0, y1 = outlet["d2_rovx_dr2_avg"][idx], outlet["d2_rovx_dr2_avg"][idx + 1]
-				
-				# find crossing points
-				x_crossings = x0 - y0 * (x1 - x0) / (y1 - y0)
+			# calculate mixing contribution to entropy flux
+			data["s_flux_mixing"] = (
+				data["s_flux"]
+				- np.sum([blade_row["outlet"]["s_flux"] for blade_row in data["blade_rows"]])
+			)
 
-				# convert to span
-				span_crossings = (x_crossings - outlet["r"][0]) / (outlet["r"][-1] - outlet["r"][0])
+			# calculate machine entropy loss function
+			data["loss_function"] = (
+				data["metadata"]["T_0"] * data["s_flux"]
+				/ np.sum([blade_row["power"] for blade_row in data["blade_rows"]])
+			)
 
-				# define boundary layer points
-				outlet["boundary_layer_thickness_hub"] = span_crossings[1]
-				outlet["boundary_layer_thickness_tip"] = span_crossings[-2]
+			data["loss_function"] = 1 / (1 + data["loss_function"])
 
 	def calculate_thrust(self):
 		"""Calculates the actual thrust produced by the CFD test cases via the Engine class."""
@@ -548,6 +556,9 @@ class Post:
 				"design_parameter": data["metadata"]["design_parameter"]
 			}
 			engine.empirical_design()
+
+			# calculate engine dimensional values
+			engine.dimensional_values()
 
 			# run detailed thrust breakdown calculations
 			engine.calc_thrust()
@@ -595,21 +606,6 @@ class Post:
 			engine.evaluate()
 			engine.dimensional_values()
 
-			"""if np.isnan(engine.C_th):
-
-				plt.close("all")
-
-				print(f"engine.nozzle.inlet.v_theta: {engine.nozzle.inlet.v_theta}")
-
-				fig, axes = plt.subplots(1, 2)
-				axes[0].plot(engine.nozzle.inlet.v_x, engine.nozzle.inlet.rr, color = "C0")
-				axes[1].plot(engine.nozzle.exit.v_x, engine.nozzle.exit.rr, color = "C0")
-				axes[0].plot(engine.nozzle.inlet.v_theta, engine.nozzle.inlet.rr, color = "C1")
-				axes[1].plot(engine.nozzle.exit.v_theta, engine.nozzle.exit.rr, color = "C1")
-				axes[0].grid()
-				axes[1].grid()
-				plt.show()"""
-
 			# store input power as engine attribute
 			engine.P_in = np.sum([blade_row["power"] for blade_row in data["blade_rows"]])
 
@@ -618,41 +614,6 @@ class Post:
 
 			# store engine in data object
 			data["engine"] = engine
-
-		# get index of desired test case to investigate
-		"""phi, psi = Inputs.contour_ij
-		index = next(
-			i for i, d in enumerate(self.data)
-			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
-		)
-
-		# store variables for convenience
-		data = self.data[index]
-		engine = copy.deepcopy(data["engine"])
-
-		# create thrust sankey chart
-		fig, ax = engine.plot_thrust()
-
-		# put design vs. actual values in title
-		ax.set_title(
-			f"Design / actual thrust (%): {100 * actual_thrust / design_thrust:.4g}\n"
-			f"Design / actual input power (%): {100 * actual_power / design_power:.4g}",
-			fontsize = Inputs.titlesize
-		)
-
-		# save plot
-		figname = (
-			f"plot_thrust_phi_{phi}_psi_{psi}".replace(".", "_")
-		)
-		fig.savefig(
-			os.path.join(Inputs.folder, figname),
-			dpi = Inputs.dpi, bbox_inches = "tight"
-		)
-
-		# close plot
-		Inputs.saved_figures.append(f"{figname}.png")
-		print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
-		plt.close()"""
 
 	def plot_contours(self, attribute, label = "", limits = None):
 		"""Creates a contour plot on axes of flow and stage loading coefficient."""
@@ -688,9 +649,6 @@ class Post:
 			# mask out NaNs
 			mask = ~np.isnan(zz[index])
 
-			print(f"{attribute} min.: {np.min(zz[index][mask]):.4g}")
-			print(f"{attribute} max.: {np.max(zz[index][mask]):.4g}")
-
 			# Construct the Clough-Tocher interpolator object
 			interp = CloughTocher2DInterpolator(
 				points = np.column_stack((xx[mask], yy[mask])), 
@@ -701,7 +659,7 @@ class Post:
 			grid = interp(xx_grid, yy_grid)
 
 			# create plot
-			fig, ax = plt.subplots(figsize = Inputs.figsize)
+			fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
 			# no data limits are provided
 			if limits is None:
@@ -724,51 +682,10 @@ class Post:
 			# use provided limits
 			else:
 
-				# get data range rouned to 2 sig. fig.s
-				"""data_range = limits[1] - limits[0]
-				order = int(np.floor(np.log10(abs(data_range))))
-				rounded = round(data_range, 1 - order)
-
-				# start at the nearest power of 10 below "rounded"
-				start_power = 10 ** int(np.floor(np.log10(rounded)))
-
-				# define repeating step multipliers
-				multipliers = [5, 2, 1]
-
-				# scale factor down by 10 every time we exhaust the 5, 2, 1 cycle
-				scale_factor = start_power 
-				chosen_step = None
-
-				# loop until exit condition is met
-				while True:
-
-					# loop for each multiplier
-					for m in multipliers:
-
-						# generate the current step size
-						current_step = m * scale_factor
-							
-						# test the criteria: divide "rounded" by the current step
-						divisions = rounded / current_step
-						
-						# check if the result is a clean integer division AND greater than Inputs.levels
-						if np.isclose(divisions, np.round(divisions)) and divisions > Inputs.levels:
-							chosen_step = current_step
-							break
-							
-					# if the inner loop found a match, break the outer while loop
-					if chosen_step is not None:
-						break
-						
-					# drop down an order of magnitude for the next cycle
-					scale_factor /= 10
-
-				# use provided limits
-				levels = np.linspace(*limits, int(rounded / chosen_step) + 1)"""
-
+				# evenly-spaced given limits
 				levels = np.linspace(*limits)
 
-			# add 
+			# add contours
 			cs = ax.contour(
 				xx_grid, 
 				yy_grid, 
@@ -777,9 +694,6 @@ class Post:
 				cmap="viridis", 
 				extend="both"
 			)
-
-			# 3. Update the colorbar to map to the line contour object
-			#plt.colorbar(cs, ax=ax, label=label, extend="both")
 
 			# add text labels directly onto the contour lines
 			ax.clabel(cs, inline = True, fontsize = Inputs.fontsize, fmt='%1.2g')
@@ -790,13 +704,13 @@ class Post:
 				extend = "both", alpha = Inputs.alpha
 			)
 			plt.colorbar(cf, ax = ax, label = label, extend = "both")
-			ax.scatter(xx[mask], yy[mask], c = "k", s = 10, zorder = 5, label = "Datapoints")
-			ax.scatter(xx[~mask], yy[~mask], c = "red", s = 10, zorder = 5)
+			ax.scatter(xx[mask], yy[mask], c = "k", s = 8, zorder = 5, label = "Datapoints")
+			ax.scatter(xx[~mask], yy[~mask], c = "red", s = 8, zorder = 5)
 
-			# set axis labels
+			# configure plot
 			ax.set_xlabel('Flow Coefficient, φ')
 			ax.set_ylabel('Stage Loading Coefficient, ψ')
-			
+
 			# construct title
 			title = (
 				f"No. of Stages: {self.data[0]['metadata']['no_of_stages']} | "
@@ -816,7 +730,7 @@ class Post:
 			)
 			fig.savefig(
 				os.path.join(Inputs.folder, figname),
-				dpi = Inputs.dpi, bbox_inches = "tight"
+				dpi = utils.Defaults.dpi, bbox_inches = "tight"
 			)
 
 			# close plot
@@ -889,20 +803,11 @@ class Post:
 		for i, blade_row in enumerate(self.data[index]["blade_rows"]):
 
 			# create side-by-side figure
-			fig, axes = plt.subplots(1, 2, figsize = Inputs.figsize)
+			fig, axes = plt.subplots(1, 2, figsize = utils.Defaults.figsize)
 
 			# get inlet and outlet planes
 			inlet = blade_row["inlet"]
 			outlet = blade_row["outlet"]
-
-			# find coordinates of centre-line through blade passage section
-			"""j = int(np.floor(inlet["y"].shape[1] / 2))
-
-			# generate rotated coordinates
-			theta = self.rotate(inlet, j)
-
-			# repeat for outlet
-			theta = self.rotate(outlet, j)"""
 
 			# get data lmits
 			vmin = min(np.array(inlet[attribute]).min(), np.array(outlet[attribute]).min())
@@ -924,13 +829,6 @@ class Post:
 			cbar.set_label(
 				f"{attribute} ({Inputs.units[attribute] if attribute in Inputs.units else '-'})"
 			)
-
-			# calculate mass flux below which region is classed as a boundary layer
-			m_dot = self.data[index]["metadata"]["mass_flow_rate"]
-			d = self.data[index]["metadata"]["diameter"]
-			HTR = self.data[index]["metadata"]["hub_tip_ratio"]
-			A = np.pi * (d / 2)**2 * (1 - HTR**2)
-			rovx = 0.95 * m_dot / A
 
 			# add contour of approximate boundary layer thickness
 			axes[0].plot(
@@ -969,7 +867,7 @@ class Post:
 				ax.set_aspect("equal")
 
 				# remove x- and y-axis ticks
-				#ax.axis("off")
+				ax.axis("off")
 
 			# save plot
 			figname = (
@@ -977,7 +875,7 @@ class Post:
 			)
 			fig.savefig(
 				os.path.join(Inputs.folder, figname),
-				dpi = Inputs.dpi, bbox_inches = "tight"
+				dpi = utils.Defaults.dpi, bbox_inches = "tight"
 			)
 
 			# close plot
@@ -1004,7 +902,7 @@ class Post:
 		if plt.get_fignums() == []:
 
 			# create figure with one subplot per blade row + 1
-			fig, axes = plt.subplots(ncols = len(self.data[index]["blade_rows"]) + 1, figsize = Inputs.figsize)
+			fig, axes = plt.subplots(ncols = len(self.data[index]["blade_rows"]) + 1, figsize = utils.Defaults.figsize)
 
 			# set colour counter to 0
 			self.colour_index = 0
@@ -1093,7 +991,7 @@ class Post:
 			if hasattr(blade_row.exit, attribute):
 
 				# given attribute is an angle
-				if any(s in attribute for s in ["angle", "alpha", "beta"]):
+				if any(s in attribute for s in ["angle", "alpha", "beta", "deviation"]):
 
 					# convert from radians to degrees
 					zz = utils.rad_to_deg(getattr(blade_row.exit, attribute))
@@ -1141,6 +1039,7 @@ class Post:
 				if not (has_lines or has_collections or has_images or has_containers):
 					ax.remove()
 
+			# update list of axes
 			axes = np.array([ax for ax in axes if ax.figure is not None])
 
 			# get axis limits
@@ -1168,23 +1067,17 @@ class Post:
 				if i > 0:
 
 					# remove y-axis ticks
-					ax.yaxis.set_tick_params(left=False, labelleft=False)
-
-				# x-axis scale is very large
-				if (xmax - xmin) > 1e3:
-
-					# clip between (-1, 1)
-					ax.set_xlim(-1, 1)
+					ax.yaxis.set_tick_params(left = False, labelleft = False)
 
 			# set y-axis label
 			axes[0].set_ylabel("Dimensionless Span")
 
-			# create legend underneath plot
+			# create legend beside plot
 			unique = dict(zip(labels, handles))
-			plt.subplots_adjust(bottom = 0.1 * len(unique))
 			axes[-1].legend(
 				unique.values(), unique.keys(), fontsize = Inputs.fontsize,
-				loc = "center", bbox_to_anchor = (0.5, 0.05), bbox_transform = fig.transFigure
+				loc = "center", bbox_to_anchor = (1 + 0.03 * len(axes), 0.5),
+				bbox_transform = fig.transFigure, frameon = False
 			)
 
 			# save plot
@@ -1193,7 +1086,7 @@ class Post:
 			)
 			fig.savefig(
 				os.path.join(Inputs.folder, figname),
-				dpi = Inputs.dpi, bbox_inches = "tight"
+				dpi = utils.Defaults.dpi, bbox_inches = "tight"
 			)
 
 			# close plot
@@ -1201,7 +1094,7 @@ class Post:
 			print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
 			plt.close()
 
-	def quantify_loss(self):
+	def loss_breakdown(self):
 		"""Creates a pie chart breaking down the relative contributions to the entropy loss function."""
 		# get index of desired test case to investigate
 		phi, psi = Inputs.contour_ij
@@ -1213,116 +1106,404 @@ class Post:
 		# retrieve relevant data object
 		data = self.data[index]
 
-		# ALTERNATIVE PLOT
-		# calculate total entropy flux
-		outlet = data["blade_rows"][-1]["outlet"]
-		S_dot_total = np.sum(outlet["rovx_cell"] * outlet["s_cell"] * outlet["A"])
-
-		# get entropy flux totals for each blade row
-		S_dot_blade = [
-			blade_row["outlet"]["s_flux_hub"] + blade_row["outlet"]["s_flux_midspan"]
-			+ blade_row["outlet"]["s_flux_tip"]
-			for blade_row in data["blade_rows"]
-		]
-
-		# list of chart values
-		chart_values = [S_dot_total - np.sum(S_dot_blade)] + S_dot_blade
-		chart_values = np.maximum(0, chart_values)
-		chart_labels = ["Mixing"] + [f"Blade {i}" for i in range(len(data["blade_rows"]))]
-		
-		# create pie chart
+		# create plot
 		fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
-		# create pie chart
-		wedges, texts, autotexts = ax.pie(
-			chart_values, 
-			labels = chart_labels, 
-			autopct = '%1.2g%%',
-			startangle = 140,
-			wedgeprops = dict(width = 0.6, edgecolor = 'white', linewidth = 2)
+		# set pie chart radius and add circle
+		R = 1.6
+		my_circle = plt.Circle((0, 0), R, edgecolor = 'none', facecolor='grey')
+		ax.add_patch(my_circle)
+
+		# get list of values for outer pie
+		outer_values = (
+			[blade_row["outlet"]["s_flux"] for blade_row in data["blade_rows"]]
+			+ [data["s_flux_mixing"]]
 		)
 
-		# 1. Calculate entropy fluxes
-		outlet_last = data["blade_rows"][-1]["outlet"]
-		S_dot_total = np.sum(outlet_last["rovx_cell"] * outlet_last["s_cell"] * outlet_last["A"])
+		# prepare lists of values and labels for inner pie and loop for each blade row
+		inner_values = []
+		for blade_row in data["blade_rows"]:
 
-		# Track outer ring (Total per category) and inner ring (Sub-breakdown)
-		outer_values = [0]
-		outer_labels = ["Mixing"]
-		inner_values = [0]
-		inner_labels = ["Mixing"]
+			# append hub, mid-span and tip values and label
+			inner_values.extend([
+				blade_row["outlet"]["s_flux_hub"],
+				blade_row["outlet"]["s_flux_midspan"],
+				blade_row["outlet"]["s_flux_tip"],
+			])
+			"""inner_labels.extend([
+				"Hub", "Mid-span", "Tip"
+			])"""
 
-		# Colors: define a unified color palette for clean visual grouping
-		colors_outer = ["#7f7f7f"]  # Gray for mixing
-		# Example color families for blades: Blues for Blade 0, Oranges for Blade 1, etc.
-		blade_color_maps = [["#1f77b4", "#aec7e8", "#17becf"], ["#ff7f0e", "#ffbb78", "#dbdb8d"]] 
-		colors_inner = ["#a6a6a6"]  # Gray for inner mixing segment
+		inner_values.append(data["s_flux_mixing"])
 
-		for i, blade_row in enumerate(data["blade_rows"]):
-			h = blade_row["outlet"]["s_flux_hub"]
-			m = blade_row["outlet"]["s_flux_midspan"]
-			t = blade_row["outlet"]["s_flux_tip"]
-			total_blade = h + m + t
-			
-			# Outer Ring Data
-			outer_values.append(total_blade)
-			outer_labels.append(f"Blade {i}")
-			colors_outer.append(blade_color_maps[i % len(blade_color_maps)][0])
-			
-			# Inner Ring Data
-			inner_values.extend([h, m, t])
-			inner_labels.extend(["Hub", "Mid", "Tip"])
-			colors_inner.extend(blade_color_maps[i % len(blade_color_maps)])
-
-		# Calculate the actual mixing value for the outer ring
-		mixing_value = S_dot_total - np.sum(outer_values[1:])
-		outer_values[0] = mixing_value
-		inner_values[0] = mixing_value
-
-		# 2. Plotting the Nested Donut
-		fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
-
-		# clip values
+		# clip values - hub/midspan/tip values can be -ve
 		outer_values = np.maximum(0, outer_values)
 		inner_values = np.maximum(0, inner_values)
 
-		# --- OUTER RING (Total Blade and Mixing) ---
-		wedges_out, texts_out = ax.pie(
+		# non-dimensionalise values
+		outer_values = outer_values / np.sum(outer_values)
+		inner_values = inner_values / np.sum(inner_values)
+
+		# get list of labels for outer pie
+		outer_labels = []
+		for i, blade_row in enumerate(data["blade_rows"]):
+
+			# even indices are rotors
+			if i % 2 == 0:
+
+				# append rotor label
+				outer_labels.append(f"Rotor {i // 2 + 1}\n{100 * outer_values[i]:.1f}%")
+
+			# odd indices are stators
+			else:
+
+				# append stator label
+				outer_labels.append(f"Stator {i // 2 + 1}\n{100 * outer_values[i]:.1f}%")
+
+		# add mixing label
+		outer_labels.append(f"Mixing\n{100 * outer_values[-1]:.2g}%")
+
+		# get cycle of default colours + grey for mixing loss
+		default_colours = plt.rcParams['axes.prop_cycle'].by_key()['color']
+		colours = [default_colours[i % len(default_colours)] for i in range(len(data["blade_rows"]))]
+		colours.append("none")
+
+		# plot outer ring
+		ax.pie(
 			outer_values, 
 			labels = outer_labels, 
-			radius = 1.0,
-			colors = colors_outer,
-			startangle = 140,
-			wedgeprops = dict(width=0.3, edgecolor='white', linewidth=2),
-			pctdistance = 0.85
+			radius = R,
+			wedgeprops = dict(width = R / 2, edgecolor = "white", linewidth = 0.5),
+			textprops = dict(horizontalalignment = "center"),
+			labeldistance = 1.25,
+			startangle = 90,
+			counterclock = False,
+			colors = colours
 		)
 
-		# --- INNER RING (Hub, Midspan, Tip Breakdowns) ---
-		wedges_in, texts_in, autotexts_in = ax.pie(
-			inner_values, 
-			labels = inner_labels,
-			labeldistance = 0.55,
-			radius = 0.7,
-			colors = colors_inner,
-			startangle = 140,
-			autopct = '%1.0f%%',
-			pctdistance = 0.35,
-			wedgeprops=dict(width = 0.3, edgecolor = 'white', linewidth = 1)
+		# get new colours cycle
+		default_colours = plt.rcParams['axes.prop_cycle'].by_key()['color']
+		colour_cycle = itertools.cycle(default_colours)
+		base_colours = [next(colour_cycle) for _ in range(len(data["blade_rows"]))]
+		
+		# create empty list of colours and loop for each base colour
+		colours = []
+		for colour in base_colours:
+
+			# convert colour to rgb
+			rgb = mcolors.to_rgb(colour)
+
+			# convert rgb to hue, lightness, saturation
+			h, l, s = colorsys.rgb_to_hls(*rgb)
+
+			# loop for 3 new lightness values required
+			for i in [0.25, 0.5, 0.75]:
+
+				# append lighter colour
+				colours.append(colorsys.hls_to_rgb(h, l + (1 - l) * i, s))
+
+		# append none to have the mixing loss not appear
+		colours.append("none")
+
+		# plot inner ring
+		ax.pie(
+			inner_values,
+			radius = R / 2,
+			wedgeprops = dict(width = R / 2, edgecolor = "white", linewidth = 0.5),
+			textprops = dict(horizontalalignment = "center"),
+			startangle = 90,
+			counterclock = False,
+			colors = colours
 		)
 
-		# Clean up label sizes/formatting so they don't overlap
-		plt.setp(autotexts_in, size = 8, weight = "bold")
-		plt.setp(texts_in, size = 8)
+		labels = ["Hub", "Midspan", "Tip"]
 
-		ax.set(aspect="equal")
+		# reshape lists of values and colours
+		values = np.reshape(inner_values[:-1], (-1, 3))
+		colours = np.reshape(colours[:-1], (-1, 3, 3))
+
+		# loop for each blade row
+		for i, (value, colour) in enumerate(zip(values, colours)):
+
+			# normalise values
+			value = value / np.sum(value)
+
+			# append percentage values to labels
+			label = [f"{l}\n{100 * v:.1f}%" for (l, v) in zip(labels, value)]
+
+			# find centre position
+			centre = (6 * np.cos(np.pi / 4 * (1 - 2 * i)), 1.5 * np.sin(np.pi / 4 * (1 - 2 * i)))
+
+			# add mini pie chart detailing blade row loss breakdown
+			ax.pie(
+				value,
+				labels = label,
+				radius = 0.5,
+				center = centre,
+				wedgeprops = dict(width = 0.5, edgecolor = "white", linewidth = 0.5),
+				textprops = dict(horizontalalignment = "center"),
+				labeldistance = 1.8,
+				startangle = 90,
+				counterclock = False,
+				colors = colour
+			)
+
+		# configure plot
+		ax.set_aspect("equal")
+		ax.set_xlim(-4, 4)
+		ax.set_ylim(-2, 2)
+		ax.axis("off")
 
 		# save plot
 		figname = (
-			f"quantify_loss_{phi}_psi_{psi}".replace(".", "_")
+			f"loss_breakdown_{phi}_psi_{psi}".replace(".", "_")
 		)
 		fig.savefig(
 			os.path.join(Inputs.folder, figname),
-			dpi = Inputs.dpi, bbox_inches = "tight"
+			dpi = utils.Defaults.dpi, bbox_inches = "tight"
+		)
+
+		# close plot
+		Inputs.saved_figures.append(f"{figname}.png")
+		print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
+		plt.close()
+
+	def thrust_breakdown(self):
+		"""Creates a horizontal bar chart detailing the losses to flight power."""
+		# get index of desired test case to investigate
+		phi, psi = Inputs.contour_ij
+		index = next(
+			i for i, d in enumerate(self.data)
+			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
+		)
+
+		# bar half-width
+		width = 0.4
+
+		# get relevant data and engine objects
+		data = self.data[index]
+		engine = data["engine"]
+
+		# create plot
+		fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+		
+		# plot polytropic efficiency
+		ax.barh([1], engine.eta_poly, color = "C1", alpha = 0.7)
+		ax.text(0.5 * engine.eta_poly, 1 - 5e-2, r"$\eta_\text{poly}$", fontsize = utils.Defaults.titlesize)
+
+		# plot overall efficiency
+		ax.barh(
+			[0], engine.eta_overall,
+			label = f"eta_overall: {engine.eta_overall:.3g}",
+			color = "C0", alpha = 0.7
+		)
+		ax.text(0.5 * engine.eta_overall, -5e-2, r"$\eta_\text{overall}$", fontsize = utils.Defaults.titlesize)
+
+		# plot breakdown of loss
+		ax.barh(
+			[0], engine.eta_thrust - engine.eta_overall, left = engine.eta_overall,
+			linewidth = 0.5,
+			label = f"eta_thrust: {engine.eta_thrust:.3g}",
+			color = (1, 0.7, 0.7)
+		)
+		ax.barh(
+			[0], engine.eta_poly - engine.eta_thrust, left = engine.eta_thrust,
+			linewidth = 0.5,
+			label = f"eta_poly: {engine.eta_poly:.3g}",
+			color = (0.8, 0, 0)
+		)
+		ax.barh(
+			[0], engine.eta_prop * (1 - engine.eta_poly),
+			linewidth = 0.5,
+			left = engine.eta_poly,
+			label = f"eta_prop: {engine.eta_prop:.3g}",
+			color = (0.9, 0.5, 0.5)
+		)
+		ax.barh(
+			[0], 1 - engine.eta_poly - engine.eta_prop * (1 - engine.eta_poly),
+			linewidth = 0.5,
+			left = engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly),
+			label = f"eta_swirl: {engine.eta_swirl:.3g}",
+			color = (0.8, 0.35, 0.35)
+		)
+
+		# list of line vertical heights
+		heights = [-1, 1.6, 2.2, -1.6]
+
+		# text left-align position
+		x1 = 0.4
+		x2 = 0.5 * (engine.eta_poly + 1)
+		x3 = 1.05
+
+		# add vertical lines to each loss component
+		ax.vlines(
+			[engine.eta_overall, engine.eta_thrust],
+			heights[0], width, linewidth = 0.5, color = "k"
+		)
+		ax.vlines(
+			[engine.eta_thrust, engine.eta_poly],
+			-width, heights[1], linewidth = 0.5, color = "k"
+		)
+		ax.vlines(
+			[engine.eta_poly, engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly)],
+			-width, heights[2], linewidth = 0.5, color = "k"
+		)
+		ax.vlines(
+			[engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly), 1],
+			heights[3], width, linewidth = 0.5, color = "k"
+		)
+
+		# add arrows to each loss component
+		ax.annotate(
+			"",
+			xy = (x1, heights[0]), 
+			xytext = (engine.eta_overall, heights[0]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"",
+			xy = (x2, heights[0]), 
+			xytext = (engine.eta_thrust, heights[0]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x1, heights[1]), 
+			xytext = (engine.eta_thrust, heights[1]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x2, heights[1]), 
+			xytext = (engine.eta_poly, heights[1]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x1, heights[2]), 
+			xytext = (engine.eta_poly, heights[2]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x3, heights[2]), 
+			xytext = (engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly), heights[2]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x1, heights[3]), 
+			xytext = (engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly), heights[3]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x3, heights[3]), 
+			xytext = (1, heights[3]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+
+		# add text to arrows
+		offset = 0.08
+		ax.text(x1, heights[0] + offset, "Compressor irreversibility")
+		ax.text(x1, heights[1] + offset, "Loss due to non-uniformity")
+		ax.text(x1, heights[2] + offset, "Loss due to finite jet velocity difference")
+		ax.text(x1, heights[3] + offset, "Loss due to swirl")
+
+		# configure plot
+		ax.set_xlim(0, x3)
+		ax.set_ylim(-2, 2.5)
+		ax.set_xlabel(r"Contribution to Engine Efficiency, $\eta$")
+
+		# remove top and right-hand sides of bounding box
+		ax.spines['top'].set_visible(False)
+		ax.spines['right'].set_visible(False)
+
+		# move the remaining left and bottom spines to the origin
+		ax.spines['left'].set_position('zero')
+		ax.spines['bottom'].set_position(('data', -2))
+
+		# remove all ticks and tick labels
+		ax.set_xticks([0, 1])
+		ax.set_yticks([])
+
+		# set title
+		ax.set_title(
+			rf"Thrust Power Breakdown for $N$ = {data['metadata']['no_of_stages']}, "
+			rf"$M_1$ = {data['metadata']['inlet_mach_number']}, $\phi$ = {phi:.4g}, "
+			rf"$\psi$ = {psi:.4g}"
+		)
+
+		plt.show()
+
+		# save plot
+		figname = (
+			f"thrust_breakdown_phi_{phi}_psi_{psi}".replace(".", "_")
+		)
+		fig.savefig(
+			os.path.join(Inputs.folder, figname),
+			dpi = utils.Defaults.dpi, bbox_inches = "tight"
+		)
+
+		# close plot
+		Inputs.saved_figures.append(f"{figname}.png")
+		print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
+		plt.close()
+
+	def summary(self, attribute, label = ""):
+		"""Creates a summary plot of all test cases."""
+		# create plot
+		fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+		# get list of polytropic efficiency values for plot x-axis
+		xx = np.array([data["eta_poly"] for data in self.data])
+
+		# get y-axis data
+		yy = np.array([
+			data[attribute]
+			if attribute in data
+			else [blade_row[attribute] for blade_row in data["blade_rows"]]
+			if attribute in data["blade_rows"][0]
+			else data["metadata"][attribute]
+			if attribute in data["metadata"]
+			else data["metadata"]["M"][attribute]
+			if attribute in data["metadata"]["M"]
+			else getattr(data["engine"], attribute)
+			for data in self.data
+		])
+
+		# get unique phi values
+		phi = np.unique([data["phi"] for data in self.data])
+		phi = np.unique(phi)
+
+		# loop for each unique phi-value
+		for p in phi:
+
+			# mask only the indexes matching the specific phi
+			mask = (np.array([data["phi"] for data in self.data]) == p)
+		
+			# Plot just this group
+			ax.plot(
+				xx[mask], 
+				yy[mask], 
+				marker = ".", 
+				markersize = 8, 
+				linestyle = "",
+				label = f"$\phi$: {p}"
+			)
+
+		# configure plot
+		ax.set_xlabel(r"Polytropic Efficiency, $\eta_\text{poly}$")
+		ax.set_ylabel(label if label else attribute)
+		ax.legend()
+
+		# save plot
+		figname = (
+			f"summary_{attribute}".replace(".", "_")
+		)
+		fig.savefig(
+			os.path.join(Inputs.folder, figname),
+			dpi = utils.Defaults.dpi, bbox_inches = "tight"
 		)
 
 		# close plot
@@ -1368,7 +1549,18 @@ def main():
 	# calculate post-processed values
 	post.calc_secondary()
 	post.analyse()
-	post.calculate_thrust()		
+	post.calculate_thrust()
+
+	# close any plots that might have been created
+	plt.close("all")
+
+	# create summary plots
+	post.summary("eta_overall", r"Overall Efficiency, $\eta_\text{overall}$")
+	post.summary("thrust", r"Thrust ($N$)")
+	post.summary("loss_function", r"Loss Function, $\xi$")
+	post.summary("s_flux", "Entropy flux")
+	post.summary("s_flux_mixing", "Entropy flux due to mixing")
+	post.summary("eta_comp", r"Compressor Efficiency, $\eta_\text{comp}$")
 
 	# create contour plots of efficiency and number of blades
 	post.plot_contours("eta_poly", "Polytropic Efficiency", [0.7, 0.94, 13])
@@ -1379,31 +1571,21 @@ def main():
 	post.plot_contours("eta_comp", r"Compressor Efficiency, $\eta_{\text{comp}}$", [0.7, 0.94, 13])
 	post.plot_contours("eta_prop", r"Propulsive Efficiency, $\eta_{\text{prop}}$", [0.84, 1, 9])
 	post.plot_contours("eta_swirl", r"Swirl Efficiency, $\eta_{\text{swirl}}$", [0.84, 1, 9])
-	#post.plot_contours("max_expansion_ratio", "Max. Expansion Ratio")
-	#post.plot_contours("n_aid", "Azimuthal Gridpoints")
-	#post.plot_contours("max_diffusion_factor", "Max. Diffusion Factor")
-	#post.plot_contours("max_deviation", "Max. Deviation (deg)")
-	#post.plot_contours("max_incidence", "Max. Incidence (deg)")
 
 	# phi-psi coordinates for a specific test case exist
 	if Inputs.contour_ij is not None:
 
-		# get index of desired test case to investigate
-		"""phi, psi = Inputs.contour_ij
-		index = next(
-			i for i, d in enumerate(post.data)
-			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
-		)"""
+		# produce loss breakdown
+		post.loss_breakdown()
 
-		# close any plots that might have been created
-		plt.close("all")
+		# produce thrust breakdown
+		post.thrust_breakdown()
+
+		return
 
 		# produce section views
-		#post.section_view("rorvt", "Tangential Momentum")
-		#post.section_view("v_x", "Axial Velocity")
-		post.section_view("M", "Mach Number")
+		post.section_view("rovx", "Axial Momentum")
 		post.section_view("p_0", "Stagnation Pressure")
-		post.section_view("T_0", "Stagnation Temperature")
 		post.section_view("s", "Entropy")
 		post.section_view("alpha", "Flow Angle (deg)")
 

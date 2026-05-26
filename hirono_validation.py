@@ -207,6 +207,8 @@ def main():
     v_c_p_T_0 = Inputs.v_x_1[0] / np.sqrt(utils.c_p * flight_scenario.T_0)
     Inputs.M_1 = utils.inverse_velocity_function(v_c_p_T_0)
 
+    print(f"Inputs.M_1: {Inputs.M_1}")
+
     # create Engine
     engine = Engine(flight_scenario, 1, [Inputs.phi], [Inputs.psi], Inputs.n, 0, 1, Inputs.M_1)
     engine.design()

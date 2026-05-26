@@ -344,6 +344,7 @@ class Engine:
 
         # calculate dimensional values
         self.dimensional_values()
+        self.calc_thrust()
 
         # end timer and print feedback
         t2 = timer()
@@ -471,9 +472,6 @@ class Engine:
 
     def evaluate(self):
         """Calculates the thrust and key efficiency metrics of the engine."""
-        # store dimensionless mass flow rate
-        #self.m_dot = utils.mass_flow_function(self.M_1)
-
         # store nozzle area ratio
         self.nozzle_area_ratio = (
             self.nozzle.exit.rr[-1]**2
@@ -502,19 +500,10 @@ class Engine:
             )[-1]
         )
 
-        # find mass-averaged stagnation temperature and pressure ratios
-        """self.T_0_ratio = (
-            utils.cumulative_trapezoid(
-                self.nozzle.exit.rr, self.nozzle.exit.dm_dot_dr * self.nozzle.exit.T_0 # is this correct? dm/dA??
-            )[-1] / utils.mass_flow_function(self.M_1)
+        self.eta_isen = (
+            (np.power(self.p_0_ratio, (utils.gamma - 1) / utils.gamma) - 1)
+            / (self.T_0_ratio - 1)
         )
-        print(f"self.T_0_ratio: {self.T_0_ratio}")
-        self.p_0_ratio = (
-            utils.cumulative_trapezoid(
-                self.nozzle.exit.rr, self.nozzle.exit.dm_dot_dr * self.nozzle.exit.p_0
-            )[-1] / utils.mass_flow_function(self.M_1)
-        )
-        print(f"self.p_0_ratio: {self.p_0_ratio}\n")"""
 
         # calculate thrust coefficient contribution due to jet momentum flux
         dC_th_1_dr = (
@@ -743,7 +732,7 @@ class Engine:
             cable_area = np.pi * (cable_diameter / 2)**2
             current_density = I_ph / cable_area
 
-            # calculate voltage drop per unit length for a copper wire
+            # calculate voltage drop per unit length for a copper wire - eqn. is wrong!
             voltage_drop = I_ph * cable_area * 1e-6 * utils.resistivity_copper
 
             # mask for motors that remain in acceptable voltage/current (density) limits
@@ -1548,14 +1537,6 @@ class Engine:
                 )
             )
 
-        # check inlet mass flow rate distribution
-        """dm_dot_dr = (
-            2 * utils.gamma / ((1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1))
-            * p_no_swirl / np.sqrt(T_no_swirl)
-            * M_no_swirl * r_no_swirl
-        )
-        m_dot = utils.cumulative_trapezoid(r_no_swirl, dm_dot_dr)"""
-
         # calculate thrust coefficient contribution due to jet momentum flux
         dC_th_dr = (
             2 * utils.dynamic_pressure_function(M_no_swirl)
@@ -1583,14 +1564,32 @@ class Engine:
         M_j_1D = v_c_p_T_0 / np.sqrt((utils.gamma - 1) * (1 - 0.5 * v_c_p_T_0**2))
 
         # calculate thrust-averaged stagnation pressure
-        p_0_thrust = (
+        self.p_0_thrust = (
             utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
                 1 + 0.5 * (utils.gamma - 1) * M_j_1D**2, utils.gamma / (utils.gamma - 1)
             )
         )
 
+        # calculate entropy flux
+        s_flux = (
+            2 * np.pi
+            * utils.cumulative_trapezoid(
+                self.nozzle.exit.rr,
+                self.nozzle.exit.rr * self.nozzle.exit.p * self.scenario.p_0 / self.nozzle.exit.T
+                * self.nozzle.exit.s * utils.gamma * self.nozzle.exit.v_x
+                * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+            )[-1]
+            * self.scenario.radius**2
+        )
+
+        # calculate thrust-averaged entropy flux
+        s_flux_thrust = (
+            self.m_dot * self.scenario.T_0
+            * (utils.c_p * np.log(self.T_0_ratio) - utils.R * np.log(self.p_0_thrust))
+        )
+
         # find isentropic stagnation pressure and Mach number
-        p_0js = np.power(self.T_0_ratio, utils.gamma / (utils.gamma - 1))
+        """p_0js = np.power(self.T_0_ratio, utils.gamma / (utils.gamma - 1))
         M_js = utils.inverse_pressure_ratio(
             utils.stagnation_pressure_ratio(self.scenario.M) / p_0js
         )
@@ -1605,7 +1604,7 @@ class Engine:
         )
 
         # find isentropic power
-        self.P_isen = thrust_s * self.scenario.flight_speed
+        self.P_isen = thrust_s * self.scenario.flight_speed"""
 
         # check if engine does not yet have recorded input power
         if not hasattr(self, "P_in"):
@@ -1615,11 +1614,20 @@ class Engine:
                 np.sum([blade_row.motor_power for blade_row in self.blade_rows])
             )
 
-        # calculate efficiency metrics
-        self.eta_prop = self.P_isen / self.P_in
-        self.eta_comp = self.P_no_swirl / self.P_isen
+        # swirl efficiency
         self.eta_swirl = self.P_flight / self.P_no_swirl
-        self.eta_overall = self.eta_prop * self.eta_comp * self.eta_swirl
+
+        # polytropic efficiency
+        self.eta_poly = 1 / (1 + s_flux / self.P_in)
+
+        # find thrust averaged polytropic efficiency
+        self.eta_thrust = 1 / (1 + s_flux_thrust / self.P_in)
+
+        # overall efficiency
+        self.eta_overall = self.P_flight / self.P_in
+
+        # propulsive efficiency
+        self.eta_prop = self.eta_overall / self.eta_thrust
 
         # plot
         v_j_1D = v_j_1D / np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
@@ -1678,8 +1686,6 @@ class Engine:
                 self.eta_prop * self.eta_comp * (1 - self.eta_swirl)
             ])
         }
-
-        print(f"link['value']: {link['value']}")
 
         # update margin size
         margin *= link["value"][0]
