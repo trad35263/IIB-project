@@ -21,7 +21,7 @@ class Defaults:
     # default dimensional values
     altitude = 0
     flight_speed = 170
-    thrust = 1
+    thrust = 100
 
     # default flight scenario parameters
     label = ""
@@ -63,7 +63,8 @@ class Defaults:
     motor_rpm = 10000
     motor_diameter = 0.1
     cable_diameter = 1
-    max_current_density = 5         # A/mm^2
+    max_current_density = 8         # A/mm^2
+    cables_per_phase = 3
 
     # default off_design parameters
     phi_min = 0.4
@@ -74,7 +75,7 @@ class Defaults:
     titlesize = 14
 
     # default figure size tuple
-    figsize = (8, 3.2)
+    figsize = (6.4, 3.2)
 
     dpi = 400
 
@@ -135,8 +136,50 @@ class Defaults:
     debug = False
 
     # default dimensional blade thickness (in mm)
-    max_thickness_mm = 3
+    max_thickness_mm = 1.5
     thickness_fraction = 0.5
+
+# define Wiring class
+class Wiring:
+    """
+    Stores information relating to electric current density limits taken from:
+    https://www.spwales.com/cable-size-current-rating-chart?srsltid=AfmBOooRAjrlt2MuHI7r3Scy6LU2FOm0hu4SliVtGg59IcoI3ZPdhScP
+    """
+    limits = {
+        "conductor_area_mm2": np.array([
+            1.5, 2.5, 4.0, 6.0, 10.0, 16.0, 25.0, 35.0, 50.0, 70.0, 
+            95.0, 120.0, 150.0, 185.0, 240.0, 300.0, 400.0, 500.0, 630.0
+        ]),
+        "insulation_diameter_mm": np.array([
+            2.90, 3.53, 4.40, 4.68, 5.98, 6.95, 8.70, 10.10, 11.80, 13.70, 
+            15.60, 17.40, 19.40, 21.60, 24.80, 27.90, 31.80, 34.70, 37.60
+        ]),
+        "max_single_phase_current_A": np.array([
+            17.5, 24.0, 32.0, 41.0, 57.0, 76.0, 101.0, 125.0, 151.0, 192.0, 
+            232.0, 296.0, 300.0, 341.0, 400.0, 458.0, 546.0, 626.0, 720.0
+        ]),
+        "max_3_phase_current_A": np.array([
+            15.5, 21.0, 28.0, 36.0, 50.0, 68.0, 89.0, 110.0, 134.0, 171.0, 
+            207.0, 239.0, 262.0, 296.0, 346.0, 394.0, 467.0, 533.0, 611.0
+        ])
+    }
+
+    def __init__(self):
+        """Creates an instance of the Wiring class."""
+        # calculate electric current density limits as a function of cable diameter
+        self.limits["J_A_mm2"] = (
+            self.limits["max_3_phase_current_A"] / self.limits["conductor_area_mm2"]
+        )
+
+        # calculate conductor diameter based on conductor area
+        self.limits["conductor_diameter_mm"] = (
+            2 * np.sqrt(self.limits["conductor_area_mm2"] / np.pi)
+        )
+
+    def get_J_limit(self, d):
+        """Calculates the electric current density limit for a givne cable diameter."""
+        # calculate and return
+        return np.interp(d, self.limits["conductor_diameter_mm"], self.limits["J_A_mm2"])
 
 # 0.3 compressible flow perfect gas relations
 
@@ -265,6 +308,10 @@ def rad_s_to_rpm(x):
     """Converts a float from rad/s to rpm."""
     return x * 60 / (2 * np.pi)
 
+def rpm_to_rad_s(x):
+    """Converts a float from rpm to rad/s."""
+    return 2 * np.pi * x / 60
+
 # 0.7 debugging function
 
 def debug(string):
@@ -354,6 +401,7 @@ class Labels:
 
     # list of extra (dimensional) label-pairs to display
     engine_extra_labels = [
+        ["Actual thrust (N)", "thrust"],
         ["Mass flow rate (kg/s)", "m_dot"]
     ]
     
@@ -377,19 +425,24 @@ class Labels:
         ["Min. Power (W)", "motor_power"],
         ["Min. RPM", "motor_rpm"],
         ["Max. Diameter (m)", "motor_diameter"],
-        ["Cable Diameter (mm)", "cable_diameter"]
+        ["Cable Diameter (mm)", "cable_diameter"],
+        ["No. of Cables per Phase", "cables_per_phase"]
     ]
     motor_output_labels = [
+        ["No. of Motors (Diameter)", "no_of_motors_diameter"],
         ["No. of Motors (Power)", "no_of_motors_power"],
         ["No. of Motors (RPM)", "no_of_motors_rpm"],
-        ["No. of Motors (Diameter)", "no_of_motors_diameter"],
-        ["Min. Motor Mass (g)", "motor_mass"],
-        ["No. of Variants", "no_of_variants"],
-        ["No. of Installable", "no_of_installable"],
+        ["No. of Motors (V)", "no_of_motors_V"],
+        ["No. of Motors (I)", "no_of_motors_I"],
+        ["No. of Motors (J)", "no_of_motors_J"],
+        #["Min. Motor Mass (g)", "motor_mass"],
+        #["No. of Variants", "no_of_variants"],
+        #["No. of Installable", "no_of_installable"],
         ["Phase Voltage (V)", "phase_voltage"],
         ["Phase Current (A)", "phase_current"],
         ["Current Density (A/mm^2)", "current_density"],
-        ["Cable Voltage Drop (V/m)", "voltage_drop"]
+        ["Cable Voltage Drop (V/m)", "voltage_drop"],
+        ["Motor Mass (g)", "weight"]
     ]
 
     # list of label-pairs required to create an off_design object

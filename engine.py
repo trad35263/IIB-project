@@ -630,6 +630,14 @@ class Engine:
             # calculate chord distribution and deviation
             blade_row.calculate_chord(aspect_ratio, diffusion_factor, design_parameter)
 
+        if self.no_of_stages == 2 and self.phi[0] == 0.7 and self.psi[0] == 0.25:
+
+            # temporary hard code some values for Electric Jet Engine Design section
+            self.blade_rows[0].no_of_blades = 10
+            self.blade_rows[1].no_of_blades = 11
+            self.blade_rows[2].no_of_blades = 15
+            self.blade_rows[3].no_of_blades = 16
+
         # store list containing number of blades for each row
         self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
 
@@ -660,15 +668,11 @@ class Engine:
         # recalculate dimensional values
         self.dimensional_values()
 
-    def calculate_thickness(
-        self, max_thickness = utils.Defaults.max_thickness_mm,
-        thickness_fraction = utils.Defaults.thickness_fraction
-    ):
+    def calculate_thickness(self):
         """"""
         # convert max. thickness in mm into dimensionless value
         max_thickness = (
-            self.geometry["thickness"]["max_thickness_mm"]
-            / 1000 / self.scenario.radius
+            self.geometry["thickness"]["max_thickness_mm"] * 1e-3 / self.scenario.radius
         )
         thickness_fraction = self.geometry["thickness"]["thickness_fraction"]
 
@@ -677,7 +681,7 @@ class Engine:
 
             # draw blade shapes at hub, mid-span and tip and calculate blade row mass
             blade_row.draw_blades(max_thickness, thickness_fraction)
-            blade_row.calculate_mass(self.scenario.diameter / 2)
+            blade_row.calculate_mass(self.scenario.radius)
 
         # loop for each stage
         for index, stage in enumerate(self.stages):
@@ -693,119 +697,114 @@ class Engine:
         motor_rpm = self.geometry["motor"]["motor_rpm"]
         motor_diameter = self.geometry["motor"]["motor_diameter"]
         cable_diameter = self.geometry["motor"]["cable_diameter"]
+        cables_per_phase = self.geometry["motor"]["cables_per_phase"]
+
+        # get electric current density limit
+        wiring = utils.Wiring()
+        J_max = wiring.get_J_limit(cable_diameter)
 
         # get motor database
         database = Database()
         print(f"database: {database}")
 
+        # filter database by diameter
+        motors = [motor for motor in database.motors if motor["diameter_mm"] <= motor_diameter * 1000]
+        self.geometry["motor"]["no_of_motors_diameter"] = len(motors)
+
         # filter database by power
-        motors = [motor for motor in database.motors if motor["max_power_W"] >= motor_power]
+        motors = [motor for motor in motors if motor["max_power_W"] >= motor_power]
         self.geometry["motor"]["no_of_motors_power"] = len(motors)
 
         # filter database by rpm
         motors = [motor for motor in motors if motor["max_rpm"] >= motor_rpm]
         self.geometry["motor"]["no_of_motors_rpm"] = len(motors)
 
-        # filter database by diameter
-        motors = [motor for motor in motors if motor["diameter_mm"] <= motor_diameter * 1000]
-        self.geometry["motor"]["no_of_motors_diameter"] = len(motors)
-
         # there exist motors which satisfy all criteria
         if len(motors) > 0:
 
-            # find lightest possible motor
-            motor_index = np.argmin([motor["weight_g"] for motor in motors])
-            self.geometry["motor"][f"motor_mass"] = motors[motor_index]["weight_g"]
-
-            # find number of motors with same mass
-            motors = [motor for motor in motors if motor["weight_g"] == motors[motor_index]["weight_g"]]
-            self.geometry["motor"][f"no_of_variants"] = len(motors)
-
             # calculate phase voltages based on rpm and assuming star configuration
-            V_emf = motor_rpm / np.array([motor["K_V"] for motor in motors])
-            V_ph = V_emf / np.sqrt(3)
+            [
+                motor.update({"V_emf": motor_rpm / motor["K_V"]})
+                for motor in motors
+            ]
+            [motor.update({"V_ph": motor["V_emf"] / np.sqrt(3)}) for motor in motors]
 
             # calculate phase current based on required motor power
-            I_ph = motor_power / (3 * V_ph)
+            [motor.update({"I_ph": motor_power / (3 * motor["V_ph"])}) for motor in motors]
 
             # calculate cable area (in mm^2) and current density (A / mm^2)
-            cable_area = np.pi * (cable_diameter / 2)**2
-            current_density = I_ph / cable_area
+            cable_area = cables_per_phase * np.pi * (cable_diameter / 2)**2
+            [motor.update({"J": motor["I_ph"] / cable_area}) for motor in motors]
 
-            # calculate voltage drop per unit length for a copper wire - eqn. is wrong!
-            voltage_drop = I_ph * cable_area * 1e-6 * utils.resistivity_copper
+            # calculate voltage drop per unit length for a copper wire
+            [motor.update({"dV_dL": motor["J"] * utils.resistivity_copper}) for motor in motors]
 
-            # mask for motors that remain in acceptable voltage/current (density) limits
-            mask = (
-                (V_emf < np.array([motor["max_volts"] for motor in motors]))
-                & (I_ph < np.array([motor["max_amps"] for motor in motors]))
-                & (current_density < utils.Defaults.max_current_density)
-            )
+            # mask for max voltage requirement
+            motors = [motor for motor in motors if motor["V_emf"] < motor["max_volts"]]
+            self.geometry["motor"]["no_of_motors_V"] = len(motors)
 
-            # create plot
-            if utils.debug:
+            # mask for max current requirement
+            motors = [motor for motor in motors if motor["I_ph"] < motor["max_amps"]]
+            self.geometry["motor"]["no_of_motors_I"] = len(motors)
 
-                fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
-
-                ax.plot(
-                    [motor["K_V"] for motor in motors],
-                    [motor["torque_constant_mNm_A"] for motor in motors],
-                    label = "All variants",
-                    linestyle = '', marker = '.'
-                )
-                ax.plot(
-                    np.array([motor["K_V"] for motor in motors])[mask],
-                    np.array([motor["torque_constant_mNm_A"] for motor in motors])[mask],
-                    label = "Feasible installation",
-                    linestyle = '', marker = '.'
-                )
-
-                ax.grid()
-                ax.legend()
-                ax.set_xlabel("Voltage Constant, K_V (V / rpm)")
-                ax.set_ylabel("Torque Constant, K_tau (mNm / A)")
-
-                plt.show()
+            # mask for max current density requirement
+            motors = [motor for motor in motors if motor["J"] < J_max]
+            self.geometry["motor"]["no_of_motors_J"] = len(motors)
 
             # valid motor installations exist
-            if mask.any():
+            if len(motors) > 0:
 
                 # stores ranges of parameters for display in GUI
-                self.geometry["motor"]["no_of_installable"] = mask.sum()
                 self.geometry["motor"]["phase_voltage"] = (
-                    f"{np.min(V_ph[mask]):.4g} - {np.max(V_ph[mask]):.4g}"
+                    f"{np.min([motor['V_ph'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['V_ph'] for motor in motors]):.4g}"
                 )
                 self.geometry["motor"]["phase_current"] = (
-                    f"{np.min(I_ph[mask]):.4g} - {np.max(I_ph[mask]):.4g}"
+                    f"{np.min([motor['I_ph'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['I_ph'] for motor in motors]):.4g}"
                 )
                 self.geometry["motor"]["current_density"] = (
-                    f"{np.min(current_density[mask]):.4g} - {np.max(current_density[mask]):.4g}"
+                    f"{np.min([motor['J'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['J'] for motor in motors]):.4g}"
                 )
                 self.geometry["motor"]["voltage_drop"] = (
-                    f"{np.min(voltage_drop[mask]):.4g} - {np.max(voltage_drop[mask]):.4g}"
+                    f"{np.min([motor['dV_dL'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['dV_dL'] for motor in motors]):.4g}"
                 )
+                self.geometry["motor"]["weight"] = (
+                    f"{np.min([motor['weight_g'] for motor in motors])} - "
+                    f"{np.max([motor['weight_g'] for motor in motors])}"
+                )
+
+                # print list of motors and store in engine
+                print(
+                    f"{utils.Colours.GREEN}Successful motor installations found!"
+                    f"{utils.Colours.END}\n{motors}"
+                )
+                self.motors = motors
 
             # no valid motor installations exist
             else:
 
                 # set GUI fields to empty strings
-                self.geometry["motor"]["no_of_installable"] = 0
                 self.geometry["motor"]["phase_voltage"] = ""
                 self.geometry["motor"]["phase_current"] = ""
                 self.geometry["motor"]["current_density"] = ""
                 self.geometry["motor"]["voltage_drop"] = ""
+                self.geometry["motor"]["weight"] = ""
 
         # no motors meet requirements
         else:
 
             # set GUI fields to empty strings
-            self.geometry["motor"]["no_of_installable"] = 0
-            self.geometry["motor"][f"motor_mass"] = ""
-            self.geometry["motor"][f"no_of_variants"] = ""
-            self.geometry["motor"][f"phase_voltage"] = ""
-            self.geometry["motor"][f"phase_current"] = ""
-            self.geometry["motor"][f"current_density"] = ""
-            self.geometry["motor"][f"voltage_drop"] = ""
+            self.geometry["motor"]["no_of_motors_V"] = 0
+            self.geometry["motor"]["no_of_motors_I"] = 0
+            self.geometry["motor"]["no_of_motors_J"] = 0
+            self.geometry["motor"]["phase_voltage"] = ""
+            self.geometry["motor"]["phase_current"] = ""
+            self.geometry["motor"]["current_density"] = ""
+            self.geometry["motor"]["voltage_drop"] = ""
+            self.geometry["motor"]["weight"] = ""
 
     def calculate_off_design(self):
         """Calculates the off-design performance characterstics of each stage."""
@@ -1588,24 +1587,6 @@ class Engine:
             * (utils.c_p * np.log(self.T_0_ratio) - utils.R * np.log(self.p_0_thrust))
         )
 
-        # find isentropic stagnation pressure and Mach number
-        """p_0js = np.power(self.T_0_ratio, utils.gamma / (utils.gamma - 1))
-        M_js = utils.inverse_pressure_ratio(
-            utils.stagnation_pressure_ratio(self.scenario.M) / p_0js
-        )
-
-        # find isentropic jet velocity and thrust produced
-        T_js = self.T_0_ratio * utils.stagnation_temperature_ratio(M_js)
-        v_xjs = M_js * np.sqrt(T_js)
-        thrust_s = (
-            self.m_dot * (
-                v_xjs * np.sqrt(utils.gamma * utils.R * self.scenario.T_0) - self.scenario.flight_speed
-            )
-        )
-
-        # find isentropic power
-        self.P_isen = thrust_s * self.scenario.flight_speed"""
-
         # check if engine does not yet have recorded input power
         if not hasattr(self, "P_in"):
 
@@ -1615,7 +1596,7 @@ class Engine:
             )
 
         # swirl efficiency
-        self.eta_swirl = self.P_flight / self.P_no_swirl
+        self.eta_swirl = min(self.P_flight / self.P_no_swirl, 1)
 
         # polytropic efficiency
         self.eta_poly = 1 / (1 + s_flux / self.P_in)
@@ -1627,7 +1608,7 @@ class Engine:
         self.eta_overall = self.P_flight / self.P_in
 
         # propulsive efficiency
-        self.eta_prop = self.eta_overall / self.eta_thrust
+        self.eta_prop = self.eta_overall / (self.eta_thrust * self.eta_swirl)
 
         # plot
         v_j_1D = v_j_1D / np.sqrt(utils.gamma * utils.R * self.scenario.T_0)

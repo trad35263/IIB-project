@@ -32,6 +32,7 @@ class Inputs:
 
     # default plotting parameters
     line_width = 1
+    line_thin = 0.5
 
 def project(xx, yy, zz, theta = np.pi / 4, phi = np.pi / 4):
     """Projects an array of 3D coordinates onto a 2D plane."""
@@ -197,12 +198,12 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
         if i == 0:
 
             # plot blade section
-            ax.plot(*project(xx[i][:j], yy[i][:j], zz[i][:j], theta, phi), color = "k")
+            ax.plot(*project(xx[i][:j], yy[i][:j], zz[i][:j], theta, phi), color = "k", lw = Inputs.line_thin)
 
         # for tip index
         elif i == len(blade_row.indices) - 1:
 
-            ax.plot(*project(xx[i], yy[i], zz[i], theta, phi), color = "k")
+            ax.plot(*project(xx[i], yy[i], zz[i], theta, phi), color = "k", lw = Inputs.line_thin)
 
         # mid-span indices
         else:
@@ -324,14 +325,15 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
     x_component = normals[..., 0]
 
     # plot contours
+    N = 100
     grey = matplotlib.colormaps["gray"]
-    colors = grey(np.linspace(0.7, 0.95, 256))
+    colors = grey(np.linspace(0.7, 0.95, N))
     grey_map = ListedColormap(colors)
-    ax.contourf(*project(X_grid, Y_grid, Z_grid, theta, phi), x_component, cmap = grey_map)
+    ax.contourf(*project(X_grid, Y_grid, Z_grid, theta, phi), x_component, levels = N, cmap = grey_map)
 
     # plot leading and trailing edge splines
-    ax.plot(*project(xx_le, yy_le, zz_le, theta, phi), color = "k")
-    ax.plot(*project(xx_te, yy_te, zz_te, theta, phi), color = "k")
+    ax.plot(*project(xx_le, yy_le, zz_le, theta, phi), color = "k", lw = Inputs.line_thin)
+    ax.plot(*project(xx_te, yy_te, zz_te, theta, phi), color = "k", lw = Inputs.line_thin)
 
     # loop for hub-mid and mid streamlines
     for i in range(len(xx_offset)):
@@ -433,7 +435,7 @@ def annotate(ax, label, position):
         color = "k"
     )
 
-    #
+    # update axis limits
     ax.plot(*position, linestyle = "")
 
 # main function

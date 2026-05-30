@@ -3,38 +3,37 @@
 
 # import modules
 import numpy as np
-import matplotlib.pyplot as plt
-#from scipy.interpolate import griddata
 import mat73
-
 import itertools
-import matplotlib.pyplot as plt
-
-import matplotlib.colors as mcolors
 import colorsys
-
 from scipy.interpolate import CloughTocher2DInterpolator
 
-# system modules
+# import matplotlib
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+import matplotlib.pyplot as plt
+
+# import system modules
 import os
 import subprocess
 import ast
 import copy
 
-# latex imports
+# import latex
 from pylatex import Document, Figure, NoEscape, Package
-#from pylatex.utils import bold
 
 # import high speed solver
 import sys
 from engine import Engine
 from flight_scenario import Flight_scenario
+from motor_database import Database
 import utils
 
 # override matplotlib default behaviour to render negative contours as dashed lines
 import matplotlib as mpl
 mpl.rcParams["contour.negative_linestyle"] = "solid"
 
+# font manager
 import matplotlib.font_manager as fm
 
 # load Latex font
@@ -69,8 +68,6 @@ class Inputs:
 	gridlines = 10
 
 	# default plotting parameters
-	#figsize = (8, )
-	#dpi = 300
 	fontsize = 12
 	titlesize = 14
 	colours = "viridis"
@@ -90,6 +87,7 @@ class Inputs:
 		"T_0": "K",
 		"p": "Pa",
 		"p_0": "Pa",
+		"phi_local": r"\phi_\text{loc}"
 	}
 
 	# empty list of saved figures
@@ -97,6 +95,9 @@ class Inputs:
 
 	# mass flow rate threshold for classification as a boundary layer
 	BL_threshold = 0.1
+
+	# dynamic viscosity
+	mu = 1.716e-5				# (Pa s)
 
 # Post class
 class Post:
@@ -123,6 +124,9 @@ class Post:
 
 		# print keys to terminal
 		self.print_keys(self.data[0])
+
+		# initialise variable for appending text to as a summary in the report
+		self.text = ""
 
 	def load_mat(self, filepath):
 		"""Loads the data from a .mat file."""
@@ -200,12 +204,29 @@ class Post:
 					plane["p"] = p
 					plane["p_0"] = p_0
 
-					# get (dimensional) specific entropy
-					s = (
+					# get (dimensional) specific entropy 
+					plane["s"] = (
 						Inputs.c_p * np.log(T_0 / np.mean(data["blade_rows"][0]["inlet"]["T_0"]))
 						- Inputs.R * np.log(p_0 / np.mean(data["blade_rows"][0]["inlet"]["p_0"]))
 					)
-					plane["s"] = s
+
+					# rotors only
+					if blade_row["rpm"] > 0:
+
+						# get local flow coefficient, non-dimensionalised by blade tip speed
+						plane["phi_local"] = (
+							plane["v_x"]
+							/ (blade_row["rpm"] * 2 * np.pi / 60 * plane["r"][-1])
+						)
+
+					# stators
+					else:
+
+						# set local flow coefficient to gi
+						plane["phi_local"] = (
+							plane["v_x"]
+							/ (data["blade_rows"][i - 1]["rpm"] * 2 * np.pi / 60 * plane["r"][-1])
+						)
 
 	def analyse(self):
 		"""Carries out preliminary analysis for each loaded test case."""
@@ -521,6 +542,32 @@ class Post:
 
 			data["loss_function"] = 1 / (1 + data["loss_function"])
 
+	def calculate_Re(self):
+		"""Calculates the Reynolds number of each test case."""
+		# loop for each data object
+		for data in self.data:
+
+			# calculate design Re based on blade speed, engine diameter and inlet stagnation density
+			data["design_Re"] = (
+				data["metadata"]["p_0"] / (utils.R * data["metadata"]["T_0"])
+				* utils.velocity_function(data["metadata"]["inlet_mach_number"])
+				* np.sqrt(utils.c_p * data["metadata"]["T_0"])
+				* data["metadata"]["diameter"] / Inputs.mu
+			)
+
+			# calculate Re based on blade speed, engine diameter and inlet stagnation density
+			data["Re"] = (
+				data["metadata"]["p_0"] / (utils.R * data["metadata"]["T_0"]) * np.mean(
+					data["blade_rows"][0]["inlet"]["rovx_avg"]
+					/ data["blade_rows"][0]["inlet"]["ro_avg"]
+				) * data["metadata"]["diameter"] / Inputs.mu
+			)
+
+			if data["Re"] > 1500000:
+
+				print(f"data['phi']: {data['phi']}")
+				print(f"data['psi']: {data['psi']}")
+
 	def calculate_thrust(self):
 		"""Calculates the actual thrust produced by the CFD test cases via the Engine class."""
 		# loop for each dataset
@@ -696,7 +743,7 @@ class Post:
 			)
 
 			# add text labels directly onto the contour lines
-			ax.clabel(cs, inline = True, fontsize = Inputs.fontsize, fmt='%1.2g')
+			ax.clabel(cs, inline = True, fontsize = utils.Defaults.fontsize, fmt='%1.2g')
 
 			# plot contours of interpolated data and individual datapoints
 			cf = ax.contourf(
@@ -724,6 +771,10 @@ class Post:
 			# set title
 			ax.set_title(title, fontsize = Inputs.titlesize)
 
+			# configure plot
+			ax.set_xlim(0.4, 1)
+			ax.set_ylim(0.05, 0.6)
+
 			# save plot
 			figname = (
 				f"plot_contours_row_{index}_{attribute}".replace(".", "_")
@@ -737,6 +788,9 @@ class Post:
 			Inputs.saved_figures.append(f"{figname}.png")
 			print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
 			plt.close()
+
+			# update summary text
+			self.text += f"{attribute.replace('_', ' ')}: {np.nanmin(zz):.4g} $\\to$ {np.nanmax(zz):.4g} \\\\ "
 
 	def rotate(self, inlet, j):
 		"""Calculates the rotated coordinates for a given cut and index to rotate to vertical."""
@@ -765,7 +819,7 @@ class Post:
 		inlet["y"] = coords_rotated[..., 0]
 		inlet["z"] = coords_rotated[..., 1]
 
-	def section_view(self, attribute, label = ""):
+	def section_view(self, attribute, label = "", symbol = ""):
 		"""Creates a plot of a section view through the compressor."""
 		# get index of desired test case to investigate
 		phi, psi = Inputs.contour_ij
@@ -773,6 +827,9 @@ class Post:
 			i for i, d in enumerate(self.data)
 			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
 		)
+
+		# get relevant data object
+		data = self.data[index]
 
 		# initial values for axis limits
 		ymin = np.inf
@@ -792,15 +849,8 @@ class Post:
 				ymax = max(ymax, np.max(blade_row[c]["y"]))
 				zmax = max(zmax, np.max(blade_row[c]["z"]))
 
-		corners = np.array([
-			[ymin, zmin],
-			[ymin, zmax],
-			[ymax, zmin],
-			[ymax, zmax]
-		])
-
 		# loop for each blade row
-		for i, blade_row in enumerate(self.data[index]["blade_rows"]):
+		for i, blade_row in enumerate(data["blade_rows"]):
 
 			# create side-by-side figure
 			fig, axes = plt.subplots(1, 2, figsize = utils.Defaults.figsize)
@@ -826,9 +876,7 @@ class Post:
 				outlet["y"], outlet["z"], outlet[attribute], levels = levels, cmap = "viridis"
 			)
 			cbar = fig.colorbar(cf2, ax = [axes[0], axes[1]])
-			cbar.set_label(
-				f"{attribute} ({Inputs.units[attribute] if attribute in Inputs.units else '-'})"
-			)
+			cbar.set_label(symbol)
 
 			# add contour of approximate boundary layer thickness
 			axes[0].plot(
@@ -847,16 +895,22 @@ class Post:
 			# set subplot titles
 			axes[0].set_title(
 				f"{'Rotor' if i % 2 == 0 else 'Stator'} {i // 2 + 1} Inlet",
-				fontsize = Inputs.fontsize
+				fontsize = utils.Defaults.fontsize
 			)
 			axes[1].set_title(
 				f"{'Rotor' if i % 2 == 0 else 'Stator'} {i // 2 + 1} Exit",
-				fontsize = Inputs.fontsize
+				fontsize = utils.Defaults.fontsize
 			)
 
 			# set figure title
 			fig.suptitle(
-				rf"Contours of {label} for $\phi$ = {phi}, $\psi$ = {psi}", fontsize = Inputs.titlesize,
+				(
+					rf"Contours of {label}, {symbol}" "\n"
+					rf"$N$ = {data['metadata']['no_of_stages']}, "
+					rf"$M_1$ = {data['metadata']['inlet_mach_number']}, $\phi$ = {phi}, "
+					rf"$\psi$ = {psi}"
+				),
+				fontsize = Inputs.titlesize,
 				y = 1.01
 			)
 
@@ -883,6 +937,91 @@ class Post:
 			print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
 			plt.close()
 
+	def rotor_section(self):
+		"""Plots a section view through the rotor mean-line and tip showing contours of M_rel."""
+		# get index of desired test case to investigate
+		phi, psi = Inputs.contour_ij
+		index = next(
+			i for i, d in enumerate(self.data)
+			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
+		)
+
+		# get relevant data object
+		data = self.data[index]
+	
+		# create plot
+		fig, axes = plt.subplots(1, 2, figsize = utils.Defaults.figsize)
+
+		# set min-max and levels
+		min = 0
+		max = 1.3
+		levels = np.linspace(min, max, 51)
+
+		# define colour map of red and blue
+		blues = cm.get_cmap("Blues_r", 10)(np.linspace(1, 0.4, 100))
+		reds = cm.get_cmap("Reds", 10)(np.linspace(0.5, 1, 100))
+		custom_colours = np.vstack((blues, reds))
+		colour_map = mcolors.ListedColormap(custom_colours)
+		norm = mcolors.TwoSlopeNorm(vcenter = 1, vmin = min, vmax = max)
+
+		# colour background in black
+		
+
+		# loop for both plots
+		for (section, ax) in zip(("section1", "section2"), axes):
+
+			# loop for each mesh block
+			for key, g in data[section].items():
+
+				# plot contours of M_rel
+				cf = ax.contourf(g["x"], g["z"], g["M_rel"], levels = levels, cmap = colour_map, norm = norm)
+
+			# set axis title
+			r_tip = 0.5 * data["metadata"]["diameter"]
+			r_hub = 0.5 * data["metadata"]["diameter"] * data["metadata"]["hub_tip_ratio"]
+			span = (
+				(data[section][key]["r"] - r_hub)
+				/ (r_tip - r_hub)
+			)
+			ax.set_title(f"{100 * span:.2g}% Span")
+
+			# configure plot
+			ax.axis("off")
+			ax.set_aspect("equal")
+			ax.set_xlim(0.045, 0.065)
+			ax.set_ylim(-0.005, 0.015)
+
+		# add colour bar
+		cbar = fig.colorbar(cf, ax=axes.ravel().tolist(), shrink=0.6, pad=0.05)
+		cbar.set_label("Relative Mach Number, $M_{rel}$")
+		cbar.set_ticks([min, 1, max])
+
+		# set figure title
+		N = data["metadata"]["no_of_stages"]
+		M_1 = data["metadata"]["inlet_mach_number"]
+		fig.suptitle(
+			r"Contours of $M_\text{rel}$" + "\n"
+			rf"$N$ = {N:.4g}, $M_1$ = {M_1:.4g}, $\phi$ = {phi:.4g}, $\psi$ = {psi:.4g}"
+		)
+
+		plt.show()
+
+		# save plot
+		figname = (
+			f"rotor_section".replace(".", "_")
+		)
+		fig.savefig(
+			os.path.join(Inputs.folder, figname),
+			dpi = utils.Defaults.dpi, bbox_inches = "tight"
+		)
+
+		# close plot
+		Inputs.saved_figures.append(f"{figname}.png")
+		print(f"Plot saved as {utils.Colours.GREEN}{figname}.png{utils.Colours.END}!")
+		plt.close()
+
+		plt.show()
+
 	def plot_span(self, attribute, label = "", hold = False):
 		"""Creates a plot of the spanwise variation of mass-averaged flow properties."""
 		# get list of colours
@@ -902,7 +1041,24 @@ class Post:
 		if plt.get_fignums() == []:
 
 			# create figure with one subplot per blade row + 1
-			fig, axes = plt.subplots(ncols = len(self.data[index]["blade_rows"]) + 1, figsize = utils.Defaults.figsize)
+			fig, all_axes = plt.subplots(
+				nrows = 2,
+				ncols = len(self.data[index]["blade_rows"]) + 1,
+				figsize = utils.Defaults.figsize,
+				#layout = "constrained",
+				gridspec_kw = {"height_ratios": [0.9, 0.1]}
+			)
+
+			# separate into axes for plotting and for legend
+			all_axes = np.asarray(all_axes)
+			axes = all_axes[0, :]
+			legend_ax = all_axes[1, 0]
+
+			# for all legend axes
+			for ax in all_axes[1, :]:
+
+				# hide axes
+				ax.axis("off")
 
 			# set colour counter to 0
 			self.colour_index = 0
@@ -912,7 +1068,13 @@ class Post:
 
 			# retrieve figure and axes object instances
 			fig = plt.gcf()
-			axes = fig.axes
+			all_axes = fig.axes
+
+			# separate into axes for plotting and for legend
+			num_cols = len(self.data[index]["blade_rows"]) + 1
+			all_axes = np.asarray(all_axes).reshape(2, num_cols)
+			axes = all_axes[0, :]
+			legend_ax = all_axes[1, 0]
 
 			# increment colour counter
 			self.colour_index += 1
@@ -1035,7 +1197,7 @@ class Post:
 				has_images = len(ax.images) > 0
 				has_containers = len(ax.containers) > 0
 				
-				# If all are empty, delete the axis from the figure layout
+				# if all are empty, delete the axis from the figure layout
 				if not (has_lines or has_collections or has_images or has_containers):
 					ax.remove()
 
@@ -1072,13 +1234,23 @@ class Post:
 			# set y-axis label
 			axes[0].set_ylabel("Dimensionless Span")
 
-			# create legend beside plot
+			# create legend underneath plot
 			unique = dict(zip(labels, handles))
-			axes[-1].legend(
-				unique.values(), unique.keys(), fontsize = Inputs.fontsize,
+			legend_ax.legend(
+                unique.values(), 
+                unique.keys(), 
+                fontsize = utils.Defaults.fontsize,
+                ncol = 2,
+				loc = "upper center",
+				bbox_to_anchor = (0.5, 0.1),
+				bbox_transform = fig.transFigure,
+                frameon = False
+            )
+			"""axes[-1].legend(
+				unique.values(), unique.keys(), fontsize = utils.Defaults.fontsize,
 				loc = "center", bbox_to_anchor = (1 + 0.03 * len(axes), 0.5),
 				bbox_transform = fig.transFigure, frameon = False
-			)
+			)"""
 
 			# save plot
 			figname = (
@@ -1284,6 +1456,12 @@ class Post:
 		data = self.data[index]
 		engine = data["engine"]
 
+		print(f"engine.eta_overall: {engine.eta_overall}")
+		print(f"engine.eta_thrust: {engine.eta_thrust}")
+		print(f"engine.eta_poly: {engine.eta_poly}")
+		print(f"engine.eta_prop: {engine.eta_prop}")
+		print(f"engine.eta_swirl: {engine.eta_swirl}")
+
 		# create plot
 		fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 		
@@ -1412,7 +1590,7 @@ class Post:
 
 		# configure plot
 		ax.set_xlim(0, x3)
-		ax.set_ylim(-2, 2.5)
+		ax.set_ylim(-2, 3)
 		ax.set_xlabel(r"Contribution to Engine Efficiency, $\eta$")
 
 		# remove top and right-hand sides of bounding box
@@ -1433,8 +1611,6 @@ class Post:
 			rf"$M_1$ = {data['metadata']['inlet_mach_number']}, $\phi$ = {phi:.4g}, "
 			rf"$\psi$ = {psi:.4g}"
 		)
-
-		plt.show()
 
 		# save plot
 		figname = (
@@ -1513,10 +1689,38 @@ class Post:
 
 	def generate_report(self):
 		"""Generates a .pdf report of all generated plots relating to a given test case."""
+		# get index of desired test case to investigate
+		phi, psi = Inputs.contour_ij
+		index = next(
+			i for i, d in enumerate(self.data)
+			if (np.abs(d["phi"] - phi) < 1e-6) and (np.abs(d["psi"] - psi) < 1e-6)
+		)
+
+		# get relevant data object
+		data = self.data[index]
+
 		# create document
 		doc = Document(geometry_options = {"margin": "1in"})
 		doc.packages.append(Package("graphicx"))
 		doc.packages.append(Package("float"))
+
+		# helper function
+		def add(string):
+
+			# adds a string to the document with an endline appended
+			doc.append(NoEscape(f"{string} \\\\ "))
+
+		# add summary text
+		add(f"Design Re: {data['design_Re']:.4g}")
+		add(f"Re: {data['Re']:.4g}")
+		add(f"Design thrust: {data['engine_design'].thrust:.4g} N")
+		add(f"Thrust: {data['engine'].thrust:.4g} N")
+
+		# add collected text
+		add(self.text)
+
+		# add some space
+		doc.append(NoEscape(r"\vspace{2cm}"))
 
 		# loop for each saved figure
 		for figure in Inputs.saved_figures:
@@ -1540,15 +1744,74 @@ class Post:
 		print(f"Output report saved as {utils.Colours.GREEN}{file_name}{utils.Colours.END}!")
 		subprocess.run(["xdg-open", os.path.join(Inputs.folder, f"{file_name}.pdf")])
 
+	def motors(self):
+		""""""
+		# create plot
+		fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+		# load motors database
+		database = Database()
+		print(f"database: {database}")
+
+		for motor in database.motors:
+
+			motor["area"] = (
+				np.pi * (motor["diameter_mm"] * 1e-3 / 2)**2
+				* (1 / self.data[0]["metadata"]["hub_tip_ratio"]**2 - 1)
+			)
+
+		# plot motor power / area against area
+		ax.plot(
+			[motor["area"] for motor in database.motors],
+			[
+				motor["max_power_W"] / motor["area"]
+				for motor in database.motors
+			],
+			marker = ".", linestyle = "", color = "C3",
+			label = "NeuMotors Database"
+		)
+
+		# loop for each data
+		for data in self.data:
+
+			data["metadata"]["area"] = (
+				np.pi * (data["metadata"]["diameter"] / 2)**2
+				* (1 - data["metadata"]["hub_tip_ratio"]**2)
+			)
+
+			data["power"] = np.sum([blade_row["power"] for blade_row in data["blade_rows"]])
+
+		ax.plot(
+			[data["metadata"]["area"] for data in self.data],
+			[
+				np.sum([blade_row["power"] for blade_row in data["blade_rows"]])
+				/ data["metadata"]["area"]
+				for data in self.data
+			],
+			marker = ".", linestyle = "", color = "C0",
+			label = "CFD Data"
+		)
+
+		# configure plot
+		ax.set_xlabel("Engine area (m^2)")
+		ax.set_ylabel("Power per area (W / m^2)")
+		ax.legend()
+		ax.grid()
+
+		plt.show()
+
 # main function
 def main():
 
 	# create post-processing object
 	post = Post()
 
+	#post.motors()
+
 	# calculate post-processed values
 	post.calc_secondary()
 	post.analyse()
+	post.calculate_Re()
 	post.calculate_thrust()
 
 	# close any plots that might have been created
@@ -1556,11 +1819,6 @@ def main():
 
 	# create summary plots
 	post.summary("eta_overall", r"Overall Efficiency, $\eta_\text{overall}$")
-	post.summary("thrust", r"Thrust ($N$)")
-	post.summary("loss_function", r"Loss Function, $\xi$")
-	post.summary("s_flux", "Entropy flux")
-	post.summary("s_flux_mixing", "Entropy flux due to mixing")
-	post.summary("eta_comp", r"Compressor Efficiency, $\eta_\text{comp}$")
 
 	# create contour plots of efficiency and number of blades
 	post.plot_contours("eta_poly", "Polytropic Efficiency", [0.7, 0.94, 13])
@@ -1568,12 +1826,16 @@ def main():
 	post.plot_contours("min_skewness_angle", "Min. Skewness Angle")
 	post.plot_contours("C_th", r"Thrust Coefficient, $C_{\text{þ}}$", [0, 0.05])
 	post.plot_contours("eta_overall", r"Overall Efficiency, $\eta_{\text{overall}}$", [0.6, 0.84, 13])
-	post.plot_contours("eta_comp", r"Compressor Efficiency, $\eta_{\text{comp}}$", [0.7, 0.94, 13])
+	post.plot_contours("eta_thrust", r"Thrust-averaged Polytropic Efficiency, $\eta_{\text{thrust}}$", [0.7, 0.94, 13])
+	post.plot_contours("eta_poly", r"Polytropic Efficiency, $\eta_{\text{thrust}}$", [0.7, 0.94, 13])
 	post.plot_contours("eta_prop", r"Propulsive Efficiency, $\eta_{\text{prop}}$", [0.84, 1, 9])
 	post.plot_contours("eta_swirl", r"Swirl Efficiency, $\eta_{\text{swirl}}$", [0.84, 1, 9])
 
 	# phi-psi coordinates for a specific test case exist
 	if Inputs.contour_ij is not None:
+
+		# rotor relative Mach number plot
+		post.rotor_section()
 
 		# produce loss breakdown
 		post.loss_breakdown()
@@ -1581,13 +1843,12 @@ def main():
 		# produce thrust breakdown
 		post.thrust_breakdown()
 
-		return
-
 		# produce section views
+		post.section_view("phi_local", "Local Flow Coefficient", r"$\phi_\text{loc}$")
 		post.section_view("rovx", "Axial Momentum")
 		post.section_view("p_0", "Stagnation Pressure")
 		post.section_view("s", "Entropy")
-		post.section_view("alpha", "Flow Angle (deg)")
+		post.section_view("alpha", "Flow Angle (°)")
 
 		# produce spanwise variation plots
 		post.plot_span("rovx", "Axial Momentum")
@@ -1601,17 +1862,17 @@ def main():
 		post.plot_span("T", "Temperature", hold = True)
 		post.plot_span("T_0", "Stagnation Temperature")
 
-		post.plot_span("alpha", "Flow Angle (deg)", hold = True)
-		post.plot_span("beta", "Relative Flow Angle (deg)", hold = True)
-		post.plot_span("metal_angle", "Blade Metal Angle (deg)")
+		post.plot_span("alpha", "Flow Angle (°)", hold = True)
+		post.plot_span("beta", "Relative Flow Angle (°)", hold = True)
+		post.plot_span("metal_angle", "Blade Metal Angle (°)")
 
 		post.plot_span("diffusion_factor", "Diffusion Factor")
 
-		post.plot_span("deviation", "Deviation (deg)", hold = True)
-		post.plot_span("incidence", "Incidence (deg)")
+		post.plot_span("deviation", "Deviation (°)", hold = True)
+		post.plot_span("incidence", "Incidence (°)")
 
 		post.plot_span("s", "Entropy")
-		post.plot_span("loss_function", "Entropy Loss Function")
+		#post.plot_span("loss_function", "Entropy Loss Function")
 
 		# create latex report with all plots produced
 		post.generate_report()

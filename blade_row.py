@@ -1239,6 +1239,9 @@ class Blade_row:
         # initiialise empty arrays of x- and y-coordinates
         self.xx = np.zeros((N, 2 * len(self.zz[0])))
         self.yy = np.zeros((N, 2 * len(self.zz[0])))
+        self.xx_camber = np.zeros((N, len(self.zz[0])))
+        self.yy_camber = np.zeros((N, len(self.zz[0])))
+        self.ll_camber = np.zeros((N, len(self.zz[0])))
 
         # get indices corresponding to hub, mid-span and tip
         rr = np.linspace(self.exit.rr[0], self.exit.rr[-1], N)
@@ -1261,17 +1264,17 @@ class Blade_row:
             )
 
             # get camber line coordinates
-            xx_camber = x0 + r * np.sin(theta)
-            yy_camber = y0 - r * np.cos(theta)
+            self.xx_camber[j] = x0 + r * np.sin(theta)
+            self.yy_camber[j] = y0 - r * np.cos(theta)
 
             # calculate cumulative distance along camber line
-            ll_camber = np.concatenate([[0], np.cumsum(
-                np.sqrt(np.diff(xx_camber)**2 + np.diff(yy_camber)**2)
+            self.ll_camber[j] = np.concatenate([[0], np.cumsum(
+                np.sqrt(np.diff(self.xx_camber[j])**2 + np.diff(self.yy_camber[j])**2)
             )])
 
             # differentiate camber line with respect to cumulative distance
-            dx_dl = np.gradient(xx_camber, ll_camber)
-            dy_dl = np.gradient(yy_camber, ll_camber)
+            dx_dl = np.gradient(self.xx_camber[j], self.ll_camber[j])
+            dy_dl = np.gradient(self.yy_camber[j], self.ll_camber[j])
 
             # calculate components of vector normal to camber line
             norm = np.sqrt(dx_dl**2 + dy_dl**2)
@@ -1282,19 +1285,19 @@ class Blade_row:
             zz = self.zz[:, self.zz[0].argsort()]
 
             # initialise empty arrays for upper- and lower-surface data
-            xx_upper = np.zeros(xx_camber.shape)
-            xx_lower = np.zeros(xx_camber.shape)
-            yy_upper = np.zeros(xx_camber.shape)
-            yy_lower = np.zeros(xx_camber.shape)
+            xx_upper = np.zeros(self.xx_camber[j].shape)
+            xx_lower = np.zeros(self.xx_camber[j].shape)
+            yy_upper = np.zeros(self.xx_camber[j].shape)
+            yy_lower = np.zeros(self.xx_camber[j].shape)
 
             # loop over each point in the camber line
-            for i, (x, y, l) in enumerate(zip(xx_camber, yy_camber, ll_camber)):
+            for i, (x, y, l) in enumerate(zip(self.xx_camber[j], self.yy_camber[j], self.ll_camber[j])):
 
                 # get relevant thickness for that point along the camber line
                 dy = np.interp(l, *zz)
 
                 # scale thickness by axial chord length
-                dy *= max_thickness / (2 * 0.09 * self.exit.chord[index])
+                dy *= max_thickness / (0.09 * self.exit.chord[index])
 
                 # add upper and lower surfaces
                 xx_upper[i] = x + dy * nx[i]

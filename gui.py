@@ -967,7 +967,7 @@ class MainFrame(wx.Frame):
         utils.Defaults.motor_power = round(self.engine.source.blade_rows[0].motor_power)
         utils.Defaults.motor_rpm = round(self.engine.source.blade_rows[0].motor_rpm)
         utils.Defaults.motor_diameter = (
-            self.engine.source.scenario.radius * self.engine.source.hub_tip_ratio
+            self.engine.source.scenario.diameter * self.engine.source.hub_tip_ratio
         )
         
         # create dialog box
@@ -984,11 +984,13 @@ class MainFrame(wx.Frame):
                 motor_rpm = float(dialog.arguments[1].GetValue())
                 motor_diameter = float(dialog.arguments[2].GetValue())
                 cable_diameter = float(dialog.arguments[3].GetValue())
+                cables_per_phase = float(dialog.arguments[4].GetValue())
                 self.motor.source = {
                     "motor_power": motor_power,
                     "motor_rpm": motor_rpm,
                     "motor_diameter": motor_diameter,
-                    "cable_diameter": cable_diameter
+                    "cable_diameter": cable_diameter,
+                    "cables_per_phase": cables_per_phase
                 }
                 self.geometry.source["motor"] = self.motor.source
                 self.geometry.source["motors"].append(self.motor.source)

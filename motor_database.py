@@ -5,7 +5,8 @@ import json
 from time import perf_counter as timer
 import itertools
 
-# import colours
+# import utils
+import utils
 from utils import Colours
 
 # Inputs class
@@ -19,12 +20,14 @@ class Inputs:
         "NeuMotors 6500 Series BLDC Motors",
         "NeuMotors 8000 Series BLDC Motors",
         "NeuMotors 8800 Series BLDC Motors",
-        "NeuMotors 120xx Series BLDC Motors"
+        "NeuMotors 120xx Series BLDC Motors",
+        "TS-MI-110160 High Power Brushless Motor",
+        "TS-MI-64100A High Power Brushless Motor"
     ]
 
     # default matplotlib parameters
     figsize = (7, 5)
-    markersize = 16
+    markersize = 20
 
 # Database class
 class Database:
@@ -201,7 +204,7 @@ class Database:
     def scatter_plot(self, x_key, y_key, x_label = "", y_label = ""):
         """Produces a scatter plot of the given variables."""
         # create plot
-        fig, ax = plt.subplots(figsize = Inputs.figsize)
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
 
         # extract x- and y-data
         xx = [motor[x_key] for motor in self.motors]
@@ -230,12 +233,7 @@ def main():
     print(database)
 
     # plot results
-    database.scatter_plot(
-        "rated_power_W", "max_rpm", "Rated Power (W)", "Max. rpm"
-    )
-    database.scatter_plot(
-        "weight_g", "rated_power_W", "Weight (g)", "Rated Power (W)"
-    )
+    database.scatter_plot("diameter_mm", "max_power_W", "Diameter (mm)", "Max. Power (W)")
 
 # runs on script execution
 if __name__ == "__main__":
