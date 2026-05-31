@@ -12,6 +12,7 @@ R = 287
 c_v = c_p / gamma
 
 rho_aluminium = 2700
+rho_PLA = 1240
 resistivity_copper = 1.68e-8
 
 # 0.2 define Defaults class

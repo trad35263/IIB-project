@@ -1355,8 +1355,17 @@ class Blade_row:
         # calculate dimensionless blade volume
         blade_volume = utils.cumulative_trapezoid(self.exit.rr, A_blend)[-1]
 
+        #
+        if self.motor_rpm > 0:
+
+            rho = utils.rho_aluminium
+
+        else:
+
+            rho = utils.rho_PLA
+
         # calculate (dimensional, in kg) blade mass
-        self.mass = blade_volume * radius**3 * utils.rho_aluminium * self.no_of_blades
+        self.mass = blade_volume * radius**3 * rho * self.no_of_blades
 
     def calculate_stress(self):
 
