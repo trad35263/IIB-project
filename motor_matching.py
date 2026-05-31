@@ -1,21 +1,38 @@
-# import modules
+# motor_matching.py
+# 31 May 2026
 
+# import modules
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 from scipy.interpolate import interp1d
 
+# import high speed solver
 import utils
 
+# import system modules
 import sys
-import inspect
 import os
-
-import ambiance
 import itertools
 
-# create classes
+# import atmospheric conditions
+import ambiance
 
+# load Latex font
+import matplotlib.font_manager as fm
+font_path = r"C:\Windows\Fonts\texgyretermes-regular.otf"
+prop = fm.FontProperties(fname = font_path)
+
+# update matplotlib global parameters
+plt.rcParams.update({
+	"font.family": "TeX Gyre Termes",
+	"font.size": 12,
+	"mathtext.fontset": "stix",
+})
+
+# default colour map
+#plt.rcParams['image.cmap'] = 'RdYlBu_r'
+
+# Vector class
 class Vector:
     """Holder for vectorised forms of the utils functions."""
     # vectorise utils functions for convenience
@@ -54,9 +71,9 @@ class Constants:
     N = 100
 
     # fixed values
-    hub_tip_ratio = 0.3
-    thrust_target = 100
-    hub_diameter = 61e-3
+    hub_tip_ratio = 0.35714
+    thrust_target = 100                 # N
+    hub_diameter = 71.428 * 1e-3        # m
 
 class Analysis:
     """Contains grids of values used for analysis."""
@@ -180,7 +197,9 @@ class Analysis:
     def plot(self, label, max = 1, manual = [(0.5, 0.5)], xx = None, yy = None, N_levels = 31):
         """Creates a contour plot of a given parameter."""
         # refresh cycle of colours using a fixed red/yellow/blue sequence
-        self.colour_cycle = itertools.cycle(["red", "gold", "blue"])
+        #self.colour_cycle = itertools.cycle(["red", "gold", "blue"])
+        self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
+        self.hatch_cycle = itertools.cycle(["///", "\\\\", "---"])
 
         # default x- and y- axes
         if xx is None:
@@ -200,7 +219,7 @@ class Analysis:
         zz = np.ma.masked_invalid(zz)
 
         # create contour plot
-        fig, ax = plt.subplots(figsize = (11, 6))
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
         levels = np.linspace(0, max, N_levels)
 
         # fill plot with contours to determine colour bar range
@@ -212,18 +231,18 @@ class Analysis:
             label_unit = "Thrust (N)"
 
         # set title text
-        title_text = f"Motor power: {self.power} W / Motor speed: {self.rpm} rpm / HTR: {self.hub_tip_ratio}"
+        title_text = rf"$P_\text{{in}}$ = {self.power} W, $\Omega$ = {self.rpm} rpm, HTR = {self.hub_tip_ratio}"
         if self.N_stages > 1:
 
-            title_text = title_text + f" / Stages: {self.N_stages}"
+            title_text = title_text + rf", $N$ = {self.N_stages}"
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
-        colour_bar.set_label(f"{label_unit}", fontsize = 14)
-        colour_bar.ax.tick_params(labelsize = 12)
-        ax.set_xlabel("Flight Mach number, $ M_\\infty $", fontsize = 14)
-        ax.set_ylabel("Nozzle area ratio, $ \\sigma $", fontsize = 14)
-        ax.tick_params(axis = 'both', which = 'major', labelsize = 12)
+        colour_bar.set_label(f"{label_unit}", fontsize = utils.Defaults.fontsize)
+        colour_bar.ax.tick_params(labelsize = utils.Defaults.fontsize)
+        ax.set_xlabel("Flight Mach Number, $ M_\\infty $", fontsize = utils.Defaults.fontsize)
+        ax.set_ylabel("Nozzle Area Ratio, $ \\sigma $", fontsize = utils.Defaults.fontsize)
+        ax.tick_params(axis = 'both', which = 'major', labelsize = utils.Defaults.fontsize)
         ax.set_xlim(0, 0.8)
         ax.set_ylim(0, 1.2)
         ax.text(
@@ -232,7 +251,7 @@ class Analysis:
             transform = ax.transAxes,
             ha = 'center',
             va = 'bottom',
-            fontsize = 16
+            fontsize = utils.Defaults.titlesize
         )
         plt.tight_layout()
         
@@ -315,8 +334,9 @@ class Analysis:
 
     def shade(self, axis, label, value, lower_bound = True, xx = None, yy = None):
         """Plots a shaded area on a given axis bounded by two contours."""
-        # determine colour
+        # determine colour and hatching
         colour = next(self.colour_cycle)
+        hatch = next(self.hatch_cycle)
 
         # default x- and y- axes
         if xx is None:
@@ -330,12 +350,10 @@ class Analysis:
         if lower_bound:
 
             symbol = "<"
-            hatch = "///"
 
         else:
 
             symbol = ">"
-            hatch = "\\\\"
 
         # get attributes
         zz = getattr(self, label)
@@ -382,7 +400,7 @@ class Analysis:
 
         # add legend entries
         axis.plot([], [], label = f" $ \\{label} $ {symbol} {value}", color = colour)
-        axis.legend(fontsize = 12)
+        axis.legend(fontsize = utils.Defaults.fontsize, loc = "upper right")
 
 def main():
     """Main function to run on script execution."""
@@ -438,16 +456,16 @@ def main():
         directory = "figures"
         filename = f"{analysis.label}_{label}_0"
         path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
+        plt.savefig(path, dpi = utils.Defaults.dpi)
 
         # create plot with 1 annotation
-        analysis.shade(ax, 'psi', 0.2, False)
+        analysis.shade(ax, 'psi', 0.3, False)
 
         # save fig
         directory = "figures"
         filename = f"{analysis.label}_{label}_1"
         path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
+        plt.savefig(path, dpi = utils.Defaults.dpi)
 
         # create plot with 2 annotations
         analysis.shade(ax, 'phi', 0.4)
@@ -456,7 +474,7 @@ def main():
         directory = "figures"
         filename = f"{analysis.label}_{label}_2"
         path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
+        plt.savefig(path, dpi = utils.Defaults.dpi)
         
         # create plot with 3 annotations
         analysis.shade(ax, 'phi', 0.9, False)
@@ -465,35 +483,13 @@ def main():
         directory = "figures"
         filename = f"{analysis.label}_{label}_3"
         path = os.path.join(directory, filename)
-        plt.savefig(path, dpi = 300)
-
-    # consider rim-driven separately
-    """analysis = Analysis(
-        power = 200,
-        rpm = 10000,
-        motor_diameter = 70 * 1e-3 * Constants.hub_tip_ratio,
-        altitude = 0,
-        N_stages = 1,
-        N_engines = 1,
-        label = "rim_driven"
-    )
-    print(analysis)
-    analysis.analyse()
-
-    # create un-annotated plot
-    label = 'thrust'
-    _, ax = analysis.plot(label, 100)
-
-    # annotate plot
-    analysis.shade(ax, 'psi', 0.5, False)
-    analysis.shade(ax, 'phi', 0.4)
-    analysis.shade(ax, 'phi', 0.9, False)"""
+        plt.savefig(path, dpi = utils.Defaults.dpi)
 
     # save fig
     directory = "figures"
     filename = f"{analysis.label}_{label}"
     path = os.path.join(directory, filename)
-    plt.savefig(path, dpi = 300)
+    plt.savefig(path, dpi = utils.Defaults.dpi)
 
     # show plots
     plt.show()

@@ -1,22 +1,21 @@
-# 0.0 import modules
-
+# import modules
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 from scipy.interpolate import make_interp_spline
+from scipy.optimize import brentq
 
-# 0.1 global variables
-
+# gas constants
 gamma = 1.4
 c_p = 1005
 R = 287
 c_v = c_p / gamma
 
+# material data
 rho_aluminium = 2700
 rho_PLA = 1240
 resistivity_copper = 1.68e-8
 
-# 0.2 define Defaults class
-
+# Defaults class
 class Defaults:
     """Container for default values relating to the engine system."""
     # default dimensional values
@@ -232,6 +231,24 @@ def soft_clip(x, a_min=None, a_max=None, sharpness = 8):
     if a_min is not None:
         x = a_min + (1 / sharpness) * np.log1p(np.exp(sharpness * (x - a_min)))
     return x
+
+# reinstate invert function
+def invert(function, target_output, *args, **kwargs):
+
+    def objective(x):
+        return function(x, *args, **kwargs) - target_output
+
+    lower_bound = 0.0001 
+    upper_bound = 1
+
+    try:
+        # brentq finds the root where objective(x) == 0 inside the brackets
+        result = brentq(objective, lower_bound, upper_bound, xtol=1e-6)
+        return result
+    except ValueError:
+        # Thrown if the target_output is physically impossible (e.g., choked flow limits) 
+        # or if the signs at the boundaries don't bracket a zero.
+        return np.nan
 
 # 0.4 upload NACA aerofoil for visualisation purposes
 
