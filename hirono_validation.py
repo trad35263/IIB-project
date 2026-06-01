@@ -222,7 +222,7 @@ def main():
     engine.empirical_design()
 
     # comparison plot of axial velocity
-    fig, axes = plt.subplots(1, 3, figsize = utils.Defaults.figsize, sharex = True)
+    """fig, axes = plt.subplots(1, 3, figsize = utils.Defaults.figsize, sharex = True)
 
     # plot design tool axial velocity distributions against span
     axes[0].plot(
@@ -236,13 +236,13 @@ def main():
     axes[2].plot(
         engine.blade_rows[1].exit.v_x * np.sqrt(utils.gamma * utils.R * engine.scenario.T_0),
         span(engine.blade_rows[1].exit.rr), alpha = Inputs.alpha
-    )
+    )"""
 
     # plot matlab code axial velocity distributions against span
     xx = np.linspace(0, 1, Inputs.v_x_1.shape[0])
-    axes[0].plot(Inputs.v_x_1, xx, linestyle = "--", color = "C0")
+    """axes[0].plot(Inputs.v_x_1, xx, linestyle = "--", color = "C0")
     axes[1].plot(Inputs.v_x_2, xx, linestyle = "--", color = "C0")
-    axes[2].plot(Inputs.v_x_3, xx, linestyle = "--", color = "C0")
+    axes[2].plot(Inputs.v_x_3, xx, linestyle = "--", color = "C0")"""
 
     # calculate matlab exit mass flow rate:
     matlab_m_dot = (
@@ -259,7 +259,7 @@ def main():
     )
 
     # add title comparing mass flow rates
-    fig.suptitle(
+    """fig.suptitle(
         f"MATLAB inlet mass flow rate: {Inputs.m_dot:.4g} kg/s, "
         f"outlet error %: {m_dot_matlab_error}\n"
         f"Design tool inlet mass flow rate: {m_dot_design:.4g} kg/s, "
@@ -270,7 +270,7 @@ def main():
     for ax in axes:
 
         # add grid
-        ax.grid()
+        ax.grid()"""
 
     # comparison plot of flow and metal angles
     fig, axes = plt.subplots(1, 3, figsize = utils.Defaults.figsize, sharex = True)
@@ -317,7 +317,10 @@ def main():
     
     # add axis labels
     axes[0].set_ylabel("Dimensionless Span", fontsize = utils.Defaults.fontsize)
-    fig.supxlabel("Angle (°)", y = 0.23, fontsize = utils.Defaults.fontsize)
+    axes[1].set_xlabel("Angle (°)")
+    #fig.supxlabel("Angle (°)", y = -0.05, fontsize = utils.Defaults.fontsize)
+    axes[1].tick_params(axis = "y", labelleft = False)
+    axes[2].tick_params(axis = "y", labelleft = False)
 
     # loop for each axis
     for ax in axes:
@@ -330,25 +333,31 @@ def main():
     # create custom legend handles for ordering purposes
     custom_handles = [
         Line2D([0], [0], color = "C0", alpha = Inputs.alpha, label = "Flow angle"),
-        Line2D([0], [0], color = "C1", alpha = Inputs.alpha, label = "Relative flow angle"),
-        Line2D([0], [0], color = "C2", alpha = Inputs.alpha, label = "Metal angle"),
         Line2D([0], [0], color = "C0", linestyle = "--", label = "(Hirono)"),
+        Line2D([0], [0], color = "C1", alpha = Inputs.alpha, label = "Relative flow angle"),
         Line2D([0], [0], color = "C1", linestyle = "--", label = "(Hirono)"),
+        Line2D([0], [0], color = "C2", alpha = Inputs.alpha, label = "Metal angle"),
         Line2D([0], [0], color = "C2", linestyle = "--", label = "(Hirono)"),
     ]
 
     # make room for legend and add to plot
-    plt.subplots_adjust(bottom = 0.35)
-    axes[-1].legend(
+    axes[0].legend(
         handles = custom_handles,
-        loc = "center", bbox_to_anchor = (0.5, 0.12), bbox_transform = fig.transFigure,
-        fontsize = utils.Defaults.fontsize, ncol = 2,
+        loc = 'center', bbox_to_anchor = (1.08, 0.5), bbox_transform = fig.transFigure, frameon = False
     )
 
     # set axis titles
-    axes[0].set_title("Compressor Inlet", fontsize = utils.Defaults.fontsize)
+    axes[0].set_title("Fan Inlet", fontsize = utils.Defaults.fontsize)
     axes[1].set_title("Rotor Exit", fontsize = utils.Defaults.fontsize)
     axes[2].set_title("Stator Exit", fontsize = utils.Defaults.fontsize)
+    
+    # figure title
+    fig.suptitle(
+        r"Design Tool vs. Incompressible Tool by Hirono $et$ $al.$" + "\n"
+        rf"$N$ = {engine.no_of_stages}, $M_1$ = {Inputs.M_1:.4g}, $\phi$ = {Inputs.phi}, "
+        rf"$\psi$ = {Inputs.psi:.4g}",
+        fontsize = utils.Defaults.titlesize, y = 1.1
+    )
 
     # save figure
     fig.savefig("exports/hirono_validation.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")

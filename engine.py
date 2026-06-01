@@ -1599,10 +1599,12 @@ class Engine:
         self.eta_swirl = min(self.P_flight / self.P_no_swirl, 1)
 
         # polytropic efficiency
-        self.eta_poly = 1 / (1 + s_flux / self.P_in)
+        #self.eta_poly = 1 / (1 + s_flux / self.P_in)
+        self.eta_poly = 1 - s_flux / self.P_in      # APPROXIMATE TO MATCH TS3
 
         # find thrust averaged polytropic efficiency
-        self.eta_thrust = 1 / (1 + s_flux_thrust / self.P_in)
+        #self.eta_thrust = 1 / (1 + s_flux_thrust / self.P_in)
+        self.eta_thrust = 1 - s_flux_thrust / self.P_in      # APPROXIMATE TO MATCH TS3
 
         # overall efficiency
         self.eta_overall = self.P_flight / self.P_in

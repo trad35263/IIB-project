@@ -1244,7 +1244,10 @@ class Blade_row:
         self.ll_camber = np.zeros((N, len(self.zz[0])))
 
         # get indices corresponding to hub, mid-span and tip
-        rr = np.linspace(self.exit.rr[0], self.exit.rr[-1], N)
+        theta = np.linspace(0, np.pi, N)
+        fractions = 0.5 * (1.0 - np.cos(theta))
+        rr = self.exit.rr[0] + fractions * (self.exit.rr[-1] - self.exit.rr[0])
+        #rr = np.linspace(self.exit.rr[0], self.exit.rr[-1], N)
         indices = np.interp(rr, self.exit.rr, np.arange(len(self.exit.rr)))
         self.indices = np.round(indices).astype(int).tolist()
 

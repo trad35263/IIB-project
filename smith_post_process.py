@@ -12,6 +12,11 @@ from scipy.interpolate import CloughTocher2DInterpolator
 import matplotlib.colors as mcolors
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from scipy.spatial import ConvexHull
+
+#
+from adjustText import adjust_text
 
 # import system modules
 import os
@@ -755,8 +760,8 @@ class Post:
 			ax.scatter(xx[~mask], yy[~mask], c = "red", s = 8, zorder = 5)
 
 			# configure plot
-			ax.set_xlabel('Flow Coefficient, φ')
-			ax.set_ylabel('Stage Loading Coefficient, ψ')
+			ax.set_xlabel(r"Flow Coefficient, $\phi$")
+			ax.set_ylabel(r"Stage Loading Coefficient, $\psi$")
 
 			# construct title
 			title = (
@@ -955,20 +960,27 @@ class Post:
 		# set min-max and levels
 		min = 0
 		max = 1.3
-		levels = np.linspace(min, max, 51)
+		levels = np.linspace(min, max, 201)
 
 		# define colour map of red and blue
-		blues = cm.get_cmap("Blues_r", 10)(np.linspace(1, 0.4, 100))
-		reds = cm.get_cmap("Reds", 10)(np.linspace(0.5, 1, 100))
+		blues = cm.get_cmap("Blues_r", 100)(np.linspace(0.4, 0.8, 100))
+		reds = cm.get_cmap("Reds", 100)(np.linspace(0.2, 0.6, 100))
 		custom_colours = np.vstack((blues, reds))
 		colour_map = mcolors.ListedColormap(custom_colours)
 		norm = mcolors.TwoSlopeNorm(vcenter = 1, vmin = min, vmax = max)
 
-		# colour background in black
-		
-
 		# loop for both plots
 		for (section, ax) in zip(("section1", "section2"), axes):
+
+			# colour convex hull of selected mesh block in black
+			g = data[section]["g5"]
+			x = np.ravel(g["x"])
+			z = np.ravel(g["z"])
+			points = np.column_stack((x, z))
+			hull = ConvexHull(points)
+			vertices = points[hull.vertices]
+			poly = Polygon(vertices, facecolor="black", edgecolor="black", zorder=1)
+			ax.add_patch(poly)
 
 			# loop for each mesh block
 			for key, g in data[section].items():
@@ -983,7 +995,7 @@ class Post:
 				(data[section][key]["r"] - r_hub)
 				/ (r_tip - r_hub)
 			)
-			ax.set_title(f"{100 * span:.2g}% Span")
+			ax.set_title(f"{100 * span:.2g}% Span", fontsize = utils.Defaults.fontsize)
 
 			# configure plot
 			ax.axis("off")
@@ -1000,11 +1012,10 @@ class Post:
 		N = data["metadata"]["no_of_stages"]
 		M_1 = data["metadata"]["inlet_mach_number"]
 		fig.suptitle(
-			r"Contours of $M_\text{rel}$" + "\n"
-			rf"$N$ = {N:.4g}, $M_1$ = {M_1:.4g}, $\phi$ = {phi:.4g}, $\psi$ = {psi:.4g}"
+			r"Rotor Blade Section View, Contours of $M_\text{rel}$" + "\n"
+			rf"$N$ = {N:.4g}, $M_1$ = {M_1:.4g}, $\phi$ = {phi:.4g}, $\psi$ = {psi:.4g}",
+			y = 1.02, fontsize = utils.Defaults.titlesize
 		)
-
-		plt.show()
 
 		# save plot
 		figname = (
@@ -1302,9 +1313,6 @@ class Post:
 				blade_row["outlet"]["s_flux_midspan"],
 				blade_row["outlet"]["s_flux_tip"],
 			])
-			"""inner_labels.extend([
-				"Hub", "Mid-span", "Tip"
-			])"""
 
 		inner_values.append(data["s_flux_mixing"])
 
@@ -1340,18 +1348,22 @@ class Post:
 		colours = [default_colours[i % len(default_colours)] for i in range(len(data["blade_rows"]))]
 		colours.append("none")
 
+		# list of all text objects
+		all_texts = []
+
 		# plot outer ring
-		ax.pie(
+		_, texts = ax.pie(
 			outer_values, 
 			labels = outer_labels, 
 			radius = R,
 			wedgeprops = dict(width = R / 2, edgecolor = "white", linewidth = 0.5),
 			textprops = dict(horizontalalignment = "center"),
-			labeldistance = 1.25,
+			labeldistance = 1.3,
 			startangle = 90,
 			counterclock = False,
 			colors = colours
 		)
+		all_texts.extend(texts)
 
 		# get new colours cycle
 		default_colours = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -1378,7 +1390,7 @@ class Post:
 		colours.append("none")
 
 		# plot inner ring
-		ax.pie(
+		_, texts = ax.pie(
 			inner_values,
 			radius = R / 2,
 			wedgeprops = dict(width = R / 2, edgecolor = "white", linewidth = 0.5),
@@ -1387,6 +1399,7 @@ class Post:
 			counterclock = False,
 			colors = colours
 		)
+		all_texts.extend(texts)
 
 		labels = ["Hub", "Midspan", "Tip"]
 
@@ -1404,10 +1417,10 @@ class Post:
 			label = [f"{l}\n{100 * v:.1f}%" for (l, v) in zip(labels, value)]
 
 			# find centre position
-			centre = (6 * np.cos(np.pi / 4 * (1 - 2 * i)), 1.5 * np.sin(np.pi / 4 * (1 - 2 * i)))
+			centre = (6 * np.cos(np.pi / 4 * (1 - 2 * i)), 2 * np.sin(np.pi / 4 * (1 - 2 * i)))
 
 			# add mini pie chart detailing blade row loss breakdown
-			ax.pie(
+			_, texts = ax.pie(
 				value,
 				labels = label,
 				radius = 0.5,
@@ -1419,12 +1432,22 @@ class Post:
 				counterclock = False,
 				colors = colour
 			)
+			all_texts.extend(texts)
 
 		# configure plot
 		ax.set_aspect("equal")
 		ax.set_xlim(-4, 4)
 		ax.set_ylim(-2, 2)
 		ax.axis("off")
+
+		# figure title
+		fig.suptitle(
+			rf"Relative Contributions to Entropy Loss Function, $\xi$" + "\n"
+			rf"$N$ = {data['metadata']['no_of_stages']}, $M_1$ = "
+			rf"{data['metadata']['inlet_mach_number']}, $\phi$ = {phi}, $\psi$ = {psi}" + "\n"
+			rf"$\eta_\text{{poly}}$ = {data['eta_poly']:.4g}",
+			y = 1.2, fontsize = utils.Defaults.titlesize
+		)
 
 		# save plot
 		figname = (
@@ -1467,7 +1490,10 @@ class Post:
 		
 		# plot polytropic efficiency
 		ax.barh([1], engine.eta_poly, color = "C1", alpha = 0.7)
-		ax.text(0.5 * engine.eta_poly, 1 - 5e-2, r"$\eta_\text{poly}$", fontsize = utils.Defaults.titlesize)
+		ax.text(
+			0.5 * engine.eta_poly, 1 - 5e-2, rf"$\eta_\text{{poly}} = {engine.eta_poly:.3g}$",
+			fontsize = utils.Defaults.titlesize
+		)
 
 		# plot overall efficiency
 		ax.barh(
@@ -1475,7 +1501,10 @@ class Post:
 			label = f"eta_overall: {engine.eta_overall:.3g}",
 			color = "C0", alpha = 0.7
 		)
-		ax.text(0.5 * engine.eta_overall, -5e-2, r"$\eta_\text{overall}$", fontsize = utils.Defaults.titlesize)
+		ax.text(
+			0.5 * engine.eta_overall, -5e-2, rf"$\eta_\text{{overall}} = {engine.eta_overall:.3g}$",
+			fontsize = utils.Defaults.titlesize
+		)
 
 		# plot breakdown of loss
 		ax.barh(
@@ -1583,10 +1612,13 @@ class Post:
 
 		# add text to arrows
 		offset = 0.08
-		ax.text(x1, heights[0] + offset, "Compressor irreversibility")
-		ax.text(x1, heights[1] + offset, "Loss due to non-uniformity")
-		ax.text(x1, heights[2] + offset, "Loss due to finite jet velocity difference")
-		ax.text(x1, heights[3] + offset, "Loss due to swirl")
+		ax.text(x1, heights[0] + offset, f"Propulsive loss {100 * engine.eta_prop * (1 - engine.eta_poly):.2g}%")
+		ax.text(x1, heights[1] + offset, f"Non-uniformity loss {100 * (engine.eta_poly - engine.eta_thrust):.2g}%")
+		ax.text(x1, heights[2] + offset, f"Fan irreversibility {100 * (engine.eta_poly - engine.eta_overall):.2g}%")
+		ax.text(
+			x1, heights[3] + offset,
+			f"Loss due to swirl {100 * (1 - (engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly))):.2g}%"
+		)
 
 		# configure plot
 		ax.set_xlim(0, x3)
@@ -1607,7 +1639,8 @@ class Post:
 
 		# set title
 		ax.set_title(
-			rf"Thrust Power Breakdown for $N$ = {data['metadata']['no_of_stages']}, "
+			rf"Thrust Power Breakdown" + "\n"
+			rf"$N$ = {data['metadata']['no_of_stages']}, "
 			rf"$M_1$ = {data['metadata']['inlet_mach_number']}, $\phi$ = {phi:.4g}, "
 			rf"$\psi$ = {psi:.4g}"
 		)
@@ -1821,13 +1854,13 @@ def main():
 	post.summary("eta_overall", r"Overall Efficiency, $\eta_\text{overall}$")
 
 	# create contour plots of efficiency and number of blades
-	post.plot_contours("eta_poly", "Polytropic Efficiency", [0.7, 0.94, 13])
+	#post.plot_contours("eta_poly", "Polytropic Efficiency", [0.7, 0.94, 13])
 	post.plot_contours("no_of_blades", "No. of Blades")
-	post.plot_contours("min_skewness_angle", "Min. Skewness Angle")
+	#post.plot_contours("min_skewness_angle", "Min. Skewness Angle")
 	post.plot_contours("C_th", r"Thrust Coefficient, $C_{\text{þ}}$", [0, 0.05])
-	post.plot_contours("eta_overall", r"Overall Efficiency, $\eta_{\text{overall}}$", [0.6, 0.84, 13])
+	#post.plot_contours("eta_overall", r"Overall Efficiency, $\eta_{\text{overall}}$", [0.6, 0.84, 13])
 	post.plot_contours("eta_thrust", r"Thrust-averaged Polytropic Efficiency, $\eta_{\text{thrust}}$", [0.7, 0.94, 13])
-	post.plot_contours("eta_poly", r"Polytropic Efficiency, $\eta_{\text{thrust}}$", [0.7, 0.94, 13])
+	post.plot_contours("eta_poly", r"Polytropic Efficiency, $\eta_{\text{poly}}$", [0.7, 0.94, 13])
 	post.plot_contours("eta_prop", r"Propulsive Efficiency, $\eta_{\text{prop}}$", [0.84, 1, 9])
 	post.plot_contours("eta_swirl", r"Swirl Efficiency, $\eta_{\text{swirl}}$", [0.84, 1, 9])
 
@@ -1835,13 +1868,15 @@ def main():
 	if Inputs.contour_ij is not None:
 
 		# rotor relative Mach number plot
-		post.rotor_section()
+		#post.rotor_section()
 
 		# produce loss breakdown
-		post.loss_breakdown()
+		#post.loss_breakdown()
 
 		# produce thrust breakdown
 		post.thrust_breakdown()
+
+		return
 
 		# produce section views
 		post.section_view("phi_local", "Local Flow Coefficient", r"$\phi_\text{loc}$")
@@ -1872,7 +1907,6 @@ def main():
 		post.plot_span("incidence", "Incidence (°)")
 
 		post.plot_span("s", "Entropy")
-		#post.plot_span("loss_function", "Entropy Loss Function")
 
 		# create latex report with all plots produced
 		post.generate_report()

@@ -167,8 +167,8 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
     te = []
     le = []
     j_le = []
-    xx_offset = []
-    yy_offset = []
+    #xx_offset = []
+    #yy_offset = []
 
     # loop for each slice produced through the blade row
     for i, index in enumerate(blade_row.indices):
@@ -208,55 +208,106 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
         # mid-span indices
         else:
 
-            # find offset of midspan
-            x, y = offset(xx[i], yy[i], -0.02)
-            z = zz[i]
+            # scaling factor
+            s = 0.7
 
-            # plot flow over mid-span as offset of cross-section
-            j = j_le[i]
-            xx_proj, yy_proj = project(x[:j], y[:j], z[:j], theta, phi)
-            xx_inlet, yy_inlet = project(
-                x[j] - chord[0] * np.array([np.cos(blade_row.inlet.metal_angle[index]), 1e-6]),
-                y[j] - chord[0] * np.array([np.sin(blade_row.inlet.metal_angle[index]), 1e-6]),
-                z[0] + np.array([0, 0]),
-                theta, phi
-            )
-            xx_outlet, yy_outlet = project(
-                x[0] + chord[0] * np.array([1e-6, np.cos(blade_row.exit.metal_angle[index])]),
-                y[0] + chord[0] * np.array([1e-6, np.sin(blade_row.exit.metal_angle[index])]),
-                z[0] + np.array([0, 0]),
-                theta, phi
-            )
-            
-            # combine arrays
-            j = 500
-            k = 40
-            x = np.concatenate((xx_inlet[:1], xx_proj[::-1][j:-k], xx_outlet[1:]))
-            y = np.concatenate((yy_inlet[:1], yy_proj[::-1][j:-k], yy_outlet[1:]))
+            # for rotors
+            if blade_row.motor_rpm > 0:
 
-            # append to list
-            xx_offset.append(x)
-            yy_offset.append(y)
+                # get relative velocity vector
+                x_rel = xx[i][j] - s * blade_row.inlet.v_x[index]
+                y_rel = yy[i][j] - s * blade_row.inlet.v_x[index] * np.tan(blade_row.inlet.beta[index])
 
-        if i == 2:
+                # get absolute velocity vector
+                x_abs = x_rel + s * blade_row.inlet.v_x[index]
+                y_abs = y_rel - s * blade_row.inlet.v_x[index] * np.tan(blade_row.inlet.alpha[index])
 
-            x = np.concatenate((xx_offset[0], xx_offset[1][::-1]))
-            y = np.concatenate((yy_offset[0], yy_offset[1][::-1]))
-            vertices = np.transpose(np.vstack((x, y)))
-            
-            # create Polygon patch for inlet streamtube
-            polygon = patches.Polygon(vertices, closed = True, facecolor = "C0", alpha = 0.3, linestyle = "")
-            ax.add_patch(polygon)
+                # draw absolute velocity vector
+                ax.annotate(
+                    "",
+                    xy = project([x_rel], [y_rel], [zz[i][j]], theta, phi),
+                    xytext = project([x_abs], [y_abs], [zz[i][j]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C0", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+                ax.plot(*project([x_abs, x_rel], [y_abs, y_rel], zz[i][:2], theta, phi), linestyle = "")
 
-            # annotate mass flow rate
-            ax.text(
-                0.5 * np.mean(xx_offset[0][:2] + xx_offset[1][:2]) - 4e-2,
-                0.5 * np.mean(yy_offset[0][:2] + yy_offset[1][:2]) - 2e-2, r"$\dot m_k$"
-            )
-            ax.text(
-                0.5 * np.mean(xx_offset[0][-2:] + xx_offset[1][-2:]) - 4e-2,
-                0.5 * np.mean(yy_offset[0][-2:] + yy_offset[1][-2:]) - 2e-2, r"$\dot m_k$"
-            )
+                # draw relative velocity vector
+                ax.annotate(
+                    "",
+                    xy = project([x_rel], [y_rel], [zz[i][j]], theta, phi),
+                    xytext = project([xx[i][j]], [yy[i][j]], [zz[i][j]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C4", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+
+                # draw blade speed vector
+                ax.annotate(
+                    "",
+                    xy = project([xx[i][j]], [yy[i][j]], [zz[i][j]], theta, phi),
+                    xytext = project([x_abs], [y_abs], [zz[i][j]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C3", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+
+                # repeat for exit
+                x_rel = xx[i][0] + s * blade_row.exit.v_x[index]
+                y_rel = yy[i][0] + s * blade_row.exit.v_x[index] * np.tan(blade_row.exit.beta[index])
+
+                # get absolute velocity vector
+                x_abs = xx[i][0] + s * blade_row.exit.v_x[index]
+                y_abs = yy[i][0] + s * blade_row.exit.v_x[index] * np.tan(blade_row.exit.alpha[index])
+
+                # draw absolute velocity vector
+                ax.annotate(
+                    "",
+                    xy = project([xx[i][0]], [yy[i][0]], [zz[i][0]], theta, phi),
+                    xytext = project([x_abs], [y_abs], [zz[i][0]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C0", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+
+                # draw relative velocity vector
+                ax.annotate(
+                    "",
+                    xy = project([xx[i][0]], [yy[i][0]], [zz[i][0]], theta, phi),
+                    xytext = project([x_rel], [y_rel], [zz[i][0]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C4", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+
+                # draw blade speed vector
+                ax.annotate(
+                    "",
+                    xy = project([x_rel], [y_rel], [zz[i][0]], theta, phi),
+                    xytext = project([x_abs], [y_abs], [zz[i][0]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C3", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+                ax.plot(*project([x_abs, x_rel], [y_abs, y_rel], zz[i][:2], theta, phi), linestyle = "")
+
+            # for stators
+            else:
+
+                # get absolute velocity vector
+                x_abs = xx[i][j] - s * blade_row.inlet.v_x[index]
+                y_abs = yy[i][j] - s * blade_row.inlet.v_x[index] * np.tan(blade_row.inlet.alpha[index])
+
+                # draw absolute velocity vector
+                ax.annotate(
+                    "",
+                    xy = project([x_abs], [y_abs], [zz[i][j]], theta, phi),
+                    xytext = project([xx[i][j]], [yy[i][j]], [zz[i][j]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C0", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+                ax.plot(*project([x_abs, xx[i][j]], [y_abs, yy[i][j]], zz[i][:2], theta, phi), linestyle = "")
+
+                # repeat for exit
+                x_abs = xx[i][0] + s * blade_row.exit.v_x[index]
+                y_abs = yy[i][0] + s * blade_row.exit.v_x[index] * np.tan(blade_row.exit.alpha[index])
+
+                # draw absolute velocity vector
+                ax.annotate(
+                    "",
+                    xy = project([xx[i][0]], [yy[i][0]], [zz[i][0]], theta, phi),
+                    xytext = project([x_abs], [y_abs], [zz[i][0]], theta, phi),
+                    arrowprops = dict(arrowstyle = "<|-", color = "C0", lw = Inputs.line_width, shrinkA = 0, shrinkB = 0)
+                )
+                ax.plot(*project([x_abs, xx[i][0]], [y_abs, yy[i][0]], zz[i][:2], theta, phi), linestyle = "")
 
     # plot shadow
     x, y = offset(xx[0], yy[0], -0.1)
@@ -325,7 +376,7 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
     x_component = normals[..., 0]
 
     # plot contours
-    N = 100
+    N = 10
     grey = matplotlib.colormaps["gray"]
     colors = grey(np.linspace(0.7, 0.95, N))
     grey_map = ListedColormap(colors)
@@ -335,53 +386,10 @@ def plot_blade(blade_row, tag, ax, theta, phi, lean = 0.4, sweep = 0.03):
     ax.plot(*project(xx_le, yy_le, zz_le, theta, phi), color = "k", lw = Inputs.line_thin)
     ax.plot(*project(xx_te, yy_te, zz_te, theta, phi), color = "k", lw = Inputs.line_thin)
 
-    # loop for hub-mid and mid streamlines
-    for i in range(len(xx_offset)):
-
-        # retrieve relevant streamline curve
-        x = xx_offset[i]
-        y = yy_offset[i]
-
-        # plot streamline
-        ax.plot(x, y, color = "C0", linewidth = Inputs.line_width)
-
-        # add flow direction arrows
-        ax.annotate(
-            "",
-            xy=(0.5 * (x[0] + x[1]), 0.5 * (y[0] + y[1])),
-            xytext=(x[0], y[0]),
-            arrowprops=dict(arrowstyle="-|>", color="C0", lw = Inputs.line_width, shrinkA=0, shrinkB=0)
-        )
-        j = 0.5 * (x[1] + x[-2])
-        k = int(np.interp(j, x, np.arange(len(x))))
-        ax.annotate(
-            "",
-            xy = (x[k + 1], y[k + 1]),
-            xytext = (x[k], y[k]),
-            arrowprops=dict(arrowstyle="-|>", color="C0", lw = Inputs.line_width, shrinkA=0, shrinkB=0)
-        )
-        ax.annotate(
-            "",
-            xy = (0.5 * (x[-1] + x[-2]), 0.5 * (y[-1] + y[-2])),
-            xytext = (x[-2], y[-2]),
-            arrowprops=dict(arrowstyle="-|>", color="C0", lw = Inputs.line_width, shrinkA=0, shrinkB=0)
-        )
-        
-
-        if i == 0:
-
-            #
-            ax.text(x[-1] + 1e-2, y[-1], "i")
-
-        else:
-
-            #
-            ax.text(x[-1] + 1e-2, y[-1], f"i + {i}")
-
     # define origin and unit vectors
     origin = np.array([
-        le[0][0] + 1.7 * chord[0] * np.cos(blade_row.inlet.metal_angle[0]),
-        le[0][1] + 1.7 * chord[0] * np.sin(blade_row.inlet.metal_angle[0]), 0
+        le[0][0] + 2 * chord[0] * np.cos(blade_row.inlet.metal_angle[0]),
+        le[0][1] + 2 * chord[0] * np.sin(blade_row.inlet.metal_angle[0]), 0.6 * chord[0]
     ])
 
     # define array of unit vectors
@@ -483,14 +491,14 @@ def main():
     ax.axis("off")
 
     # annotate rotor plot
-    annotate(ax, r"$r_\text{1,tip}$", (-0.2, 0.60))
-    annotate(ax, r"$r_\text{2,tip}$", (0.17, 0.62))
-    annotate(ax, r"$r_\text{1,hub}$", (-0.35, 0))
-    annotate(ax, r"$r_\text{2,hub}$", (0.2, 0.05))
-    annotate(ax, r"$v_x(r)$", (-0.23, 0.45))
-    annotate(ax, r"$U(r)$", (-0.02, 0.5))
-    annotate(ax, r"$\Delta h_0 (r)$", (0.15, 0.37))
-    annotate(ax, r"$\Delta s(r)$", (0.15, 0.52))
+    annotate(ax, r"$r_\text{1,tip}$", (-0.19, 0.60))
+    annotate(ax, r"$r_\text{2,tip}$", (0.16, 0.62))
+    annotate(ax, r"$r_\text{1,hub}$", (-0.3, -0.07))
+    annotate(ax, r"$r_\text{2,hub}$", (0.29, -0.05))
+    annotate(ax, r"$v_{x1}(r)$", (-0.5, 0.31))
+    annotate(ax, r"$U_1(r)$", (-0.23, 0.36))
+    annotate(ax, r"$\Delta h_0 (r)$", (-0.05, 0.35))
+    annotate(ax, r"$\Delta s(r)$", (-0.03, 0.5))
 
     # save figure
     fig.savefig("exports/dimensional_analysis_rotor.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
@@ -504,8 +512,8 @@ def main():
     ax.axis("off")
 
     # annotate stator plot
-    annotate(ax, r"$\alpha_3(r)$", (0.17, 0.4))
-    annotate(ax, r"$\Delta s(r)$", (0.15, 0.54))
+    annotate(ax, r"$\alpha_3(r)$", (0.17, 0.42))
+    annotate(ax, r"$\Delta s(r)$", (-0.02, 0.4))
 
     # save figure
     fig.savefig("exports/dimensional_analysis_stator.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")

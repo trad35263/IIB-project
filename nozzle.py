@@ -56,7 +56,7 @@ class Nozzle:
 
         # set hub dimensionless axial velocity and radius
         self.exit.v_x[0] = v_x_hub
-        self.exit.rr[0] = 2e-2
+        self.exit.rr[0] = 3e-2
 
         # determine inlet mass flow rate distribution
         self.inlet.dm_dot_dr = (
