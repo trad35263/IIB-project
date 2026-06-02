@@ -765,8 +765,9 @@ class Post:
 
 			# construct title
 			title = (
-				f"No. of Stages: {self.data[0]['metadata']['no_of_stages']} | "
-				f"Inlet Mach Number: {self.data[0]['metadata']['inlet_mach_number']}"
+				"Smith Chart for "
+				rf"$N$ = {self.data[0]['metadata']['no_of_stages']}, "
+				rf"$M_1$ = {self.data[0]['metadata']['inlet_mach_number']}"
 			)
 			if zz.shape[0] > 1:
 
@@ -1189,7 +1190,7 @@ class Post:
 		if hold == False:
 
 			# set axis labels
-			axes[0].set_title("Compressor Inlet")
+			axes[0].set_title("Fan Inlet")
 
 			# loop for all but first axis
 			for i, ax in enumerate(axes[1:]):
