@@ -219,6 +219,7 @@ class Analysis:
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
+        colour_bar.set_ticks(np.arange(0, 101, 10))
         colour_bar.set_label(f"{label_unit}", fontsize = 14)
         colour_bar.ax.tick_params(labelsize = 12)
         ax.set_xlabel("Flight Mach number, $ M_\\infty $", fontsize = 14)

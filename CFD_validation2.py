@@ -1,4 +1,4 @@
-# CFD_validation.py
+# CFD_validation2.py
 # 31 May 2026
 
 # import modules
@@ -56,33 +56,27 @@ def main():
 	data = post.data[index]
 
 	# create plot
-	fig, axes = plt.subplots(1, 5, figsize = utils.Defaults.figsize, sharex = True)
+	fig, axes = plt.subplots(1, 4, figsize = (9, 3.2))
 
 	# plot CFD absolute flow angles
 	axes[0].plot(
-		data["blade_rows"][0]["inlet"]["alpha_avg"], span(data["blade_rows"][0]["inlet"]["r"]), color = "C0"
-	)
-	axes[1].plot(
 		data["blade_rows"][0]["outlet"]["alpha_avg"], span(data["blade_rows"][0]["outlet"]["r"]), color = "C0"
 	)
-	axes[2].plot(
+	axes[1].plot(
 		data["blade_rows"][1]["outlet"]["alpha_avg"], span(data["blade_rows"][1]["outlet"]["r"]), color = "C0"
 	)
-	axes[3].plot(
+	axes[2].plot(
 		data["blade_rows"][2]["outlet"]["alpha_avg"], span(data["blade_rows"][2]["outlet"]["r"]), color = "C0"
 	)
-	axes[4].plot(
+	axes[3].plot(
 		data["blade_rows"][3]["outlet"]["alpha_avg"], span(data["blade_rows"][3]["outlet"]["r"]), color = "C0"
 	)
 
 	# plot CFD relative flow angles
 	axes[0].plot(
-		data["blade_rows"][0]["inlet"]["beta_avg"], span(data["blade_rows"][0]["inlet"]["r"]), color = "C1"
-	)
-	axes[1].plot(
 		data["blade_rows"][0]["outlet"]["beta_avg"], span(data["blade_rows"][0]["outlet"]["r"]), color = "C1"
 	)
-	axes[3].plot(
+	axes[2].plot(
 		data["blade_rows"][2]["outlet"]["beta_avg"], span(data["blade_rows"][2]["outlet"]["r"]), color = "C1"
 	)
 
@@ -91,60 +85,54 @@ def main():
 
 	# plot design tool absolute flow angles
 	axes[0].plot(
-		utils.rad_to_deg(engine.blade_rows[0].inlet.alpha), span(engine.blade_rows[0].inlet.rr),
-		color = "C0", linestyle = "--"
-	)
-	axes[1].plot(
 		utils.rad_to_deg(engine.blade_rows[0].exit.alpha), span(engine.blade_rows[0].exit.rr),
 		color = "C0", linestyle = "--"
 	)
-	axes[2].plot(
+	axes[1].plot(
 		utils.rad_to_deg(engine.blade_rows[1].exit.alpha), span(engine.blade_rows[1].exit.rr),
 		color = "C0", linestyle = "--"
 	)
-	axes[3].plot(
+	axes[2].plot(
 		utils.rad_to_deg(engine.blade_rows[2].exit.alpha), span(engine.blade_rows[2].exit.rr),
 		color = "C0", linestyle = "--"
 	)
-	axes[4].plot(
+	axes[3].plot(
 		utils.rad_to_deg(engine.blade_rows[3].exit.alpha), span(engine.blade_rows[3].exit.rr),
 		color = "C0", linestyle = "--"
 	)
 
 	# plot design tool relative flow angles
 	axes[0].plot(
-		utils.rad_to_deg(engine.blade_rows[0].inlet.beta), span(engine.blade_rows[0].inlet.rr),
-		color = "C1", linestyle = "--"
-	)
-	axes[1].plot(
 		utils.rad_to_deg(engine.blade_rows[0].exit.beta), span(engine.blade_rows[0].exit.rr),
 		color = "C1", linestyle = "--"
 	)
-	axes[3].plot(
+	axes[2].plot(
 		utils.rad_to_deg(engine.blade_rows[2].exit.beta), span(engine.blade_rows[2].exit.rr),
 		color = "C1", linestyle = "--"
 	)
 
 	# plot design tool metal angles
 	axes[0].plot(
-		utils.rad_to_deg(engine.blade_rows[0].inlet.metal_angle), span(engine.blade_rows[0].inlet.rr),
-		color = "C2", linestyle = "--"
-	)
-	axes[1].plot(
 		utils.rad_to_deg(engine.blade_rows[0].exit.metal_angle), span(engine.blade_rows[0].exit.rr),
 		color = "C2", linestyle = "--"
 	)
-	axes[2].plot(
+	axes[1].plot(
 		utils.rad_to_deg(engine.blade_rows[1].exit.metal_angle), span(engine.blade_rows[1].exit.rr),
 		color = "C2", linestyle = "--"
 	)
-	axes[3].plot(
+	axes[2].plot(
 		utils.rad_to_deg(engine.blade_rows[2].exit.metal_angle), span(engine.blade_rows[2].exit.rr),
 		color = "C2", linestyle = "--"
 	)
-	axes[4].plot(
+	axes[3].plot(
 		utils.rad_to_deg(engine.blade_rows[3].exit.metal_angle), span(engine.blade_rows[3].exit.rr),
 		color = "C2", linestyle = "--"
+	)
+
+	axes[0].text(
+		0.45, -0.03,
+		"Angle (°)",
+		transform=fig.transFigure
 	)
 
 	# configure plot
@@ -154,26 +142,28 @@ def main():
 		ax.set_ylim(0, 1)
 
 	axes[0].set_ylabel("Dimensionless Span")
-	axes[2].set_xlabel("Angle (°)")
+	#axes[2].set_xlabel("Angle (°)")
+
 
 	# set titles
-	axes[0].set_title("Fan Inlet")
-	axes[1].set_title("Rotor 1")
-	axes[2].set_title("Stator 1")
-	axes[3].set_title("Rotor 2")
-	axes[4].set_title("Stator 2")
+	axes[0].set_title("Rotor 1")
+	axes[1].set_title("Stator 1")
+	axes[2].set_title("Rotor 2")
+	axes[3].set_title("Stator 2")
 	
 	# switch off y-axis labels for all but first axis
 	axes[1].tick_params(axis = "y", labelleft = False)
 	axes[2].tick_params(axis = "y", labelleft = False)
 	axes[3].tick_params(axis = "y", labelleft = False)
-	axes[4].tick_params(axis = "y", labelleft = False)
 
 	# figure title
 	fig.suptitle(
 		r"Design Tool vs. CFD Data for $N$ = 2, $M_1$ = 0.25, $\phi$ = 0.7, $\psi$ = 0.25",
 		y = 1.05
 	)
+
+	# save figure
+	fig.savefig("exports/CFD_validation1.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
 
 	# custom legend handles
 	custom_handles = [
@@ -185,7 +175,7 @@ def main():
 	]
 
 	# custom legend
-	ax.legend(
+	axes[0].legend(
 		handles = custom_handles, 
 		ncol = 2,
 		loc = "upper center",
@@ -195,7 +185,7 @@ def main():
 	)
 
 	# save figure
-	fig.savefig("exports/CFD_validation.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
+	fig.savefig("exports/CFD_validation2.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
 
 # upon script execution
 if __name__ == "__main__":

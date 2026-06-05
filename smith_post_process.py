@@ -757,7 +757,7 @@ class Post:
 			)
 			plt.colorbar(cf, ax = ax, label = label, extend = "both")
 			ax.scatter(xx[mask], yy[mask], c = "k", s = 8, zorder = 5, label = "Datapoints")
-			ax.scatter(xx[~mask], yy[~mask], c = "red", s = 8, zorder = 5)
+			#ax.scatter(xx[~mask], yy[~mask], c = "red", s = 8, zorder = 5)
 
 			# configure plot
 			ax.set_xlabel(r"Flow Coefficient, $\phi$")
@@ -1507,119 +1507,14 @@ class Post:
 			fontsize = utils.Defaults.titlesize
 		)
 
-		# plot breakdown of loss
-		ax.barh(
-			[0], engine.eta_thrust - engine.eta_overall, left = engine.eta_overall,
-			linewidth = 0.5,
-			label = f"eta_thrust: {engine.eta_thrust:.3g}",
-			color = (1, 0.7, 0.7)
-		)
-		ax.barh(
-			[0], engine.eta_poly - engine.eta_thrust, left = engine.eta_thrust,
-			linewidth = 0.5,
-			label = f"eta_poly: {engine.eta_poly:.3g}",
-			color = (0.8, 0, 0)
-		)
-		ax.barh(
-			[0], engine.eta_prop * (1 - engine.eta_poly),
-			linewidth = 0.5,
-			left = engine.eta_poly,
-			label = f"eta_prop: {engine.eta_prop:.3g}",
-			color = (0.9, 0.5, 0.5)
-		)
-		ax.barh(
-			[0], 1 - engine.eta_poly - engine.eta_prop * (1 - engine.eta_poly),
-			linewidth = 0.5,
-			left = engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly),
-			label = f"eta_swirl: {engine.eta_swirl:.3g}",
-			color = (0.8, 0.35, 0.35)
-		)
-
 		# list of line vertical heights
-		heights = [-1, 1.6, 2.2, -1.6]
+		heights = [-1, -1.6, 1.6, 2.2]
 
 		# text left-align position
 		x1 = 0.4
 		x2 = 0.5 * (engine.eta_poly + 1)
 		x3 = 1.05
-
-		# add vertical lines to each loss component
-		ax.vlines(
-			[engine.eta_overall, engine.eta_thrust],
-			heights[0], width, linewidth = 0.5, color = "k"
-		)
-		ax.vlines(
-			[engine.eta_thrust, engine.eta_poly],
-			-width, heights[1], linewidth = 0.5, color = "k"
-		)
-		ax.vlines(
-			[engine.eta_poly, engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly)],
-			-width, heights[2], linewidth = 0.5, color = "k"
-		)
-		ax.vlines(
-			[engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly), 1],
-			heights[3], width, linewidth = 0.5, color = "k"
-		)
-
-		# add arrows to each loss component
-		ax.annotate(
-			"",
-			xy = (x1, heights[0]), 
-			xytext = (engine.eta_overall, heights[0]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"",
-			xy = (x2, heights[0]), 
-			xytext = (engine.eta_thrust, heights[0]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"", 
-			xy = (x1, heights[1]), 
-			xytext = (engine.eta_thrust, heights[1]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"", 
-			xy = (x2, heights[1]), 
-			xytext = (engine.eta_poly, heights[1]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"", 
-			xy = (x1, heights[2]), 
-			xytext = (engine.eta_poly, heights[2]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"", 
-			xy = (x3, heights[2]), 
-			xytext = (engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly), heights[2]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"", 
-			xy = (x1, heights[3]), 
-			xytext = (engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly), heights[3]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-		ax.annotate(
-			"", 
-			xy = (x3, heights[3]), 
-			xytext = (1, heights[3]),
-			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
-		)
-
-		# add text to arrows
 		offset = 0.08
-		ax.text(x1, heights[0] + offset, f"Propulsive loss {100 * engine.eta_prop * (1 - engine.eta_poly):.2g}%")
-		ax.text(x1, heights[1] + offset, f"Non-uniformity loss {100 * (engine.eta_poly - engine.eta_thrust):.2g}%")
-		ax.text(x1, heights[2] + offset, f"Fan irreversibility {100 * (engine.eta_poly - engine.eta_overall):.2g}%")
-		ax.text(
-			x1, heights[3] + offset,
-			f"Loss due to swirl {100 * (1 - (engine.eta_poly + engine.eta_prop * (1 - engine.eta_poly))):.2g}%"
-		)
 
 		# configure plot
 		ax.set_xlim(0, x3)
@@ -1645,6 +1540,122 @@ class Post:
 			rf"$M_1$ = {data['metadata']['inlet_mach_number']}, $\phi$ = {phi:.4g}, "
 			rf"$\psi$ = {psi:.4g}"
 		)
+
+		# save figure
+		fig.savefig("exports/thrust_breakdown0.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
+
+		# fan irreversibility
+		ax.barh(
+			[0], 1 - engine.eta_poly,
+			linewidth = 0.5,
+			left = engine.eta_poly,
+			color = (0.8, 0.35, 0.35)
+		)
+		ax.vlines(
+			[engine.eta_poly, 1],
+			heights[3], width, linewidth = 0.5, color = "k"
+		)
+		ax.annotate(
+			"", 
+			xy = (x1, heights[3]), 
+			xytext = (engine.eta_poly, heights[3]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x3, heights[3]), 
+			xytext = (1, heights[3]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.text(x1, heights[3] + offset, f"Fan irreversibility {100 * (1 - engine.eta_poly):.2g}%")
+
+		# save figure
+		fig.savefig("exports/thrust_breakdown1.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
+
+		# non-uniformity loss
+		ax.barh(
+			[0], engine.eta_poly - engine.eta_thrust, left = engine.eta_thrust,
+			linewidth = 0.5,
+			color = (0.8, 0, 0)
+		)
+		ax.vlines(
+			[engine.eta_poly, engine.eta_thrust],
+			-width, heights[2], linewidth = 0.5, color = "k"
+		)
+		ax.annotate(
+			"", 
+			xy = (x1, heights[2]), 
+			xytext = (engine.eta_thrust, heights[2]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x2, heights[2]), 
+			xytext = (engine.eta_poly, heights[2]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.text(x1, heights[2] + offset, f"Non-uniformity loss {100 * (engine.eta_poly - engine.eta_thrust):.2g}%")
+
+		# save figure
+		fig.savefig("exports/thrust_breakdown2.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
+
+		# swirl loss
+		ax.barh(
+			[0], engine.eta_thrust * (1 - engine.eta_swirl),
+			linewidth = 0.5,
+			left = engine.eta_thrust * engine.eta_swirl,
+			color = (0.9, 0.5, 0.5)
+		)
+		ax.vlines(
+			[engine.eta_thrust, engine.eta_thrust * engine.eta_swirl],
+			-width, heights[1], linewidth = 0.5, color = "k"
+		)
+		ax.annotate(
+			"", 
+			xy = (x1, heights[1]), 
+			xytext = (engine.eta_thrust * engine.eta_swirl, heights[1]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"", 
+			xy = (x2, heights[1]), 
+			xytext = (engine.eta_thrust, heights[1]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.text(
+			x1, heights[1] + offset,
+			f"Loss due to swirl {100 * (engine.eta_thrust * (1 - engine.eta_swirl)):.2g}%"
+		)
+
+		# save figure
+		fig.savefig("exports/thrust_breakdown3.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
+
+		# propulsive loss
+		ax.barh(
+			[0], engine.eta_thrust * engine.eta_swirl - engine.eta_overall, left = engine.eta_overall,
+			linewidth = 0.5,
+			color = (1, 0.7, 0.7)
+		)
+		ax.vlines(
+			[engine.eta_overall, engine.eta_thrust * engine.eta_swirl],
+			heights[0], width, linewidth = 0.5, color = "k"
+		)
+		ax.annotate(
+			"",
+			xy = (x1, heights[0]), 
+			xytext = (engine.eta_overall, heights[0]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.annotate(
+			"",
+			xy = (x2, heights[0]), 
+			xytext = (engine.eta_thrust * engine.eta_swirl, heights[0]),
+			arrowprops = dict(arrowstyle = "<|-", color = "k", linewidth = 1, shrinkA = 0, shrinkB = 0)
+		)
+		ax.text(x1, heights[0] + offset, f"Propulsive loss {100 * (engine.eta_thrust * engine.eta_swirl - engine.eta_overall):.2g}%")
+
+		# save figure
+		fig.savefig("exports/thrust_breakdown4.png", dpi = utils.Defaults.dpi, bbox_inches = "tight")
 
 		# save plot
 		figname = (
@@ -1852,7 +1863,7 @@ def main():
 	plt.close("all")
 
 	# create summary plots
-	post.summary("eta_overall", r"Overall Efficiency, $\eta_\text{overall}$")
+	"""post.summary("eta_overall", r"Overall Efficiency, $\eta_\text{overall}$")
 
 	# create contour plots of efficiency and number of blades
 	#post.plot_contours("eta_poly", "Polytropic Efficiency", [0.7, 0.94, 13])
@@ -1860,10 +1871,10 @@ def main():
 	#post.plot_contours("min_skewness_angle", "Min. Skewness Angle")
 	post.plot_contours("C_th", r"Thrust Coefficient, $C_{\text{þ}}$", [0, 0.05])
 	#post.plot_contours("eta_overall", r"Overall Efficiency, $\eta_{\text{overall}}$", [0.6, 0.84, 13])
-	post.plot_contours("eta_thrust", r"Thrust-averaged Polytropic Efficiency, $\eta_{\text{thrust}}$", [0.7, 0.94, 13])
-	post.plot_contours("eta_poly", r"Polytropic Efficiency, $\eta_{\text{poly}}$", [0.7, 0.94, 13])
+	post.plot_contours("eta_thrust", r"Thrust-averaged Polytropic Efficiency, $\eta_{\text{thrust}}$", [0.7, 0.9, 11])
+	post.plot_contours("eta_poly", r"Polytropic Efficiency, $\eta_{\text{poly}}$", [0.7, 0.9, 11])
 	post.plot_contours("eta_prop", r"Propulsive Efficiency, $\eta_{\text{prop}}$", [0.84, 1, 9])
-	post.plot_contours("eta_swirl", r"Swirl Efficiency, $\eta_{\text{swirl}}$", [0.84, 1, 9])
+	post.plot_contours("eta_swirl", r"Swirl Efficiency, $\eta_{\text{swirl}}$", [0.84, 1, 9])"""
 
 	# phi-psi coordinates for a specific test case exist
 	if Inputs.contour_ij is not None:

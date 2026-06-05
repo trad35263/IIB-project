@@ -231,13 +231,14 @@ class Analysis:
             label_unit = "Thrust (N)"
 
         # set title text
-        title_text = rf"$P_\text{{in}}$ = {self.power} W, $\Omega$ = {self.rpm} rpm, HTR = {self.hub_tip_ratio}"
+        title_text = rf"$P_\text{{in}}$ = {self.power} W, $\Omega$ = {self.rpm} rpm, HTR = {self.hub_tip_ratio:.2g}"
         if self.N_stages > 1:
 
             title_text = title_text + rf", $N$ = {self.N_stages}"
 
         # configure plot
         colour_bar = fig.colorbar(contour, ax = ax)
+        colour_bar.set_ticks(np.arange(0, 101, 10))
         colour_bar.set_label(f"{label_unit}", fontsize = utils.Defaults.fontsize)
         colour_bar.ax.tick_params(labelsize = utils.Defaults.fontsize)
         ax.set_xlabel("Flight Mach Number, $ M_\\infty $", fontsize = utils.Defaults.fontsize)

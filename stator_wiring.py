@@ -498,13 +498,13 @@ def design_wiring():
 
 	# annotate first configuration
 	draw_arrow(
-		ax, *centre, 5 * np.pi / 4,
+		ax, centre[0] + r_wire / np.sqrt(2), centre[1] + r_wire / np.sqrt(2), 5 * np.pi / 4,
 		rf"{m} $\times$ {n} cables, d = {2 * r_wire_mm} mm" + "\n"
 		rf"J = {J_min:.4g} $\text{{A mm}}^{{-2}}$",
 		l1 = 0.25, l2 = 0.55
 	)
 	draw_arrow(
-		ax, *centre, 3 * np.pi / 4,
+		ax, centre[0] - 0.17, centre[1] - 0.01, 3 * np.pi / 4,
 		"Design thickness\n" + r"$t_\text{max}$ = 1 mm",
 		l1 = 0.2, l2 = 0.4
 	)
@@ -579,13 +579,13 @@ def design_wiring():
 
 	# annotate second configuration
 	draw_arrow(
-		ax, *centre, 5 * np.pi / 4,
+		ax, centre[0] + r_wire / np.sqrt(2), centre[1] + r_wire / np.sqrt(2), 5 * np.pi / 4,
 		rf"{m} $\times$ {n} cables, d = {2 * r_wire_mm} mm" + "\n"
 		rf"J = {J_min:.4g} $\text{{A mm}}^{{-2}}$",
 		l1 = 0.2, l2 = 0.55
 	)
 	draw_arrow(
-		ax, *centre, -np.pi / 4, r"$t_\text{max}$ = 2 mm",
+		ax, centre[0] + 0.15, centre[1], -np.pi / 4, r"$t_\text{max}$ = 2 mm",
 		l1 = 0.2, l2 = 0.4
 	)
 
