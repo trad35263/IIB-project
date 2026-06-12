@@ -1,0 +1,1788 @@
+# import modules
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from matplotlib.path import Path
+import matplotlib.patches as patches
+
+from scipy.interpolate import make_interp_spline
+from scipy.optimize import root_scalar
+from scipy.io import savemat
+
+from time import perf_counter as timer
+import itertools
+from scipy.interpolate import interp1d
+from datetime import datetime
+import json
+
+# plotly graphs for sankey chart
+#import plotly.graph_objects as go
+
+#import matlab.engine
+from pathlib import Path as FilePath
+
+# import system modules
+import copy
+import inspect
+import os
+
+# import custom classes
+from stage import Stage
+from rotor import Rotor
+from nozzle import Nozzle
+from flow_state import Flow_state
+from annulus import Annulus
+import utils
+from motor_database import Database
+
+# define Engine class
+class Engine:
+    """
+    Used to store multiple (if applicable) stages and determine the overall engine performance.
+    
+    Parameters
+    ----------
+    scenario : class
+        Instance of the Flight_scenario class for which this engine is designed.
+    no_of_stages : int
+        Number of stages in the compressor.
+    phi : float or list
+        Flow coefficient or list of flow coefficients.
+    psi : float
+        Stage loading coefficient.
+    vortex_exponent : float
+        Vortex exponent describing the distribution of stage loading across a rotor.
+    Y_p : float
+    area_ratio : float
+    """
+    def __init__(
+            self,
+            scenario,
+            no_of_stages = utils.Defaults.no_of_stages,
+            phi = utils.Defaults.phi,
+            psi = utils.Defaults.psi,
+            vortex_exponent = utils.Defaults.vortex_exponent,
+            Y_p = utils.Defaults.Y_p,
+            area_ratio = utils.Defaults.area_ratio,
+            M_1 = None
+        ):
+        """Creates an instance of the Engine class."""
+        # store variables from input scenario
+        self.M_flight = scenario.M
+        self.C_th_design = scenario.C_th
+        self.hub_tip_ratio = scenario.hub_tip_ratio
+        self.diameter = scenario.diameter
+        self.p_atm = scenario.p / scenario.p_0
+
+        # store flight scenario (deepcopy to avoid circular reference)
+        self.scenario = copy.deepcopy(scenario)
+
+        # store input variables
+        self.no_of_stages = int(no_of_stages)
+        self.vortex_exponent = vortex_exponent
+        self.Y_p = Y_p
+        self.area_ratio = area_ratio
+        self.M_1 = M_1
+
+        # phi is provided as a scalar
+        if isinstance(phi, float):
+
+            # convert to uniform array
+            self.phi = list(phi * np.ones(self.no_of_stages))
+
+        # phi is provided as a list or numpy array
+        else:
+
+            # ensure type is list
+            self.phi = list(phi)
+
+        # psi is provided as a scalar
+        if isinstance(psi, float):
+
+            # convert to uniform array
+            self.psi = list(psi * np.ones(self.no_of_stages))
+
+        # psi is provided as a list or numpy array
+        else:
+
+            # ensure type is list
+            self.psi = list(psi)
+
+        # phi or psi list is not the correct length
+        if len(self.phi) != self.no_of_stages or len(self.psi) != self.no_of_stages:
+
+            # print error message
+            print(
+                f"{utils.Colours.RED}Error! Please provide input list with same length as number "
+                f"of stages!.{utils.Colours.END}"
+            )
+
+        # create the appropriate number of empty stages and blade rows
+        self.stages = []
+        self.blade_rows = []
+        for index in range(self.no_of_stages):
+
+            # create stage and blade rows and store in lists
+            stage = Stage(self.phi[index], self.psi[index], self.vortex_exponent, self.Y_p, index)
+            self.stages.append(stage)
+            self.blade_rows.extend(self.stages[-1].blade_rows)
+
+            # handle first stage
+            if index == 0:
+
+                # set first stage to be independent Annulus object
+                stage.rotor.inlet = Annulus()
+
+            # for all other stages
+            else:
+
+                # set rotor inlet conditions to previous stage stator exit conditions
+                stage.rotor.inlet = self.stages[index - 1].stator.exit
+
+            # create empty Annulus objects for blade row exits
+            stage.rotor.exit = Annulus()
+            stage.stator.exit = Annulus()
+
+            # set stator exit conditions to rotor exit conditions
+            stage.stator.inlet = stage.rotor.exit
+
+        # create nozzle and set inlet conditions to final stage stator exit conditions
+        self.nozzle = Nozzle()
+        self.nozzle.inlet = self.stages[-1].stator.exit
+        self.nozzle.exit = Annulus()
+
+        # design engine
+        #self.design()
+
+        # create cycle of colours
+        self.colour_cycle = itertools.cycle(plt.cm.tab10.colors)
+
+        # initialise empty list of geometry and off-design dictionaries
+        self.geometries = []
+
+    def __str__(self):
+        """Prints a string representation of the stage."""
+        string = ""
+        for name, value in self.__dict__.items():
+
+            if isinstance(value, (int, float)):
+
+                if ("alpha" in name or "angle" in name or "beta" in name) and not value == 0:
+
+                    string += f"{name}: {utils.Colours.GREEN}{utils.rad_to_deg(value):.4g} °"
+                    string += f"{utils.Colours.END}\n"
+
+                else:
+
+                    string += f"{name}: {utils.Colours.GREEN}{value:.4g}{utils.Colours.END}\n"
+
+            elif isinstance(value, list):
+
+                string += f"{name}: {utils.Colours.GREEN}{value}{utils.Colours.END}\n"
+
+        return string
+
+    def __repr__(self):
+        """Print a detailed summary of the information contained in the class."""
+        string = f"""
+{utils.Colours.UNDERLINE}Engine Details{utils.Colours.END}\n
+"""
+        for index, blade_row in enumerate(self.blade_rows):
+
+            string += f"[{index}] {blade_row}"
+
+        string += f"{self.nozzle}"
+
+        return string
+
+# design functions --------------------------------------------------------------------------------
+
+    def design(self):
+        """Designs the engine system for the given flight scenario and inputs."""
+        # start timer
+        t1 = timer()
+
+        # create empty arrays to store guesses
+        self.M_1_guesses = []
+        self.C_th_guesses = []
+
+        # root-finding function
+        def solve_thrust(M_1):
+            """Returns the thrust residual of the engine for a given inlet Mach number."""
+            # store inlet Mach number
+            self.M_1 = M_1
+            self.M_1_guesses.append(self.M_1)
+
+            # engine has at least one blade row
+            if len(self.blade_rows) > 0:
+
+                # set inlet conditions at first rotor inlet
+                self.blade_rows[0].set_inlet_conditions(self.M_1, self.hub_tip_ratio)
+
+            # store mass flow rate
+            self.m_dot = utils.mass_flow_function(self.M_1)
+            utils.debug(f"self.M_1: {self.M_1}")
+
+            def solve_blade_row(v_x_hub, blade_row):
+                """Returns the relevant residual for a blade row for a given hub axial velocity."""
+                # design blade row and return residual
+                blade_row.design(v_x_hub, self.hub_tip_ratio)
+                residual = blade_row.exit.rr[-1]**2 - self.area_ratio * blade_row.inlet.rr[-1]**2
+                blade_row.v_x_guesses.append(v_x_hub)
+                blade_row.residual_guesses.append(residual)
+                utils.debug(f"residual: {residual}")
+                return residual
+
+            def solve_nozzle(v_x_hub):
+                """Returns the residual for a nozzle for a given centreline axial velocity."""
+                # design nozzle and return residual
+                self.nozzle.design(v_x_hub, self.hub_tip_ratio)
+                residual = self.nozzle.exit.p[-1] - self.p_atm
+                self.nozzle.v_x_guesses.append(v_x_hub)
+                self.nozzle.residual_guesses.append(residual)
+                utils.debug(f"residual: {residual}")
+                return residual
+
+            # loop over all blade rows
+            for blade_row in self.blade_rows:
+
+                # empty lists of blade row guesses
+                blade_row.v_x_guesses = []
+                blade_row.residual_guesses = []
+
+                # set initial guess
+                x0 = blade_row.inlet.v_x[0]
+                x1 = 0.9 * x0
+
+                # solve for blade row exit conditions
+                sol = root_scalar(
+                    solve_blade_row, x0 = x0, x1 = x1, method = 'secant', maxiter = 20,
+                    args = (blade_row,)
+                )
+                utils.debug(f"sol: {sol}")
+
+                if sol.converged == False:
+
+                    pass
+
+                    """fig, ax = plt.subplots()
+                    ax.plot(blade_row.v_x_guesses, blade_row.residual_guesses, label = "Guesses")
+                    ax.set_xlabel("Dimensionless Hub Velocity")
+                    ax.set_ylabel("Blade row Area Ratio Residual")
+                    ax.grid()
+                    ax.legend()
+                    ax.set_xlim(-1, 1)
+                    plt.show()"""
+
+            # wrap in try-except loop to discard nozzle design failures
+            try:
+
+                # empty lists of blade row guesses
+                self.nozzle.v_x_guesses = []
+                self.nozzle.residual_guesses = []
+
+                # set initial guess
+                x0 = self.M_j_initial
+                x1 = 0.9 * x0 + 1e-1
+
+                # solve for nozzle exit conditions
+                sol = root_scalar(
+                    solve_nozzle, x0 = x0, x1 = x1, method = 'secant', maxiter = 20
+                )
+                utils.debug(f"nozzle sol: {sol}")
+
+            # catch exceptions
+            except ValueError as error:
+
+                # return arbitrarily large residual
+                print(error)
+                return 1e9
+
+            # evaluate engine performance
+            self.evaluate()
+            self.C_th_guesses.append(self.C_th)
+
+            # return difference between actual and design thrust
+            return self.C_th - self.C_th_design
+
+        # no inlet Mach number was provided
+        if self.M_1 == None:
+
+            # calculate initial guess
+            self.initial_guess()
+
+            # set initial guess from initial guess
+            x0 = self.M_1
+            x1 = 0.9 * x0
+
+            # solve iteratively
+            sol = root_scalar(
+                solve_thrust, x0 = x0, x1 = x1, method = 'secant', maxiter = utils.Defaults.maxiter
+            )
+            utils.debug(f"sol: {sol}")
+
+        # inlet Mach number was specified
+        else:
+
+            # estimate jet Mach number
+            self.M_j_initial = self.scenario.M
+
+            # run solve_thrust function without iterating
+            solve_thrust(self.M_1)
+
+        # loop over all blade rows
+        for index, blade_row in enumerate(self.blade_rows):
+
+            # sever shared references between inlet and exit annuli
+            blade_row.exit = copy.deepcopy(blade_row.exit)
+
+        # iterate over all stages
+        for stage in self.stages:
+
+            # investigate stage performance
+            stage.evaluate()
+
+        # calculate dimensional values
+        self.dimensional_values()
+        self.calc_thrust()
+
+        # end timer and print feedback
+        t2 = timer()
+        print(
+            f"Engine design completed after {utils.Colours.GREEN}{t2 - t1:.3g}s:"
+            f"{utils.Colours.END}"
+        )
+
+    def initial_guess(self):
+        """Calculates an initial inlet Mach number guess for the solver."""
+        # start timer
+        t1 = timer()
+
+        # set up grid of inlet Mach number and span
+        self.M_1_initial = np.linspace(1e-6, 1, utils.Defaults.solver_grid)
+        rr = np.linspace(self.hub_tip_ratio, 1, utils.Defaults.solver_grid)
+
+        # create mesh grid and calculate inlet velocity function at all points
+        M_1_grid, rr_grid = np.meshgrid(self.M_1_initial, rr)
+        velocity_function_1 = utils.velocity_function(M_1_grid)
+
+        # calculate geometric mean radius
+        r_mean = np.sqrt(0.5 * (1 + self.hub_tip_ratio**2))
+
+        # calculate compressor stagnation temperature ratio
+        T_03_T_01 = (
+            np.power(
+                1 + self.psi[0] * velocity_function_1**2 * np.power(
+                    r_mean / rr_grid, self.vortex_exponent + 1
+                ) / (self.phi[0] * r_mean / rr_grid)**2,
+                self.no_of_stages
+            )
+        )
+
+        # find static temperature ratio required to satisfy jet boundary condition
+        T_j_T_0j = utils.stagnation_temperature_ratio(self.scenario.M) / T_03_T_01
+
+        # get list of stagnation temperature ratios to interpolate
+        T_T_0 = utils.stagnation_temperature_ratio(self.M_1_initial)
+
+        # calculate jet Mach number required to satisfy jet boundary condition
+        M_j = np.interp(T_j_T_0j, T_T_0[::-1], self.M_1_initial[::-1])
+
+        # calculate mass flow functions at inlet and in jet
+        mass_flow_function_1 = utils.mass_flow_function(M_1_grid)
+        mass_flow_function_j = utils.mass_flow_function(M_j)
+
+        # calculate nozzle area ratio per streamline assuming isentropic compressor
+        sigma_grid = (
+            mass_flow_function_1 * np.power(T_03_T_01, 0.5 - utils.gamma / (utils.gamma - 1))
+            / mass_flow_function_j
+        )
+
+        # calculate mid-point average of streamline area ratio values (array has length N - 1)
+        sigma_grid_midpoint = 0.5 * (sigma_grid[1:, :] + sigma_grid[:-1, :])
+
+        # calculate inlet streamtube areas (array has length N - 1)
+        A_1i = np.pi * np.array([r_1i**2 - r_1i_1**2 for (r_1i, r_1i_1) in zip(rr[1:], rr[:-1])])
+
+        # calculate exit streamtube areas
+        A_ji_grid = A_1i[:, None] * sigma_grid_midpoint
+        A_ji_grid_cumulative = np.cumsum(A_ji_grid, axis = 0)
+
+        # calculate exit streamline radii
+        rr_j = np.sqrt(A_ji_grid_cumulative / np.pi)
+        rr_j = np.vstack([np.zeros((1, rr_j.shape[1])), rr_j])
+
+        # calculate thrust coefficient
+        M_j_2_r = M_j**2 * rr_j
+        self.C_th_initial = np.zeros(utils.Defaults.solver_grid)
+        for index in range(utils.Defaults.solver_grid):
+
+            self.C_th_initial[index] = (
+                2 * utils.gamma / (1 - self.hub_tip_ratio**2)
+                * utils.stagnation_pressure_ratio(self.scenario.M)
+                * utils.cumulative_trapezoid(rr_j[:, index], M_j_2_r[:, index])[-1]
+                - utils.mass_flow_function(self.M_1_initial[index])
+                * utils.velocity_function(self.scenario.M)
+            )
+
+        # calculate the running maximum
+        C_th_max = np.fmax.accumulate(self.C_th_initial)
+
+        # mask all values below the running maximum, including the M_1 = 0 value
+        mask = np.concatenate([[False], self.C_th_initial[1:] >= C_th_max[:-1]])
+
+        # plot for debugging
+        """fig, ax = plt.subplots()
+        ax.plot(self.M_1_initial, self.C_th_initial, label = "Values")
+        ax.plot(self.M_1_initial, C_th_max, label = "Running maximum")
+        ax.plot(self.M_1_initial[mask], self.C_th_initial[mask], label = "Masked maximum")
+        ax.grid()
+        ax.legend()
+        ax.set_xlabel("Compressor Inlet Mach Number")
+        ax.set_ylabel("Thrust Coefficient")
+        plt.show()"""
+
+        # thrust cannot be produced
+        if np.max(self.C_th_initial[mask]) < self.C_th_design:
+
+            print(
+                f"{utils.Colours.RED}Error! Maximum thrust coefficient is "
+                f"{np.max(self.C_th_initial[mask])}{utils.Colours.END}"
+                )
+
+        # interpolate to find actual inlet Mach number
+        self.M_1 = np.interp(self.C_th_design, self.C_th_initial[mask], self.M_1_initial[mask])
+        utils.debug(f"self.M_1: {self.M_1}")
+
+        # temp code
+        index = int(np.interp(self.M_1, self.M_1_initial, np.arange(utils.Defaults.solver_grid)))
+        self.M_j_initial = M_j[:, index][0]
+        self.rr_j_initial = rr_j[:, index]
+
+        # find nozzle area ratio
+        nozzle_area_ratio = self.rr_j_initial[-1]**2 / (1 - self.hub_tip_ratio**2)
+
+        # end timer
+        t2 = timer()
+        print(
+            f"Initial guess calculated in {utils.Colours.GREEN}{t2 - t1:.4g}{utils.Colours.END} s!"
+            f"\nInitial guess | M_1: {utils.Colours.GREEN}{self.M_1:.4g}{utils.Colours.END} | "
+            f"Nozzle area ratio: {utils.Colours.GREEN}{nozzle_area_ratio:.4g}{utils.Colours.END}"
+        )
+
+    def evaluate(self):
+        """Calculates the thrust and key efficiency metrics of the engine."""
+        # store nozzle area ratio
+        self.nozzle_area_ratio = (
+            self.nozzle.exit.rr[-1]**2
+            / (self.nozzle.inlet.rr[-1]**2 - self.hub_tip_ratio**2)
+        )
+
+        # mass average nozzle properties
+        self.T_0_ratio = (
+            2 * utils.gamma / (
+                (1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1)
+                * self.nozzle.exit.m_dot[-1]
+            ) * utils.cumulative_trapezoid(
+                self.nozzle.exit.rr,
+                self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.v_x
+                / utils.stagnation_temperature_ratio(self.nozzle.exit.M)
+            )[-1]
+        )
+        self.p_0_ratio = (
+            2 * utils.gamma / (
+                (1 - self.hub_tip_ratio**2) * np.sqrt(utils.gamma - 1)
+                * self.nozzle.exit.m_dot[-1]
+            ) * utils.cumulative_trapezoid(
+                self.nozzle.exit.rr,
+                self.nozzle.exit.rr * self.nozzle.exit.p * self.nozzle.exit.p_0
+                * self.nozzle.exit.v_x / self.nozzle.exit.T
+            )[-1]
+        )
+
+        self.eta_isen = (
+            (np.power(self.p_0_ratio, (utils.gamma - 1) / utils.gamma) - 1)
+            / (self.T_0_ratio - 1)
+        )
+
+        # calculate thrust coefficient contribution due to jet momentum flux
+        dC_th_1_dr = (
+            2 * utils.dynamic_pressure_function(self.nozzle.exit.M)
+            * self.nozzle.exit.p_0 * np.cos(self.nozzle.exit.alpha)**2
+            * self.nozzle.exit.rr
+        )
+        self.C_th_1 = (
+            2 * utils.cumulative_trapezoid(self.nozzle.exit.rr, dC_th_1_dr)
+            / (1 - self.hub_tip_ratio**2)
+        )
+
+        # calculate thrust coefficient contribution due to engine inlet momentum flux
+        dC_th_2_dr = (
+            -2 * utils.dynamic_pressure_function(self.nozzle.exit.M)
+            * self.nozzle.exit.p_0 * np.cos(self.nozzle.exit.alpha)
+            * self.scenario.M / self.nozzle.exit.M
+            * np.sqrt(utils.stagnation_temperature_ratio(self.scenario.M) / self.nozzle.exit.T)
+            * self.nozzle.exit.rr
+        )
+        self.C_th_2 = (
+            2 * utils.cumulative_trapezoid(self.nozzle.exit.rr, dC_th_2_dr)
+            / (1 - self.hub_tip_ratio**2)
+        )
+
+        # calculate thrust coefficient contribution due to jet static pressure
+        dC_th_3_dr = (
+            utils.stagnation_pressure_ratio(self.nozzle.exit.M)
+            * self.nozzle.exit.p_0 * self.nozzle.exit.rr
+        )
+        self.C_th_3 = (
+            2 * utils.cumulative_trapezoid(self.nozzle.exit.rr, dC_th_3_dr)
+            / (1 - self.hub_tip_ratio**2)
+        )
+
+        # calculate thrust coefficient contribution due to engine inlet static pressure
+        dC_th_4_dr = (
+            -self.scenario.p / self.scenario.p_0 * np.ones(len(self.nozzle.exit.M))
+            * self.nozzle.exit.rr
+        )
+        self.C_th_4 = (
+            2 * utils.cumulative_trapezoid(self.nozzle.exit.rr, dC_th_4_dr)
+            / (1 - self.hub_tip_ratio**2)
+        )
+
+        # combine components
+        self.C_th = self.C_th_1[-1] + self.C_th_2[-1] + self.C_th_3[-1] + self.C_th_4[-1]
+
+    def dimensional_values(self):
+        """Converts dimensionless values back to dimensional ones after the design process."""
+        # calculate mass flow rate
+        self.m_dot = (
+            utils.mass_flow_function(self.M_1) * self.scenario.A * self.scenario.p_0
+            / np.sqrt(utils.c_p * self.scenario.T_0)
+        )
+
+        # calculate dimensional thrust
+        self.thrust = self.C_th * self.scenario.A * self.scenario.p_0
+
+        # loop over each stage
+        for index, stage in enumerate(self.stages):
+
+            # store rotor and stator for convenience
+            rotor = stage.rotor
+            stator = stage.stator
+
+            # calculate rpm value of rotor
+            U_blade = (
+                rotor.exit.M_blade[-1]
+                * np.sqrt(utils.gamma * utils.R * rotor.exit.T[-1] * self.scenario.T_0)
+            )
+            omega_blade = U_blade / (rotor.exit.rr[-1] * self.scenario.diameter / 2)
+            rotor.motor_rpm = utils.rad_s_to_rpm(omega_blade)
+
+            # calculate required motor power input
+            """dP_dr = (
+                np.pi * self.scenario.diameter**2 / 2 * utils.gamma * np.sqrt(
+                    utils.c_p / (utils.gamma - 1)
+                ) * self.scenario.p_0 * np.sqrt(self.scenario.T_0)
+                * rotor.inlet.p * rotor.inlet.M * np.cos(rotor.inlet.alpha)
+                * (rotor.exit.T_0 - rotor.inlet.T_0) / np.sqrt(rotor.inlet.T) * rotor.inlet.rr
+            )
+            rotor.motor_power = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]"""
+            dP_dr = (
+                2 * self.scenario.A / (1 - self.hub_tip_ratio**2) * utils.gamma
+                * np.sqrt(utils.c_p / (utils.gamma - 1)) * self.scenario.p_0
+                * np.sqrt(self.scenario.T_0)
+                * rotor.inlet.p * rotor.inlet.v_x * (rotor.exit.T_0 - rotor.inlet.T_0)
+                * rotor.inlet.rr / rotor.inlet.T
+            )
+            rotor.motor_power = utils.cumulative_trapezoid(rotor.inlet.rr, dP_dr)[-1]
+
+            # store values as class attributes
+            setattr(self, f"rotor_{index + 1}_rpm", rotor.motor_rpm)
+            setattr(self, f"rotor_{index + 1}_power", rotor.motor_power)
+
+            # engine geometry has been calculated
+            if hasattr(self, "geometry"):
+
+                # store chord range for display in the GUI
+                self.geometry[f"rotor_{index + 1}_chord"] = (
+                    f"{1000 * np.min(rotor.exit.chord) * self.scenario.diameter / 2:.4g} - "
+                    f"{1000 * np.max(rotor.exit.chord) * self.scenario.diameter / 2:.4g}"
+                )
+
+                self.geometry[f"stator_{index + 1}_chord"] = (
+                    f"{1000 * np.min(stator.exit.chord) * self.scenario.diameter / 2:.4g} - "
+                    f"{1000 * np.max(stator.exit.chord) * self.scenario.diameter / 2:.4g}"
+                )
+
+        # find dimensional thrust power
+        self.P_flight = self.thrust * self.scenario.flight_speed
+
+    def empirical_design(self):
+        """Determines the actual geometry of the engine."""
+        # store relevant geometry parameters separately for convenience
+        aspect_ratio = self.geometry["aspect_ratio"]
+        diffusion_factor = self.geometry["diffusion_factor"]
+        design_parameter = self.geometry["design_parameter"]
+
+        # loop over all blade rows
+        for blade_row in self.blade_rows:
+
+            # calculate chord distribution and deviation
+            blade_row.calculate_chord(aspect_ratio, diffusion_factor, design_parameter)
+
+        if self.no_of_stages == 2 and self.phi[0] == 0.7 and self.psi[0] == 0.25:
+
+            # temporary hard code some values for Electric Jet Engine Design section
+            self.blade_rows[0].no_of_blades = 10
+            self.blade_rows[1].no_of_blades = 11
+            self.blade_rows[2].no_of_blades = 15
+            self.blade_rows[3].no_of_blades = 16
+
+        # store list containing number of blades for each row
+        self.geometry["no_of_blades"] = [blade_row.no_of_blades for blade_row in self.blade_rows]
+
+        # store separately for gui purposes
+        for index, stage in enumerate(self.stages):
+
+            self.geometry[f"rotor_{index + 1}_no_of_blades"] = (
+                self.geometry["no_of_blades"][2 * index]
+            )
+            self.geometry[f"stator_{index + 1}_no_of_blades"] = (
+                self.geometry["no_of_blades"][2 * index + 1]
+            )
+
+        # calculate array of blade row x-coordinates
+        xx = np.array([
+            blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation
+            for blade_row in self.blade_rows
+        ])
+        xx = np.concatenate([[xx[0]], xx[:-1] + xx[1:]])
+        xx = np.cumsum(xx)
+
+        # loop over each blade row
+        for x, blade_row in zip(xx, self.blade_rows):
+
+            # assign reference axial position
+            blade_row.x_ref = x
+
+        # recalculate dimensional values
+        self.dimensional_values()
+
+    def calculate_thickness(self):
+        """"""
+        # convert max. thickness in mm into dimensionless value
+        max_thickness = (
+            self.geometry["thickness"]["max_thickness_mm"] * 1e-3 / self.scenario.radius
+        )
+        thickness_fraction = self.geometry["thickness"]["thickness_fraction"]
+
+        # loop for each blade row
+        for blade_row in self.blade_rows:
+
+            # draw blade shapes at hub, mid-span and tip and calculate blade row mass
+            blade_row.draw_blades(max_thickness, thickness_fraction)
+            blade_row.calculate_mass(self.scenario.radius)
+
+        # loop for each stage
+        for index, stage in enumerate(self.stages):
+
+            # store chord range for display in the GUI
+            self.geometry["thickness"][f"rotor_{index + 1}_mass"] = stage.rotor.mass
+            self.geometry["thickness"][f"stator_{index + 1}_mass"] = stage.stator.mass
+
+    def select_motor(self):
+        """Selects an appropriate motor from the motor database."""
+        # store motor requirements separately for convenience
+        motor_power = self.geometry["motor"]["motor_power"]
+        motor_rpm = self.geometry["motor"]["motor_rpm"]
+        motor_diameter = self.geometry["motor"]["motor_diameter"]
+        cable_diameter = self.geometry["motor"]["cable_diameter"]
+        cables_per_phase = self.geometry["motor"]["cables_per_phase"]
+
+        # get electric current density limit
+        wiring = utils.Wiring()
+        J_max = wiring.get_J_limit(cable_diameter)
+
+        # get motor database
+        database = Database()
+        print(f"database: {database}")
+
+        # filter database by diameter
+        motors = [motor for motor in database.motors if motor["diameter_mm"] <= motor_diameter * 1000]
+        self.geometry["motor"]["no_of_motors_diameter"] = len(motors)
+
+        # filter database by power
+        motors = [motor for motor in motors if motor["max_power_W"] >= motor_power]
+        self.geometry["motor"]["no_of_motors_power"] = len(motors)
+
+        # filter database by rpm
+        motors = [motor for motor in motors if motor["max_rpm"] >= motor_rpm]
+        self.geometry["motor"]["no_of_motors_rpm"] = len(motors)
+
+        # there exist motors which satisfy all criteria
+        if len(motors) > 0:
+
+            # calculate phase voltages based on rpm and assuming star configuration
+            [
+                motor.update({"V_emf": motor_rpm / motor["K_V"]})
+                for motor in motors
+            ]
+            [motor.update({"V_ph": motor["V_emf"] / np.sqrt(3)}) for motor in motors]
+
+            # calculate phase current based on required motor power
+            [motor.update({"I_ph": motor_power / (3 * motor["V_ph"])}) for motor in motors]
+
+            # calculate cable area (in mm^2) and current density (A / mm^2)
+            cable_area = cables_per_phase * np.pi * (cable_diameter / 2)**2
+            [motor.update({"J": motor["I_ph"] / cable_area}) for motor in motors]
+
+            # calculate voltage drop per unit length for a copper wire
+            [motor.update({"dV_dL": motor["J"] * utils.resistivity_copper}) for motor in motors]
+
+            # mask for max voltage requirement
+            motors = [motor for motor in motors if motor["V_emf"] < motor["max_volts"]]
+            self.geometry["motor"]["no_of_motors_V"] = len(motors)
+
+            # mask for max current requirement
+            motors = [motor for motor in motors if motor["I_ph"] < motor["max_amps"]]
+            self.geometry["motor"]["no_of_motors_I"] = len(motors)
+
+            # mask for max current density requirement
+            motors = [motor for motor in motors if motor["J"] < J_max]
+            self.geometry["motor"]["no_of_motors_J"] = len(motors)
+
+            # valid motor installations exist
+            if len(motors) > 0:
+
+                # stores ranges of parameters for display in GUI
+                self.geometry["motor"]["phase_voltage"] = (
+                    f"{np.min([motor['V_ph'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['V_ph'] for motor in motors]):.4g}"
+                )
+                self.geometry["motor"]["phase_current"] = (
+                    f"{np.min([motor['I_ph'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['I_ph'] for motor in motors]):.4g}"
+                )
+                self.geometry["motor"]["current_density"] = (
+                    f"{np.min([motor['J'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['J'] for motor in motors]):.4g}"
+                )
+                self.geometry["motor"]["voltage_drop"] = (
+                    f"{np.min([motor['dV_dL'] for motor in motors]):.4g} - "
+                    f"{np.max([motor['dV_dL'] for motor in motors]):.4g}"
+                )
+                self.geometry["motor"]["weight"] = (
+                    f"{np.min([motor['weight_g'] for motor in motors])} - "
+                    f"{np.max([motor['weight_g'] for motor in motors])}"
+                )
+
+                # print list of motors and store in engine
+                print(
+                    f"{utils.Colours.GREEN}Successful motor installations found!"
+                    f"{utils.Colours.END}\n{motors}"
+                )
+                self.motors = motors
+
+            # no valid motor installations exist
+            else:
+
+                # set GUI fields to empty strings
+                self.geometry["motor"]["phase_voltage"] = ""
+                self.geometry["motor"]["phase_current"] = ""
+                self.geometry["motor"]["current_density"] = ""
+                self.geometry["motor"]["voltage_drop"] = ""
+                self.geometry["motor"]["weight"] = ""
+
+        # no motors meet requirements
+        else:
+
+            # set GUI fields to empty strings
+            self.geometry["motor"]["no_of_motors_V"] = 0
+            self.geometry["motor"]["no_of_motors_I"] = 0
+            self.geometry["motor"]["no_of_motors_J"] = 0
+            self.geometry["motor"]["phase_voltage"] = ""
+            self.geometry["motor"]["phase_current"] = ""
+            self.geometry["motor"]["current_density"] = ""
+            self.geometry["motor"]["voltage_drop"] = ""
+            self.geometry["motor"]["weight"] = ""
+
+    def calculate_off_design(self):
+        """Calculates the off-design performance characterstics of each stage."""
+        # loop over each stage
+        for stage in self.stages:
+
+            # for different values of flow coefficient between the given bounds
+            phi_min = self.geometry["off_design"]["phi_min"]
+            phi_max = self.geometry["off_design"]["phi_max"]
+            for phi in np.linspace(phi_min, phi_max, utils.Defaults.off_design_grid):
+
+                # calculate stage off-design performance
+                stage.calculate_off_design(self.hub_tip_ratio, phi)
+
+    def export(self, filename = None):
+        """Exports the engine's parameters as a .mat file for CFD."""
+        # calculate array of blade row x-coordinates
+        xx = np.array([blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation for blade_row in self.blade_rows])
+        xx = np.concatenate([[2 * xx[0]], xx[:-1] + xx[1:]])
+        xx = np.cumsum(xx)
+        xx = xx * self.scenario.diameter / 2
+
+        # create empty dictionaries
+        self.export_dictionary = {}
+        self.blades_dictionary = {}
+
+        # determine dimensionless span distribution to export data across
+        span = np.linspace(-0.02, 1.02, utils.Defaults.export_grid)
+
+        # loop over all blade rows
+        for index, blade_row in enumerate(self.blade_rows):
+
+            # interpolate over blade row inlet span to get inlet metal angle distribution
+            blade_row.inlet.span = (
+                (blade_row.inlet.rr - blade_row.inlet.rr[0])
+                / (blade_row.inlet.rr[-1] - blade_row.inlet.rr[0])
+            )
+            inlet_metal_interp = interp1d(
+                blade_row.inlet.span,
+                utils.rad_to_deg(blade_row.inlet.metal_angle),
+                kind = "linear",
+                bounds_error = False,
+                fill_value = "extrapolate"
+            )
+            inlet_metal_angle = inlet_metal_interp(span)
+
+            # interpolate over blade row exit span to get exit metal angle distribution
+            blade_row.exit.span = (
+                (blade_row.exit.rr - blade_row.exit.rr[0])
+                / (blade_row.exit.rr[-1] - blade_row.exit.rr[0])
+            )
+            exit_metal_interp = interp1d(
+                blade_row.exit.span,
+                utils.rad_to_deg(blade_row.exit.metal_angle),
+                kind = "linear",
+                bounds_error = False,
+                fill_value = "extrapolate"
+            )
+            exit_metal_angle = exit_metal_interp(span)
+
+            # interpolate over blade row exit span to get chord distribution
+            chord_interp = interp1d(
+                blade_row.exit.span,
+                blade_row.exit.chord * self.scenario.diameter / 2,
+                kind = "linear",
+                bounds_error = False,
+                fill_value = "extrapolate"
+            )
+            chord = chord_interp(span)
+
+            # store inlet and exit midspan radii
+            inlet_radius = self.diameter / 2 * (blade_row.inlet.rr[0] + blade_row.inlet.rr[-1]) / 2
+            exit_radius = self.diameter / 2 * (blade_row.exit.rr[0] + blade_row.exit.rr[-1]) / 2
+
+            # store inlet and exit areas
+            inlet_area = (
+                np.pi * (self.diameter / 2)**2
+                * (blade_row.inlet.rr[-1]**2 - self.hub_tip_ratio**2)
+            )
+            exit_area = (
+                np.pi * (self.diameter / 2)**2
+                * (blade_row.exit.rr[-1]**2 - self.hub_tip_ratio**2)
+            )
+
+            # blade row is a rotor
+            if isinstance(blade_row, Rotor):
+
+                # calculate rotor rpm
+                rpm = (
+                    blade_row.inlet.M_blade[-1] * np.sqrt(blade_row.inlet.T[-1]) * np.sqrt(
+                        utils.gamma * utils.R * self.scenario.T_0
+                    ) / (0.5 * self.diameter)
+                )
+                rpm = utils.rad_s_to_rpm(rpm)
+
+            # blade row is a stator
+            else:
+
+                # set rpm to zero
+                rpm = 0
+
+            # calculate mean inlet velocity used for Turbostream initial guess
+            v_x = (
+                0.5 * (blade_row.inlet.v_x[0] + blade_row.inlet.v_x[-1])
+                * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+            )
+
+            # create nested dictionary corresponding to blade row data
+            self.blades_dictionary[f"blade_{index + 1}"] = {
+                "span": span.tolist(),
+                "inlet_metal_angle": inlet_metal_angle.tolist(),
+                "exit_metal_angle": exit_metal_angle.tolist(),
+                "chord": chord.tolist(),
+                "x_ref": xx[index],
+                "inlet_radius": inlet_radius,
+                "exit_radius": exit_radius,
+                "inlet_area": inlet_area,
+                "exit_area": exit_area,
+                "area_ratio": exit_area / inlet_area,
+                "rpm": rpm,
+                "v_x": v_x,
+                "no_of_blades": blade_row.no_of_blades
+            }
+
+        # calculate compressor inlet density guess
+        rho_guess = (
+            self.blade_rows[0].inlet.p[0] * self.scenario.p_0
+            / (utils.R * self.blade_rows[0].inlet.T[0] * self.scenario.T_0)
+        )
+
+        # calculate compressor inlet axial momentum guess
+        rho_v_x_guess = (
+            rho_guess * self.blade_rows[0].inlet.v_x[0] * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+        )
+
+        # calculate compressor inlet energy per unit volume guess
+        rho_e_guess = (
+            rho_guess * (
+                utils.c_v * self.blade_rows[0].inlet.T[0] * self.scenario.T_0
+                + 0.5 * self.blade_rows[0].inlet.v_x[0]**2 * utils.gamma * utils.R * self.scenario.T_0
+            )
+        )
+
+        # calculate compressor exit static pressure guess
+        p_guess = (
+            self.p_0_ratio * self.scenario.p_0
+            * utils.stagnation_pressure_ratio(self.blade_rows[-1].exit.M[-1])
+        )
+
+        # add metadata to dictionary
+        self.export_dictionary["metadata"] = {
+            # export date-time information
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "date_and_time": datetime.now().replace(microsecond = 0).isoformat(),
+
+            # export flight scenario details
+            "altitude": self.scenario.altitude,
+            "flight_speed": self.scenario.flight_speed,
+            "diameter": self.scenario.diameter,
+            "hub_tip_ratio": self.hub_tip_ratio,
+            "thrust": self.scenario.thrust,
+
+            # export dimensionless inputs
+            "flight_mach_number": self.M_flight,
+            "thrust_coefficient": self.C_th,
+
+            # export original input information
+            "no_of_stages": self.no_of_stages,
+            "vortex_exponent": self.vortex_exponent,
+            "pressure_loss_coefficient": self.Y_p,
+            "flow_coefficients": self.phi,
+            "stage_loading_coefficients": self.psi,
+            "blade_row_area_ratio": self.area_ratio,
+
+            # export engine calculated values
+            "inlet_mach_number": self.M_1,
+            "nozzle_area_ratio": self.nozzle_area_ratio,
+            "eta_comp": self.eta_comp,
+            "eta_prop": self.eta_prop,
+
+            # export CFD boundary conditions (dimensional)
+            "mass_flow_rate": self.m_dot,
+            "p_0": self.scenario.p_0,
+            "T_0": self.scenario.T_0,
+
+            # export CFD initial guess
+            "rho_guess": rho_guess,
+            "rho_v_x_guess": rho_v_x_guess,
+            "rho_e_guess": rho_e_guess,
+            "p_guess": p_guess,
+
+            # export geometry information
+            "aspect_ratio": self.geometry["aspect_ratio"],
+            "diffusion_factor": self.geometry["diffusion_factor"],
+            "design_parameter": self.geometry["design_parameter"],
+
+            # export solver grid details
+            "solver_grid_points": utils.Defaults.solver_grid,
+            "export_grid_points": utils.Defaults.export_grid
+        }
+
+        # add blades dictionary to export dictionary
+        self.export_dictionary["blades"] = self.blades_dictionary
+
+        # no filename argument was passed
+        if filename == None:
+
+            # set default filename
+            filename = (
+                f"high_speed_"
+                f"{self.export_dictionary['metadata']['date_and_time'].replace(':', '-')}"
+            )
+
+        # save dictionary as .mat file
+        savemat(f"exports/{filename}.mat", self.export_dictionary)
+        
+        # save dictionary as JSON file
+        with open(f"exports/{filename}.json", 'w') as f:
+            json.dump(self.export_dictionary, f, indent = 2)
+
+        # print feedback to user
+        print(
+            f"Engine data successfully exported as "
+            f"{utils.Colours.GREEN}{filename}.mat{utils.Colours.END} and "
+            f"{utils.Colours.GREEN}{filename}.json{utils.Colours.END}!"
+        )
+        print(self)
+
+# plotting functions ------------------------------------------------------------------------------
+
+    def plot_velocity_triangles(self):
+        """Plots the Mach triangles and approximate blade shapes for the compressor."""
+        # create plot for displaying velocity triangles
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+        # coordinates for a brace
+        verts = [
+            (-0.15, -0.30),
+            (-0.05, -0.30),
+            (-0.05, -0.125),
+            (-0.05, 0.00),
+            (0.00, 0.00),
+            (-0.05, 0.00),
+            (-0.05, 0.125),
+            (-0.05, 0.30),
+            (-0.15, 0.30)
+        ]
+        codes = [
+            Path.MOVETO,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3,
+            Path.CURVE3
+        ]
+
+        # labels for plotting
+        labels = ["HUB", "MID-SPAN", "TIP"]
+
+        # array of spanwise position indices to plot
+        indices = [0, int(np.floor(utils.Defaults.solver_grid / 2)), -1]
+
+        # set legend labels
+        ax.plot([], [], color = 'C0', label = 'Absolute Mach number')
+        ax.plot([], [], color = 'C4', label = 'Relative Mach number')
+        ax.plot([], [], color = 'C3', label = 'Blade Mach number')
+
+        # configure plot
+        ax.set_aspect('equal')
+        ax.legend()
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # set axis limits
+        ax.set_xlim(-0.4, len(self.blade_rows) + 0.7)
+        ax.set_ylim(-0.7, len(indices) - 0.2)
+
+        # set title
+        ax.text(
+            0.5, 1.02,
+            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+            f"$ \\phi $ = {self.phi[0]:.3g}, $ \\psi $ = {self.psi[0]:.3g}, "
+            f"n = {self.vortex_exponent:.3g}",
+            transform = ax.transAxes,
+            ha = 'center',
+            va = 'bottom',
+            fontsize = 16
+        )
+
+        # tight layout
+        #plt.tight_layout()
+
+        # iterate over all inlet and exit streamtubes chosen for plotting
+        for row, index in enumerate(indices):
+            
+            # iterate over all blade rows
+            for column, blade_row in enumerate(self.blade_rows):
+
+                # plot blade row at chosen spanwise positions
+                ax.plot(blade_row.xx[row] + column, blade_row.yy[row] + row, color = 'k')
+
+                # add velocity triangles
+                x_te = blade_row.xx[row][0]
+                y_te = blade_row.yy[row][0]
+
+                # annotate inlet absolute velocity vector
+                ax.annotate(
+                    "",
+                    xy = (column, row),
+                    xytext = (
+                        column - blade_row.inlet.v_x[index],
+                        row - blade_row.inlet.v_theta[index]
+                    ),
+                    arrowprops = dict(
+                        arrowstyle = "->", color = 'C0',
+                        shrinkA = 0, shrinkB = 0, lw = 1.5
+                    )
+                )
+                
+                # annotate exit absolute velocity vector
+                ax.annotate(
+                    "",
+                    xy = (
+                        column + x_te + blade_row.exit.v_x[index],
+                        row + y_te + blade_row.exit.v_theta[index]
+                    ),
+                    xytext = (column + x_te, row + y_te),
+                    arrowprops = dict(
+                        arrowstyle = "->", color = 'C0',
+                        shrinkA = 0, shrinkB = 0, lw = 1.5
+                    )
+                )
+
+                if hasattr(blade_row.exit, "M_rel"):
+                
+                    # annotate inlet relative velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (column, row),
+                        xytext = (
+                            column - blade_row.inlet.v_x[index],
+                            row - blade_row.inlet.v_theta_rel[index]
+                        ),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C4',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+                    
+                    # annotate exit relative velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (
+                            column + x_te + blade_row.exit.v_x[index],
+                            row + y_te + blade_row.exit.v_theta_rel[index]
+                        ),
+                        xytext = (column + x_te, row + y_te),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C4',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+                    
+                    # annotate inlet blade velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (
+                            column - blade_row.inlet.v_x[index],
+                            row - blade_row.inlet.v_theta_rel[index]
+                        ),
+                        xytext = (
+                            column - blade_row.inlet.v_x[index],
+                            row - blade_row.inlet.v_theta[index]
+                        ),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C3',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+                    
+                    # annotate exit blade velocity vector
+                    ax.annotate(
+                        "",
+                        xy = (
+                            column + x_te + blade_row.exit.v_x[index],
+                            row + y_te + blade_row.exit.v_theta[index]
+                        ),
+                        xytext = (
+                            column + x_te + blade_row.exit.v_x[index],
+                            row + y_te + blade_row.exit.v_theta_rel[index]
+                        ),
+                        arrowprops = dict(
+                            arrowstyle = "->", color = 'C3',
+                            shrinkA = 0, shrinkB = 0, lw = 1.5
+                        )
+                    )
+
+            # add brace to plot
+            dx = 2 * len(self.stages)
+            dy = row - 0.1
+            brace = patches.PathPatch(
+                Path([(x + dx, y + dy) for x, y in verts], codes),
+                fill = False, linewidth = 1
+            )
+            ax.add_patch(brace)
+            ax.text(
+                dx + 0.15, dy,
+                f"{labels[row]}",
+                ha = "left", va = "center"
+            )
+
+        # show plot
+        plt.show()
+
+    def plot_spanwise(self, quantities = utils.Defaults.quantity_list):
+        """Plots the spanwise variation of flow angle at each axial position."""
+        # loop over input quantites
+        for quantity_list in quantities:
+
+            # reshape array of quantity-label pairs
+            quantity_labels = np.reshape(quantity_list, (-1, 2))
+
+            # create plot with an axis for each blade row inlet and exit and reshape axes
+            fig, axes = plt.subplots(ncols = len(self.blade_rows) + 2, figsize = (14, 6))
+
+            # assign values for capturing appropriate axis limits
+            x_min = 1e6
+            x_max = -1e6
+
+            # loop over all quuantity-label pairs
+            for quantity_label in quantity_labels:
+    
+                # store as intermediate variables for convenience
+                quantity = quantity_label[0]
+                label = quantity_label[1]
+
+                # set colour
+                colour = next(self.colour_cycle)
+
+                # set legend entry in final axis
+                axes[-1].plot([], [], color = colour, label = label)
+
+                # check if blade row has quantity stored
+                if hasattr(self.blade_rows[0].inlet, quantity):
+
+                    # get attribute and convert to degrees if necessary
+                    x = getattr(self.blade_rows[0].inlet, quantity)
+                    value = x.value if hasattr(x, "value") else x
+                    value = utils.rad_to_deg(value) if "°" in label else value
+
+                    # plot rotor inlet conditions
+                    span = (
+                        (self.blade_rows[0].inlet.rr - self.blade_rows[0].inlet.rr[0])
+                        / (self.blade_rows[0].inlet.rr[-1] - self.blade_rows[0].inlet.rr[0])
+                    )
+                    axes[0].plot(value, span, linewidth = 2, color = colour)
+
+                    # update x-axis limits
+                    x_min = min(x_min, *value)
+                    x_max = max(x_max, *value)
+
+                # iterate over all axes:
+                for ax, blade_row in zip(axes[1:], self.blade_rows + [self.nozzle]):
+
+                    # check if blade row has quantity stored
+                    if hasattr(blade_row.exit, quantity):
+
+                        # store values as intermediate variable
+                        x = getattr(blade_row.exit, quantity)
+                        value = x.value if hasattr(x, "value") else x
+                        value = utils.rad_to_deg(value) if "°" in label else value
+
+                        # plot blade row exit conditions
+                        span = (
+                            (blade_row.exit.rr - blade_row.exit.rr[0])
+                            / (blade_row.exit.rr[-1] - blade_row.exit.rr[0])
+                        )
+                        ax.plot(value, span, linewidth = 2, color = colour)
+
+                        # update x-axis limits
+                        x_min = min(x_min, *value)
+                        x_max = max(x_max, *value)
+
+            # loop over all axes in the figure
+            for index, ax in enumerate(axes):
+
+                # set axis x- and y-limits
+                ax.set_xlim(x_min - (x_max - x_min) / 10, x_max + (x_max - x_min) / 10)
+                ax.set_ylim(0, 1)
+
+                # set grid and maximum number pf x-ticks
+                ax.grid()
+                ax.xaxis.set_major_locator(plt.MaxNLocator(nbins = 2))
+
+                # odd indices
+                if index % 2 == 1:
+
+                    # set title for rotor plot
+                    ax.set_title(f"Rotor {(index + 1) / 2:.0f}")
+
+                # even indicees
+                else:
+
+                    # set title for stator plot
+                    ax.set_title(f"Stator {index / 2:.0f}")
+
+            # set inlet and nozzle titles
+            axes[0].set_title("Inlet")
+            axes[-1].set_title("Nozzle")
+
+            # set y-label and tight layout
+            axes[0].set_ylabel('Dimensionless span')
+            plt.tight_layout()
+
+            # create legend
+            plt.subplots_adjust(bottom = 0.16)
+            axes[-1].legend(
+                loc = 'center', bbox_to_anchor = (0.5, 0.05), bbox_transform = fig.transFigure
+            )
+        
+        # show plots
+        plt.show()
+    
+    def plot_section(self):
+        """Plots a section view through the engine highlighting streamline behaviour."""
+        # create plot
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+        # initialise empty grid to store streamline radii
+        xx = np.zeros(len(self.blade_rows) + 2)
+        yy = np.zeros((utils.Defaults.solver_grid, len(self.blade_rows) + 2))
+
+        # store rotor inlet values
+        yy[:, 0] = self.blade_rows[0].inlet.rr
+
+        # loop over all blade rows
+        for index, blade_row in enumerate(self.blade_rows):
+
+            # store exit streamline radii for blade row
+            xx[index + 1] = blade_row.x_ref + blade_row.exit.axial_chord[0] + utils.Defaults.axial_separation
+            yy[:, index + 1] = blade_row.exit.rr
+
+            # draw blade row
+            x_1 = blade_row.x_ref - blade_row.exit.axial_chord / 2
+            x_2 = blade_row.x_ref + blade_row.exit.axial_chord / 2
+            x = np.concatenate((x_1, x_2[::-1]))
+            y = np.concatenate((
+                (blade_row.inlet.rr + blade_row.exit.rr) / 2,
+                (blade_row.inlet.rr + blade_row.exit.rr)[::-1] / 2
+            ))
+            ax.plot(x, y)
+
+            # plot plane one hub axial chord upstream and downstream of each blade row
+            ax.axvline(
+                blade_row.x_ref - blade_row.exit.axial_chord[0], color = 'C3',
+                linestyle = '--', linewidth = 2
+            )
+            ax.axvline(
+                blade_row.x_ref + blade_row.exit.axial_chord[0], color = 'C3',
+                linestyle = '--', linewidth = 2
+            )
+
+        # store nozzle exit values
+        xx[-1] = xx[-2] + 2 * self.hub_tip_ratio
+        yy[:, -1] = self.nozzle.exit.rr
+
+        for x in xx:
+
+            ax.axvline(x, color = 'C3')
+
+        # plot each streamline separately
+        for streamline in yy:
+
+            # plot streamline
+            ax.plot(xx, streamline, linewidth = 0.5, color = 'k', alpha = 0.5)
+
+        # configure plot
+        ax.set_xlabel("Axial Position", fontsize = utils.Defaults.fontsize)
+        ax.set_ylabel("Radial Position", fontsize = utils.Defaults.fontsize)
+        ax.set_aspect("equal")
+
+        # set title
+        ax.text(
+            0.5, 1.02,
+            f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+            f"$ \\phi $ = {self.phi[0]:.3g}, $ \\psi $ = {self.psi[0]:.3g}, n = {self.vortex_exponent:.3g}",
+            transform = ax.transAxes,
+            ha = 'center',
+            va = 'bottom',
+            fontsize = 16
+        )
+
+    def plot_convergence(self):
+        """Plots the thrust calculation convergence history for the engine."""
+        # create plot
+        fig, ax = plt.subplots(figsize = (10, 6))
+
+        # plot initial guess curve
+        ax.plot(self.M_1_initial, self.C_th_initial, label = "Initial", color = 'C0')
+
+        # plot actual guesses as individual datapoints
+        ax.plot(
+            self.M_1_guesses, self.C_th_guesses, linestyle = '', marker = '.', markersize = 8,
+            label = "Guesses", color = 'C3'
+        )
+
+        # plot target thrust
+        ax.axhline(self.C_th_design, label = "Design", color = 'C4')
+
+        # set axis limits
+        x_min = np.min(self.M_1_guesses)
+        x_max = np.max(self.M_1_guesses)
+        y_min = np.min(self.C_th_guesses)
+        y_max = np.max(self.C_th_guesses)
+        margin = 0.5
+        ax.set_xlim(x_min - margin * (x_max - x_min), x_max + margin * (x_max - x_min))
+        ax.set_ylim(y_min - margin * (y_max - y_min), y_max + margin * (y_max - y_min))
+
+        # configure and show plot
+        ax.set_xlabel("Inlet Mach number")
+        ax.set_ylabel("Thrust Coefficient")
+        ax.grid()
+        ax.legend()
+        plt.show()
+
+    def plot_off_design(self):
+        """"""
+        # loop over all stages
+        for stage in self.stages:
+
+            # create plot
+            fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+            # plot characteristc for hub
+            ax.plot(
+                [stage_copy.rotor.exit.phi[0] for stage_copy in stage.off_designs],
+                [stage_copy.rotor.exit.psi[0] for stage_copy in stage.off_designs],
+                label = "Hub", color = "C0"
+            )
+            ax.plot(
+                [stage.rotor.exit.phi[0]],
+                [stage.rotor.exit.psi[0]],
+                linestyle = '', marker = '.', markersize = 8,
+                color = "C0"
+            )
+
+            ax.plot(
+                [
+                    stage_copy.rotor.exit.phi[int(np.floor(utils.Defaults.solver_grid / 2))]
+                    for stage_copy in stage.off_designs
+                ],
+                [
+                    stage_copy.rotor.exit.psi[int(np.floor(utils.Defaults.solver_grid / 2))]
+                    for stage_copy in stage.off_designs
+                ],
+                label = "Mid-span", color = "C1"
+            )
+            ax.plot(
+                [stage.rotor.exit.phi[int(np.floor(utils.Defaults.solver_grid / 2))]],
+                [stage.rotor.exit.psi[int(np.floor(utils.Defaults.solver_grid / 2))]],
+                linestyle = '', marker = '.', markersize = 8,
+                color = "C1"
+            )
+
+            # plot characterstic for tip
+            ax.plot(
+                [stage_copy.rotor.exit.phi[-1] for stage_copy in stage.off_designs],
+                [stage_copy.rotor.exit.psi[-1] for stage_copy in stage.off_designs],
+                label = "Tip", color = "C2"
+            )
+            ax.plot(
+                [stage.rotor.exit.phi[-1]],
+                [stage.rotor.exit.psi[-1]],
+                linestyle = '', marker = '.', markersize = 8,
+                color = "C2"
+            )
+
+            # configure plot
+            ax.grid()
+            ax.legend()
+            ax.set_xlabel("Flow Coefficient")
+            ax.set_ylabel("Stage Loading Coefficient")
+
+            # set title
+            ax.text(
+                0.5, 1.02,
+                f"$ C_\\thorn $ = {self.C_th:.3g}, $ M_\\infty $ = {self.M_flight:.3g}, "
+                f"$ \\phi $ = {self.phi[0]:.3g}, $ \\psi $ = {self.psi[0]:.3g}, n = {self.vortex_exponent:.3g}",
+                transform = ax.transAxes,
+                ha = 'center',
+                va = 'bottom',
+                fontsize = 16
+            )
+
+        # show all plots
+        plt.show()
+
+    def calc_thrust(self):
+        """Calculates thrust parameters."""
+        # find exit conditions for zero nozzle exit swirl
+        M_no_swirl = utils.inverse_pressure_ratio(
+            utils.stagnation_pressure_ratio(self.scenario.M) / self.nozzle.exit.p_0
+        )
+        T_no_swirl = utils.stagnation_temperature_ratio(M_no_swirl) * self.nozzle.exit.T_0
+        p_no_swirl = utils.stagnation_pressure_ratio(M_no_swirl) * self.nozzle.exit.p_0
+        v_x_no_swirl = M_no_swirl * np.sqrt(T_no_swirl)
+
+        # find radial streamline positions for zero swirl nozzle
+        r_no_swirl = np.zeros(len(M_no_swirl))
+        r_no_swirl[0] = self.nozzle.exit.rr[0]
+        dm_dot = np.diff(self.nozzle.inlet.m_dot)
+        for index in range(len(M_no_swirl) - 1):
+ 
+            # corrector step - recalculate streamtube outer radius
+            r_no_swirl[index + 1] = (
+                np.sqrt(
+                    r_no_swirl[index]**2
+                    + 2 * dm_dot[index] * np.sqrt(utils.gamma - 1) * (1 - self.hub_tip_ratio**2) / (
+                        utils.gamma * (
+                            p_no_swirl[index] * v_x_no_swirl[index] / T_no_swirl[index]
+                            + p_no_swirl[index + 1] * v_x_no_swirl[index + 1]
+                            / T_no_swirl[index + 1]
+                        )
+                    )
+                )
+            )
+
+        # calculate thrust coefficient contribution due to jet momentum flux
+        dC_th_dr = (
+            2 * utils.dynamic_pressure_function(M_no_swirl)
+            * self.nozzle.exit.p_0 * (
+                1 - self.scenario.M / M_no_swirl
+                * np.sqrt(utils.stagnation_temperature_ratio(self.scenario.M) / T_no_swirl)
+            ) * r_no_swirl
+        )
+        self.C_th_no_swirl = (
+            2 * utils.cumulative_trapezoid(r_no_swirl, dC_th_dr)[-1]
+            / (1 - self.hub_tip_ratio**2)
+        )
+        self.thrust_no_swirl = self.C_th_no_swirl * self.scenario.A * self.scenario.p_0
+        self.P_no_swirl = self.thrust_no_swirl * self.scenario.flight_speed
+
+        # VERSION 2
+        # calculate 1D jet velocity required
+        v_j_1D = self.thrust / self.m_dot + self.scenario.flight_speed
+        self.jet_velocity_ratio = self.scenario.flight_speed / v_j_1D
+
+        # calculate velocity ratio dimensionless group
+        v_c_p_T_0 = v_j_1D / np.sqrt(utils.c_p * self.T_0_ratio * self.scenario.T_0)
+
+        # calculate 1D jet Mach number
+        M_j_1D = v_c_p_T_0 / np.sqrt((utils.gamma - 1) * (1 - 0.5 * v_c_p_T_0**2))
+
+        # calculate thrust-averaged stagnation pressure
+        self.p_0_thrust = (
+            utils.stagnation_pressure_ratio(self.scenario.M) * np.power(
+                1 + 0.5 * (utils.gamma - 1) * M_j_1D**2, utils.gamma / (utils.gamma - 1)
+            )
+        )
+
+        # calculate entropy flux
+        s_flux = (
+            2 * np.pi
+            * utils.cumulative_trapezoid(
+                self.nozzle.exit.rr,
+                self.nozzle.exit.rr * self.nozzle.exit.p * self.scenario.p_0 / self.nozzle.exit.T
+                * self.nozzle.exit.s * utils.gamma * self.nozzle.exit.v_x
+                * np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+            )[-1]
+            * self.scenario.radius**2
+        )
+
+        # calculate thrust-averaged entropy flux
+        s_flux_thrust = (
+            self.m_dot * self.scenario.T_0
+            * (utils.c_p * np.log(self.T_0_ratio) - utils.R * np.log(self.p_0_thrust))
+        )
+
+        # check if engine does not yet have recorded input power
+        if not hasattr(self, "P_in"):
+
+            # define motor power
+            self.P_in = (
+                np.sum([blade_row.motor_power for blade_row in self.blade_rows])
+            )
+
+        # swirl efficiency
+        self.eta_swirl = min(self.P_flight / self.P_no_swirl, 1)
+
+        # polytropic efficiency
+        #self.eta_poly = 1 / (1 + s_flux / self.P_in)
+        self.eta_poly = 1 - s_flux / self.P_in      # APPROXIMATE TO MATCH TS3
+
+        # find thrust averaged polytropic efficiency
+        #self.eta_thrust = 1 / (1 + s_flux_thrust / self.P_in)
+        self.eta_thrust = 1 - s_flux_thrust / self.P_in      # APPROXIMATE TO MATCH TS3
+
+        # overall efficiency
+        self.eta_overall = self.P_flight / self.P_in
+
+        # propulsive efficiency
+        self.eta_prop = self.eta_overall / (self.eta_thrust * self.eta_swirl)
+
+        # plot
+        v_j_1D = v_j_1D / np.sqrt(utils.gamma * utils.R * self.scenario.T_0)
+        """fig, ax = plt.subplots()
+        ax.plot(self.nozzle.exit.v_x, self.nozzle.exit.rr, label = "Original")
+        ax.plot(v_x_no_swirl, r_no_swirl, label = "No swirl")
+        ax.plot([v_j_1D, v_j_1D], [1e-2, self.nozzle.exit.rr[-1]], label = "1D")
+        ax.plot([v_xjs, v_xjs], [1e-2, self.nozzle.exit.rr[-1]], label = "1Ds")
+        ax.grid()
+        ax.legend()
+
+        # plot
+        fig, ax = plt.subplots()
+        ax.plot(self.nozzle.exit.p, self.nozzle.exit.rr, label = "Original")
+        ax.plot(p_no_swirl, r_no_swirl, label = "No swirl")
+        ax.grid()
+        ax.legend()"""
+
+    def plot_thrust(self):
+        """Creates a Sankey chart."""
+        # run thrust calculations process
+        self.calc_thrust()
+
+        # create plot
+        fig, ax = plt.subplots(figsize = utils.Defaults.figsize)
+
+        # arbitrary constants
+        N = 50
+        margin = 0.1
+        cutoff = 1e-3
+
+        # set node dictionary
+        node = {
+            "label": [
+                "P_in",
+                "P_isen", "Propulsive loss",
+                "P_no_swirl", "Compressor loss",
+                "P_flight", "Swirl loss"
+            ],
+            "x": [0, 1, 1, 2, 2, 3, 3],
+            "y": [0, 0, 0, 0, 0, 0, 0]
+        }
+
+        # store list for cumulative heights at each x-position
+        node["h_in"] = list(np.zeros(len(node["x"])))
+        node["h_out"] = list(np.zeros(len(node["x"])))
+
+        # set link dictionary
+        link = {
+            "source": [0, 0, 1, 1, 3, 3],
+            "target": [1, 2, 3, 4, 5, 6],
+            "value": np.array([
+                self.eta_prop, 1 - self.eta_prop,
+                self.eta_prop * self.eta_comp, self.eta_prop * (1 - self.eta_comp),
+                self.eta_prop * self.eta_comp * self.eta_swirl,
+                self.eta_prop * self.eta_comp * (1 - self.eta_swirl)
+            ])
+        }
+
+        # update margin size
+        margin *= link["value"][0]
+
+        # loop for each link
+        for index in range(len(link["value"])):
+            
+            # store source and target separately for convenience
+            source = link["source"][index]
+            target = link["target"][index]
+
+            # store coordinates separately for convenience
+            x_source = node["x"][source]
+            x_target = node["x"][target]
+            y_source = node["y"][source]
+            y_target = node["y"][target]
+            h_source = node["h_out"][source]
+            h_target = node["h_in"][target]
+            value = link["value"][index]
+
+            # fine grid of x-values to create a spline over
+            xx = np.linspace(x_source, x_target, N)
+
+            # lower bound
+            spline_lower = make_interp_spline(
+                [x_source, x_target],
+                [y_source + h_source, y_target + h_target],
+                k = 3,
+                bc_type = ([(1, 0.0)], [(1, 0.0)])
+            )
+            yy_lower = spline_lower(xx)
+            ax.plot(xx, yy_lower, color = "k")
+
+            # upper bound
+            spline_upper = make_interp_spline(
+                [x_source, x_target],
+                [y_source + h_source + value, y_target + h_target + value],
+                k = 3,
+                bc_type = ([(1, 0.0)], [(1, 0.0)])
+            )
+            yy_upper = spline_upper(xx)
+            ax.plot(xx, yy_upper, color = "k")
+
+            # shade region between splines
+            ax.fill_between(xx, yy_lower, yy_upper, alpha = 0.3, color = "C0")
+
+            # add text at midpoint
+            x_mid = (x_source + x_target) / 2
+            y_mid = (y_source + h_source + value / 2 + y_target + h_target + value / 2) / 2
+            ax.text(
+                x_mid, y_mid + margin if link["value"][index] < 0.1 else y_mid,
+                (
+                    (f"{node['label'][target]}" if target not in link["source"] else "")
+                    + ("\n" if target not in link["source"] and link["value"][index] > cutoff else "")
+                    + (f"{link['value'][index]:.4g}" if link["value"][index] > cutoff else "")
+                ),
+                ha = "center", va = "center", fontsize = 16
+            )
+
+            # update source and target heights independently
+            node["h_out"][source] += value
+            node["h_in"][target] += value + margin
+
+            # loop for each node
+            for i in range(len(node["x"])):
+
+                # check if node shares x-coordinate with source
+                if node["x"][i] == node["x"][source] and i != source:
+
+                    # increase y-coordinate of node
+                    node["y"][i] += value
+
+                # check if node shares x-coordinate with target
+                if node["x"][i] == node["x"][target] and i != target:
+
+                    # increase inlet height of node
+                    node["h_in"][i] += value + margin
+
+        # find source node (not in any target)
+        source_node = [i for i in range(len(node["x"])) if i not in link["target"]][0]
+
+        # brace parameters
+        x_brace   = node["x"][source_node] - 0.2
+        y_bottom  = node["y"][source_node]
+        y_top     = node["y"][source_node] + node["h_out"][source_node]
+        y_mid     = (y_bottom + y_top) / 2
+        brace_w   = 0.08  # horizontal extent of brace curls
+
+        # generate brace using two S-curves
+        t = np.linspace(0, 1, N)
+
+        def s_curve(t, x0, x1, y0, y1):
+            spline = make_interp_spline(
+                [0, 1], [y0, y1], k=3,
+                bc_type=([(1, 0.0)], [(1, 0.0)])
+            )
+            return x0 + (x1 - x0) * t, spline(t)
+
+        # bottom half: y_bottom -> y_mid
+        bx1, by1 = s_curve(t, x_brace, x_brace - brace_w, y_bottom, y_mid)
+        # top half: y_mid -> y_top
+        bx2, by2 = s_curve(t, x_brace - brace_w, x_brace, y_mid, y_top)
+
+        ax.plot(bx1, by1, color="k", linewidth=1.5)
+        ax.plot(bx2, by2, color="k", linewidth=1.5)
+
+        # add label to the left of the brace
+        ax.text(
+            x_brace - brace_w - 0.05, y_mid,
+            node["label"][source_node],
+            ha="right", va="center", fontsize=16
+        )
+
+        # configure plot and show
+        ax.axis("off")
+        #plt.show()
+        return fig, ax
