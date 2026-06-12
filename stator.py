@@ -6,10 +6,9 @@ import copy
 
 # import custom classes
 from annulus import Annulus
-from coefficients import Coefficients
+#from coefficients import Coefficients
 import utils
 from blade_row import Blade_row
-import matplotlib.pyplot as plt
 
 # define Stator class
 class Stator(Blade_row):

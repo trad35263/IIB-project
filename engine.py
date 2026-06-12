@@ -1,7 +1,7 @@
 # import modules
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
+#from matplotlib.patches import Polygon
 from matplotlib.path import Path
 import matplotlib.patches as patches
 
@@ -19,18 +19,17 @@ import json
 #import plotly.graph_objects as go
 
 #import matlab.engine
-from pathlib import Path as FilePath
+#from pathlib import Path as FilePath
 
 # import system modules
 import copy
-import inspect
-import os
+#import inspect
+#import os
 
 # import custom classes
 from stage import Stage
 from rotor import Rotor
 from nozzle import Nozzle
-from flow_state import Flow_state
 from annulus import Annulus
 import utils
 from motor_database import Database

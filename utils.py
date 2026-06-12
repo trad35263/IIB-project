@@ -1,7 +1,6 @@
 # import modules
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
-from scipy.interpolate import make_interp_spline
 from scipy.optimize import brentq
 
 # gas constants

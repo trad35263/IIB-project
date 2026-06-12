@@ -5,7 +5,7 @@ import utils
 
 # import classes
 
-from coefficients import Coefficients
+#from coefficients import Coefficients
 
 # create Annulus class
 
